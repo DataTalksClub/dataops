@@ -1,0 +1,62 @@
+[
+  {
+    "id": "stripe-subscription-template",
+    "note": "Synthetic twin of a Stripe-layout subscription receipt that takes the template path (reader must not run). The real pending draft be9511dc was staged with no description, so the ledger showed 'Business expense'.",
+    "text": "Receipt\nInvoice number EXAMPLE-0001 \u0000 0001\nDate paid October 12, 2026\nAnthropic, PBC\n@example.test\nBill to\nSynthetic Customer GmbH\nDescription Qty Unit price Amount\nMax plan - 20x\nOct 12 – Nov 12, 2026 1 €180.00 €180.00\nSubtotal €180.00\nTotal €180.00\nAmount paid €180.00\n0%",
+    "hints": { "subject": "Your receipt from Anthropic, PBC #1234-5678", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": "Max plan - 20x, Oct 12 – Nov 12, 2026", "method": "template:stripe", "needsReview": false }
+  },
+  {
+    "id": "reader-returns-null-line-item-printed",
+    "note": "Synthetic twin of an OpenCode-style prepaid receipt (draft 5a173a94): the reader returned no description although the document prints its line item; the subject is the generic 'receipt'.",
+    "text": "Receipt\nReceipt number RCPT-2026-0042\nDate paid October 20, 2026\nExample Gateway Inc.\nBill to\nSynthetic Customer GmbH\nDescription Qty Unit price Amount\nZen credits top-up\n1 $10.00 $10.00\nTotal $10.00\nPaid by card",
+    "hints": { "subject": "Your receipt", "sender": "noreply@example.test" },
+    "reader": { "docType": "receipt", "counterparty": "Example Gateway Inc.", "invoiceNumber": "RCPT-2026-0042", "date": "2026-10-20", "currency": "USD", "net": "10.00", "vat": "0.00", "gross": "10.00", "vatRate": "0", "description": null, "confidence": "high" },
+    "expected": { "description": "Zen credits top-up", "descriptionFrom": "document" }
+  },
+  {
+    "id": "reader-returns-generic-label",
+    "note": "A generic reader answer is never stored; the printed line item wins.",
+    "text": "Invoice\nInvoice number INV-77\nInvoice date: 2026-10-01\nExample Hosting GmbH\nDescription Qty Unit price Amount\nCloud VPS Plus 2 hosting\n1 8.57 8.57\nSubtotal 8.57\nVAT 0% 0.00\nTotal 8.57 EUR",
+    "reader": { "counterparty": "Example Hosting GmbH", "invoiceNumber": "INV-77", "date": "2026-10-01", "currency": "EUR", "net": "8.57", "vat": "0.00", "gross": "8.57", "vatRate": "0", "description": "Business expense", "confidence": "high" },
+    "expected": { "description": "Cloud VPS Plus 2 hosting", "descriptionFrom": "document" }
+  },
+  {
+    "id": "reader-description-not-in-document",
+    "note": "A reader phrase with no support in the document is dropped and the draft is flagged, never kept as a guess.",
+    "text": "Rechnung\nRechnungsnummer 2026-001\nDatum 01.10.2026\nBeispiel Handel GmbH\nGesamt brutto 50,00 EUR\nGesamt netto 42,02 EUR\nUmsatzsteuer 19% 7,98 EUR\nVielen Dank fuer Ihren Auftrag und Ihr Vertrauen in unser Haus, wir freuen uns auf weitere Zusammenarbeit.",
+    "reader": { "counterparty": "Beispiel Handel GmbH", "invoiceNumber": "2026-001", "date": "2026-10-01", "currency": "EUR", "net": "42.02", "vat": "7.98", "gross": "50.00", "vatRate": "19", "description": "Premium streaming bundle for the team", "confidence": "high" },
+    "expected": { "description": null, "needsReview": true, "issues": ["uncertain:description", "missing:description"] }
+  },
+  {
+    "id": "no-purchased-item-printed",
+    "note": "Nothing printed to describe: the description stays empty and review is requested.",
+    "text": "Invoice\nInvoice number 9001\nInvoice date: 2026-10-02\nExample Services Ltd\nAmount due 20.00 EUR paid\nTotal 20.00 EUR\nPlease contact support for any questions regarding this document and your account with us.",
+    "reader": { "counterparty": "Example Services Ltd", "invoiceNumber": "9001", "date": "2026-10-02", "currency": "EUR", "net": "20.00", "vat": "0.00", "gross": "20.00", "vatRate": "0", "description": null, "confidence": "high" },
+    "expected": { "description": null, "needsReview": true, "issues": ["missing:description"] }
+  },
+  {
+    "id": "email-body-receipt-subject-names-product",
+    "note": "A receipt rendered from an email body has no line-item table; the forwarded subject names the product and the document names the same provider.",
+    "text": "Receipt\nInvoice number ABCDEF10 \u0000 0002\nDate of issue October 14, 2026\nOpenAI\n$25.00 paid on October 14, 2026\nBill to\nSynthetic Customer GmbH\nSubtotal $25.00\nAmount paid $25.00",
+    "hints": { "subject": "Fwd: Your ChatGPT Plus subscription receipt from Oct 14, 2026", "sender": "receipts@example.test" },
+    "reader": { "docType": "receipt", "counterparty": "OpenAI", "invoiceNumber": "ABCDEF10-0002", "date": "2026-10-14", "currency": "USD", "net": null, "vat": null, "gross": "25.00", "vatRate": null, "description": null, "confidence": "medium" },
+    "expected": { "description": "ChatGPT Plus subscription" }
+  },
+  {
+    "id": "subject-contradicts-document",
+    "note": "The subject names a different provider than the document issuer: the subject must not supply the description.",
+    "text": "Receipt\nInvoice number ZZ11 \u0000 0001\nDate of issue October 14, 2026\nAnthropic, PBC\n$25.00 paid on October 14, 2026\nBill to\nSynthetic Customer GmbH\nSubtotal $25.00\nAmount paid $25.00",
+    "hints": { "subject": "Your ChatGPT Plus subscription receipt from OpenAI", "sender": "receipts@example.test" },
+    "reader": { "docType": "receipt", "counterparty": "Anthropic, PBC", "invoiceNumber": "ZZ11-0001", "date": "2026-10-14", "currency": "USD", "net": null, "vat": null, "gross": "25.00", "vatRate": null, "description": null, "confidence": "medium" },
+    "expected": { "description": null, "needsReview": true, "issues": ["contradiction:description", "missing:description"] }
+  },
+  {
+    "id": "supplier-credit-note",
+    "note": "A refund keeps the credit-note line the document prints.",
+    "text": "Credit note\nCredit note number CN-0001-CN-01\nDate: 2026-10-05\nExample Cloud, Inc.\nUnused time on Cloud VPS plan\nCredited total EUR 25.00",
+    "reader": { "docType": "credit_note", "counterparty": "Example Cloud, Inc.", "invoiceNumber": "CN-0001-CN-01", "date": "2026-10-05", "currency": "EUR", "net": "25.00", "vat": "0.00", "gross": "25.00", "vatRate": "0", "description": "Unused time on Cloud VPS plan", "confidence": "high" },
+    "expected": { "description": "Unused time on Cloud VPS plan" }
+  }
+]
