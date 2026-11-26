@@ -234,7 +234,7 @@ export function invoiceDetailMarkup(record, escapeHtml) {
 
 export async function mountInvoiceReview(host, context, options = {}) {
   const { request, workApiUrl, escapeHtml } = context;
-  const { initialInvoiceId = "", onInvoicesChanged } = options;
+  const { onInvoicesChanged } = options;
   const e = (value) => escapeHtml(String(value ?? ""));
   const api = (path = "", options = {}) =>
     request(workApiUrl(`/api/bookkeeping/invoices${path}`), {
@@ -380,6 +380,5 @@ export async function mountInvoiceReview(host, context, options = {}) {
     .querySelector("[data-invoice-refresh]")
     .addEventListener("click", () => safe(refresh));
   await refresh();
-  if (initialInvoiceId) await openInvoice(initialInvoiceId);
   return { openInvoice, refresh };
 }

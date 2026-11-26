@@ -9,7 +9,7 @@ import { cashDate, entryDirection, formatAmount, ledgerDate, monthLabel, monthOf
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
-export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "tx", "view"];
+export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "tx", "view", "invoice"];
 export const SECONDARY_VIEWS = ["files", "package", "invoices", "tuition"];
 
 // The classification columns: "Type" is stored as `subtype`, "Category" as
@@ -171,6 +171,64 @@ export function inLens(entry, lens) {
   if (lens === "all") return true;
   const month = monthOf(entry);
   return /^\d{4}$/.test(lens) ? month.startsWith(lens) : month === lens;
+}
+
+// The bookkeeping route as plain state: lens, filters, the open line item
+// (a transaction id, or an invoice draft id while the invoice review is
+// open) and the secondary view. The list context (month + filters) always
+// travels with the item so Back returns to the same transaction list.
+export function readBookkeepingRoute(search) {
+  const params = new URLSearchParams(search || "");
+  const get = (name) => String(params.get(name) || "").trim();
+  const month = get("month");
+  const view = get("view");
+  return {
+    lens: /^\d{4}(-\d{2})?$/.test(month) || month === "all" ? month : "",
+    filters: filtersFromParams(params),
+    tx: get("tx"),
+    view: SECONDARY_VIEWS.includes(view) ? view : "",
+    invoice: get("invoice"),
+  };
+}
+
+// Plain state -> query string. The default month stays out of the URL; the
+// invoice id only travels while the invoice review is open.
+export function writeBookkeepingRoute({ lens, defaultLens, filters, tx, view, invoice }) {
+  const params = new URLSearchParams();
+  const values = {
+    month: lens === defaultLens ? "" : lens,
+    ...(filters || {}),
+    tx: tx || "",
+    view: view || "",
+    invoice: view === "invoices" ? invoice || "" : "",
+  };
+  for (const name of LEDGER_PARAMS) if (values[name]) params.set(name, values[name]);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+// What a click inside the ledger should do, without touching history or
+// rendering: open a document, clear the filters, open a transaction line
+// item, or open one pending invoice draft for review. Form controls and
+// sponsor deal links keep their own behavior.
+export function ledgerClickAction(target) {
+  if (!target?.closest) return null;
+  const documentId = target.closest("[data-view-document]")?.dataset.viewDocument;
+  if (documentId) return { action: "document", id: documentId };
+  if (target.closest("[data-clear-filters]")) return { action: "clear-filters" };
+  // Both the counterparty link and the invoice-count icon open the line
+  // item: anchors (allocation children) as well as buttons.
+  const opener = target.closest("[data-open-tx]");
+  if (opener?.dataset.openTx) return { action: "transaction", id: opener.dataset.openTx };
+  if (target.closest("select, button, input, a[data-deal-link]")) return null;
+  const draft = target.closest("[data-open-invoice-review]") || target.closest("[data-pending-invoice]");
+  if (draft) {
+    const id = draft.dataset.openInvoiceReview || draft.dataset.pendingInvoice;
+    if (id) return { action: "invoice", id };
+  }
+  const row = target.closest("[data-tx]");
+  if (row?.dataset.tx) return { action: "transaction", id: row.dataset.tx };
+  return null;
 }
 
 const BANK_ONLY_EXCEPTION_LABELS = {
