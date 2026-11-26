@@ -165,6 +165,8 @@ test.describe("sponsor newsletter catalog", () => {
     await page.locator("[data-crm-nav-more] > summary").click();
     await page.locator("[data-crm-nav-tab='leads']").click();
     await expect(page).toHaveURL(/\/sponsors\/leads$/);
+    // Choosing a More entry closes the menu; reopen it for the next one.
+    await page.locator("[data-crm-nav-more] > summary").click();
     await page.locator("[data-crm-nav-tab='newsletters']").click();
     await expect(page).toHaveURL(/\/sponsors\/newsletters$/);
     await page.goBack();
