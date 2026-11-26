@@ -6,6 +6,7 @@ import { apiFor } from "../session.mjs";
 
 const CLASSIFICATION = ["invoiceRequirement", "amountDue", "currency", "taxMode", "taxAmount", "requestBy", "expectedInvoiceBy"];
 const INVOICE = ["invoiceNumber", "issuedOn", "dueOn", "sentOn"];
+const POSITIVE_MONEY = /^(0|[1-9][0-9]{0,11})(\.[0-9]{1,4})?$/;
 const pick = (value, keys) => Object.fromEntries(keys.filter((key) => value?.[key] !== undefined).map((key) => [key, value[key]]));
 
 function dataFields(data, allowed) {
@@ -105,14 +106,20 @@ export async function uploadInvoiceDocument(api, dealId, bytes, sha256) {
 }
 
 /**
- * Correct an issued invoice with a required reason and the corrected metadata;
- * optional corrected PDF (issued in Finom's UI first) supersedes the linked
- * original in one audited step. No PDF is generated and no email is sent.
+ * Correct an issued invoice with a required reason and the corrected metadata
+ * and/or nominal amountDue (unpaid invoices without linked receipts or
+ * settlement); optional corrected PDF (issued in Finom's UI first) supersedes
+ * the linked original in one audited step, or an amount correction without
+ * --file binds to the already linked verified invoice identity. No PDF is
+ * generated and no email is sent.
  */
 export async function correctInvoice(args, io) {
   const id = positional(args, 0, "dataops sponsors correct-invoice <deal-id> --data @correction.json [--file corrected.pdf] [--apply]");
-  const data = dataFields(jsonData(args), ["reason", ...INVOICE]);
+  const data = dataFields(jsonData(args), ["reason", "amountDue", ...INVOICE]);
   if (typeof data.reason !== "string" || !data.reason.trim()) throw new UsageError("A nonempty correction reason is required");
+  if (data.amountDue !== undefined && (typeof data.amountDue !== "string" || !POSITIVE_MONEY.test(data.amountDue) || /^0(\.0+)?$/.test(data.amountDue))) {
+    throw new UsageError("amountDue must be a positive decimal string");
+  }
   const api = apiFor(args);
   const [deal, projection] = await Promise.all([
     api.get(`/api/sponsor-crm/deals/${enc(id)}`),
@@ -135,6 +142,18 @@ export async function correctInvoice(args, io) {
     bytes = await readFile(args.file);
     if (!bytes.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new UsageError("--file must contain a PDF");
     sha256 = createHash("sha256").update(bytes).digest("hex");
+  }
+  if (data.amountDue !== undefined) {
+    if ((projection.payments?.length || 0) > 0 || projection.finance.settlementAdjustment) {
+      throw new UsageError("Cannot correct invoice amount when payments or settlement adjustments exist");
+    }
+    if (!bytes) {
+      if (!projection.invoice?.id || !projection.invoice?.identityToken) {
+        throw new UsageError("Correcting amountDue without --file requires an already linked verified invoice document");
+      }
+      values.expectedDocumentId = projection.invoice.id;
+      values.expectedDocumentIdentityToken = projection.invoice.identityToken;
+    }
   }
   const idempotencyKey = args.idempotencyKey || randomUUID();
   if (!/^[A-Za-z0-9_-]{16,128}$/.test(idempotencyKey)) throw new UsageError("--idempotency-key must contain 16-128 letters, digits, underscores or hyphens");

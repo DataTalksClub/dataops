@@ -75,6 +75,22 @@ test("Deals tab lists attachments and downloads via authorized signed URL", asyn
       ],
       nextCursor: null,
     },
+    // An exact deal link reads the deal by ID beside the company projection.
+    "GET /deals/d1": {
+      id: "d1",
+      organizationId: "c1",
+      status: "agreed",
+      productKind: "one-off",
+      attachments: [
+        {
+          id: "att1",
+          dealId: "d1",
+          filename: "VVX-Signed.pdf",
+          sizeBytes: 109756,
+          createdAt: "2026-11-25T10:16:00.000Z",
+        },
+      ],
+    },
     "GET /deals/d1/attachments/att1/download": {
       downloadUrl: "https://private-bucket.s3.amazonaws.com/crm-deals/d1/signed?X-Amz-Signature=abc&X-Amz-Expires=300",
       expiresIn: 300,

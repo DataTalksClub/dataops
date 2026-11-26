@@ -18,6 +18,8 @@ export function createBookkeepingTransactionModal({
   getAttached,
   openDocument,
   refreshEvidence,
+  saveField,
+  onTransactionUpdated,
   safeAction,
   setStatus,
   onClose,
@@ -40,6 +42,7 @@ export function createBookkeepingTransactionModal({
       statementCandidates: statement?.statementCandidates || [],
       statementPending: !statement,
       statementError: statement?.error || "",
+      editableWhat: typeof saveField === "function",
       escape: escapeHtml,
       formatAmount,
     });
@@ -100,6 +103,35 @@ export function createBookkeepingTransactionModal({
       render(getEntry(id));
       setStatus("Linked to the statement line.");
     }, "Could not link the statement line");
+  });
+  dialog.addEventListener("submit", (event) => {
+    const whatForm = event.target.closest("[data-what-form]");
+    if (!whatForm || typeof saveField !== "function") return;
+    event.preventDefault();
+    const id = getSelectedId();
+    const input = whatForm.elements?.description;
+    if (!id || !input) return;
+    const submitButton = whatForm.querySelector('button[type="submit"]');
+    if (submitButton) submitButton.disabled = true;
+    safeAction(async () => {
+      try {
+        const result = await saveField(id, "description", input.value);
+        if (result?.error) {
+          setStatus(result.error);
+          return;
+        }
+        if (result?.unchanged) {
+          setStatus("No changes to save.");
+          return;
+        }
+        const saved = result?.saved || getEntry(id);
+        onTransactionUpdated?.(saved);
+        render(saved);
+        setStatus("Saved What.");
+      } finally {
+        if (submitButton) submitButton.disabled = false;
+      }
+    }, "Could not save What");
   });
 
   return { render };
