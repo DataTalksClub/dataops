@@ -16,7 +16,7 @@ test("funnel renders compact rows grouped by commitments and opportunities, with
   assert.match(markup, /Synthetic &lt;Sponsor&gt;/);
   assert.match(markup, /Test Person · test@example.test/);
   assert.match(markup, /Confirm the date/);
-  assert.match(markup, /Review newer inbound/);
+  assert.match(markup, /Newer inbound to review/);
   assert.match(markup, /data-open-deal="agreed"/);
   assert.doesNotMatch(markup, /crm-pipeline-card/);
   assert.deepEqual(items, before);
@@ -100,7 +100,7 @@ test('newer inbound stays the visible attention reason while a task is deferred'
       nextTask: { id: 'task', description: 'Wait for material', deferred: true, date: '2026-11-01' } }],
     escapeHtml, humanSponsorDate: (value) => value, ownerName: () => 'Owner',
   });
-  assert.match(markup, /Review newer inbound \(inferred\)/);
+  assert.match(markup, /Newer inbound to review/);
   assert.match(markup, /Inbound 2026-10-17/);
   assert.match(markup, /Deferred task: Wait for material/);
   const noInbound = renderSponsorPipelineList({ items: [{ id: 'deal', organizationName: 'Synthetic', stage: 'agreed',
@@ -135,4 +135,12 @@ test("narrow CRM tabs keep the folded alerts bar full width instead of shrinking
   assert.ok(rule, "responsive.css must style the direct .crm-alerts child of the CRM surface");
   assert.match(rule[1], /flex:\s*1 1 100%/);
   assert.match(rule[1], /min-width:\s*0/);
+});
+
+test('pipeline rows show a missing primary contact only where it is actionable', () => {
+  const ctx = { escapeHtml, humanSponsorDate: (v) => v, ownerName: () => 'Owner' };
+  const early = renderSponsorPipelineList({ items: [{ id: 'a', organizationName: 'A', stage: 'open' }], ...ctx });
+  assert.doesNotMatch(early, /No primary contact/);
+  const agreed = renderSponsorPipelineList({ items: [{ id: 'b', organizationName: 'B', stage: 'agreed' }], ...ctx });
+  assert.match(agreed, /No primary contact/);
 });
