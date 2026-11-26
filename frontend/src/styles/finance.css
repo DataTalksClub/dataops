@@ -1383,7 +1383,10 @@ body[data-workspace-view="sponsors"] .document-list {
   .crm-funnel-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: var(--dk-space-2) var(--dk-space-3); gap: var(--dk-space-2); }
   .crm-search-field { grid-column: 1 / -1; min-width: 0; }
   .crm-funnel-controls label { font-size: var(--dk-text-sm); min-width: 0; }
-  .crm-funnel-controls select { min-width: 0; width: 100%; }
+  .crm-funnel-controls select { min-width: 0; width: 100%; text-overflow: ellipsis; }
+  /* Show and Sort stack their label over the select so the value never runs
+     into the chevron at 375-390px; the grid still keeps both on one row. */
+  .crm-funnel-controls label:has(select) { flex-direction: column; align-items: stretch; gap: var(--dk-space-1); }
   .crm-filter-disclosure > summary { padding: var(--dk-space-1) var(--dk-space-3) var(--dk-space-2); }
   .crm-filter-disclosure .crm-filters { padding: var(--dk-space-2) var(--dk-space-3); grid-template-columns: 1fr; }
   .crm-views-bar { padding: var(--dk-space-2) var(--dk-space-3); }

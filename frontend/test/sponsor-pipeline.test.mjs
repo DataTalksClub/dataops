@@ -136,3 +136,10 @@ test("narrow CRM tabs keep the folded alerts bar full width instead of shrinking
   assert.match(rule[1], /flex:\s*1 1 100%/);
   assert.match(rule[1], /min-width:\s*0/);
 });
+
+test("narrow Pipeline controls stack the Show and Sort labels so values clear the chevron", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const css = await readFile(new URL("../src/styles/finance.css", import.meta.url), "utf8");
+  const narrow = css.slice(css.indexOf("@media (max-width: 600px) {\n  .crm-list-head"));
+  assert.match(narrow.slice(0, 2000), /\.crm-funnel-controls label:has\(select\) \{ flex-direction: column;/);
+});
