@@ -199,6 +199,38 @@ test('cards time on a guest-intake Card moves the event, the Card anchor and the
   const updated = (await getGuestIntakeJob(db, job.id))!;
   assert.equal(updated.requestedDate, after.date); assert.equal(updated.requestedTime, `${parts.hour}:${parts.minute}`);
 });
+test('cards time normalizes a cross-date timezone move before an initial invitation retry', async () => {
+  const created = await card('webinar', { skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  const event = (await getEventRecord(db, job.holdId!))!;
+  const beforeMails = mails;
+  // The caller's Friday is still Thursday's normal midday window in Berlin.
+  const res = await invoke('POST', `/api/cards/${created.card.id}/time`, {
+    at: '2030-12-06 01:30', tz: 'Pacific/Kiritimati',
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const moved = (await getEventRecord(db, event.id))!;
+  assert.equal(moved.date, '2030-12-05');
+  assert.equal(moved.time, '12:30');
+  assert.equal(moved.timeZone, 'Europe/Berlin');
+  assert.equal(moved.startIso, '2030-12-05T11:30:00.000Z');
+  const updated = (await getGuestIntakeJob(db, job.id))!;
+  assert.equal((await getCardConsistent(db, created.card.id))!.anchorDate, moved.date);
+  assert.equal(updated.requestedDate, moved.date);
+  assert.equal(updated.requestedTime, moved.time);
+  assert.equal(updated.timeZone, moved.timeZone);
+  assert.equal(updated.startIso, moved.startIso);
+  assert.equal(mails, beforeMails, 'rescheduling never sends the first-contact email');
+  const queued = await invoke('POST', `/api/cards/${created.card.id}/guest-intake/send`, {});
+  assert.equal(queued.statusCode, 202, queued.body);
+  await processGuestIntake(db, job.id);
+  const sent = (await getGuestIntakeJob(db, job.id))!;
+  assert.equal(sent.status, 'sent');
+  assert.equal(sent.holdId, event.id);
+  assert.equal(sent.startIso, moved.startIso);
+  assert.equal(mails, beforeMails + 1);
+});
 test('acceptance racing Gmail receipt bookkeeping leaves no waiting follow-up', async () => {
   const created = await card('webinar');
   onMailSend = async () => { await approveEvent(db, created.card.id, { actor: 'synthetic-guest-accept', operationKey: 'accept-during-mail-send' }); };

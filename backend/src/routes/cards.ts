@@ -1207,8 +1207,8 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
       const job = card.guestIntake ? await getGuestIntakeJob(client, card.guestIntake.jobId) : null;
       // Keep the intake job on the same slot so retry never replays the superseded date.
       if (job && job.status !== 'sent') {
-        await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, requestedDate: `${local.year}-${local.month}-${local.day}`, requestedTime: `${local.hour}:${local.minute}`,
-          timeZone: interval.timeZone, startIso: moved.event.startIso, updatedAt: new Date().toISOString() } }));
+        await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, requestedDate: moved.event.date, requestedTime: moved.event.time,
+          timeZone: moved.event.timeZone, startIso: moved.event.startIso, updatedAt: new Date().toISOString() } }));
       }
       const fresh = await getCardConsistent(client, card.id);
       return json(moved.sync.state === 'synced' ? 200 : 502, { ...moved, card: await projectCard(new TeamDirectory(client), fresh || moved.card, undefined, await getTemplateIdByType(client)),
