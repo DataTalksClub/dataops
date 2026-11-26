@@ -54,6 +54,7 @@ test.describe("production sponsor CRM portal", () => {
         organizationId: "org-1",
         primaryContactId: "contact-1",
         status: "agreed",
+        title: "Autumn newsletter campaign (Aug 10, Aug 17, Oct 5), invoice DEMO-39",
         productKind: "one-off",
         deliverables: [{
           id: "deliverable-1",
@@ -350,7 +351,7 @@ test.describe("production sponsor CRM portal", () => {
           organizationId: organization.id,
           organizationName: organization.displayName,
           stage: "agreed",
-          title: null,
+          title: booking.title,
           primaryContact: { name: contact.name, email: contact.emails[0] },
           nextTask: null,
           lastContacted: null,
@@ -582,8 +583,34 @@ test.describe("production sponsor CRM portal", () => {
       await page.locator('[data-crm-bookings] [data-open-deal]').first().click();
       await page.locator('[data-record-tab="finance"]').click();
     };
-    await expect(page.locator("[data-record-title]")).toContainText("Synthetic Sponsor");
+    // A deal opened from a Pipeline row is that deal's page, not its
+    // company's Overview: the deal leads (its product when it has no title),
+    // the company is the context and the way up, and Back names its list.
+    await expect(page.locator("[data-record-title]")).toHaveText(booking.title);
+    await expect(page.locator("[data-crm-detail] [data-record-company]").first()).toContainText("Synthetic Sponsor");
+    await expect(page.locator("[data-record-back]")).toHaveText("Back to Pipeline");
     await expect(page.locator('[data-record-tabs][role="tablist"]')).toBeVisible();
+    await expect(page.locator('[data-record-tab="overview"]')).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-crm-detail] [data-toggle-company-dnc]")).toHaveCount(0);
+    // The deal and company are separate destinations; both preserve the
+    // original Pipeline return path. A fresh deep link opens the same deal.
+    await page.locator('[data-crm-detail] [data-record-company]').first().click();
+    await expect(page).toHaveURL(/\/sponsors\/companies\/org-1$/);
+    await expect(page.locator('[data-record-title]')).toHaveText(organization.displayName);
+    await expect(page.locator('[data-record-back]')).toHaveText('Back to Pipeline');
+    await page.locator('[data-record-back]').click();
+    await expect(page.locator('[data-crm-bookings]')).toContainText(booking.title);
+    await page.goto(`/sponsors/deals/${booking.id}`);
+    await expect(page.locator('[data-record-title]')).toHaveText(booking.title);
+    await expect(page.locator('[data-record-panel="overview"]')).toContainText('Deal details');
+    await page.screenshot({ path: '.tmp/sponsor-deal-overview-desktop.png' });
+    await page.setViewportSize({ width: 390, height: 844 });
+    const closeSidebar = page.locator("#sidebar-close-button");
+    if (await closeSidebar.isVisible()) await closeSidebar.click();
+    await expect(page.locator('[data-record-title]')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: '.tmp/sponsor-deal-overview-mobile.png', fullPage: true });
+    await page.setViewportSize({ width: 1280, height: 720 });
     // Finance evidence loads only when its tab opens; the communication
     // history stays lazy: nothing reads it until the archive disclosure
     // does, one bounded 50-page at a time.

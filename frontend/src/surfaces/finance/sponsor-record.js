@@ -4,9 +4,11 @@ import {
   createActivityLoader,
   wireActivityPanel,
 } from "./sponsor-activity.js";
+import { createRecordArchive } from "./sponsor-record-archive.js";
 import {
   RECORD_TABS,
-  archiveDisclosureMarkup,
+  dealHeaderMarkup,
+  dealOverviewMarkup,
   dealsListMarkup,
   emptyMarkup,
   errorMarkup,
@@ -31,6 +33,12 @@ import {
  * merge, no full bodies). Finance renders through the injected canonical
  * loader on first tab open per selected deal.
  *
+ * Two shapes, decided by how the record is opened. Without a deal it is the
+ * company record. With a dealId (/sponsors/deals/:id, a Pipeline row, an
+ * alert) it is that exact deal: the deal is the header identity and the
+ * Overview, Activity and the archived drafts are the deal's, while the
+ * company stays one click away as context.
+ *
  * Data shapes consumed (defensive: every field optional):
  *   GET /directory/companies/:id (D projection: direct lookup + summary/notes,
  *     no finance/mail/deal bodies)
@@ -43,99 +51,19 @@ import {
  *       lastContactedAt, active, version, updatedAt } (flat A fields, never a
  *       channels object)
  *   GET /deals?organizationId=&limit=&cursor= -> { items, nextCursor }
+ *   GET /deals/:id -> the decorated deal { id, organizationId, title,
+ *     status, productKind, amountEur, openTasks[], finance, contract, ... }
+ *   GET /pipeline?view=all&organizationId=&limit=100 -> { items } whose rows
+ *     carry the stage and nextTask shown on the Pipeline row
  *
  * E (directory/navigation owner) provides: mount root
  * `[data-crm-record]`, `closeRecord` (canonical Back restoring list
  * filters/page/scroll + focus), `loadFinance(deal, panel)`, and optional
- * `openContactEditor`, `openTaskPanel`, `openCompanyRecord`, `onEditCompany`,
+ * `openContactEditor`, `openTaskPanel`, `openCompanyRecord`,
+ * `openLinkedRecord(kind, id)` (reopens the record on another deal or on the
+ * company while keeping the list origin for Back), `onEditCompany`,
  * `onAddDeal`. F owns this render/controller implementation.
  */
-
-
-
-
-
-
-/**
- * Lazy read-only communication archive for the selected deal
- * (CRM-PRESERVE-ARCHIVE). B's removal brief keeps existing sponsor records,
- * drafts and delivery history readable; D's unified activity does not include
- * the old SPONSOR_SEND_ATTEMPT/draft records, so the record exposes them in
- * a collapsed disclosure that loads once, on first open, through the
- * injected `loadArchive(dealId)` reader (E wires it to B's preserved read
- * paths/projection after the rebase). No draft/approve/cancel/reconcile
- * actions and no composer exist anywhere in this module.
- */
-
-/**
- * Bounded archive pager. One explicit page per call — no silent multi-page
- * fan-out, no fake totals (`total` stays null unless the server provides
- * one), no dedupe (distinct draft versions are preserved even when they
- * share a communication id). Failed continuations keep the visible rows;
- * `retry()` resumes from the failed page.
- */
-export function createArchiveLoader({ loadArchive, dealId, limit = 50 }) {
-  if (typeof loadArchive !== "function") throw new Error("createArchiveLoader requires loadArchive (E-wired B read path)");
-  const state = { status: "idle", items: [], nextCursor: null, total: null, error: "" };
-  async function open() {
-    if (state.status === "loading" || state.status === "loading-more" || state.status === "ready") return state;
-    state.status = "loading";
-    state.error = "";
-    state.items = [];
-    state.nextCursor = null;
-    try {
-      const result = await loadArchive(dealId, { limit });
-      state.items = result.items || [];
-      state.nextCursor = result.nextCursor ?? null;
-      state.total = typeof result.total === "number" ? result.total : null;
-      state.status = "ready";
-    } catch (error) {
-      state.status = "error";
-      state.error = error?.message || "Could not load the archive";
-    }
-    return state;
-  }
-  async function loadMore() {
-    if (!state.nextCursor || state.status === "loading" || state.status === "loading-more") return state;
-    const cursor = state.nextCursor;
-    state.status = "loading-more";
-    state.error = "";
-    try {
-      const result = await loadArchive(dealId, { cursor, limit });
-      state.items = [...state.items, ...(result.items || [])];
-      state.nextCursor = result.nextCursor ?? null;
-      if (typeof result.total === "number") state.total = result.total;
-      state.status = "ready";
-    } catch (error) {
-      state.status = "error";
-      state.error = error?.message || "Could not load older messages";
-    }
-    return state;
-  }
-  async function retry() {
-    // Resume the failed page: a set cursor always continues the
-    // continuation, even when the visible row count is zero (an empty first
-    // page with a cursor is valid after recordType projection). Never reset
-    // an in-flight request: only idle/error states may start a new fetch.
-    if (state.nextCursor) return loadMore();
-    if (state.status !== "idle" && state.status !== "error") return state;
-    return open();
-  }
-  return { state, open, loadMore, retry };
-}
-
-
-
-
-/**
- * Next-action rendering driven by D canonical rows: the displayed due
- * moment is ALWAYS the effective date; the original date appears only as
- * distinct optional context, so a waiting/follow-up/snoozed task never
- * presents its old original date as the next action due.
- */
-
-
-
 
 /**
  * Company/deal record controller. Renders into
@@ -161,6 +89,8 @@ export function createSponsorRecord(context) {
   const current = (mine) =>
     mine === undefined ||
     (mine === token && record && (!record.isCurrent || record.isCurrent() !== false));
+  // The selected deal's read-only archive disclosure on the Activity tab.
+  const archive = createRecordArchive({ context, getRecord: () => record, current, generation: () => token });
 
   function closeWith(next) {
     if (typeof next === "function") closer = next;
@@ -210,13 +140,36 @@ export function createSponsorRecord(context) {
     };
   }
 
+  function headerMarkup() {
+    const { returnLabel } = headerOptions();
+    // A deal-first record leads with its deal. When that deal could not be
+    // resolved, the company header still gives the page an identity and Back.
+    return record.dealMode && record.selectedDeal
+      ? dealHeaderMarkup({
+        deal: record.selectedDeal, company: record.company, row: record.row, returnLabel,
+      }, context)
+      : recordHeaderMarkup(record.company, headerOptions(), context);
+  }
+
   function paintHeader() {
-    const host = root();
-    if (!host || !record) return;
-    const header = host.querySelector("[data-record-header]");
-    if (header) {
-      header.innerHTML = recordHeaderMarkup(record.company, headerOptions(), context);
-    }
+    const header = root()?.querySelector("[data-record-header]");
+    if (!header || !record) return;
+    // A deal's Pipeline facts arrive after its shell opened. Rebuilding the
+    // header then must not drop the focus its title took.
+    const hadFocus = typeof header.contains === "function" && header.contains(globalThis.document?.activeElement);
+    header.innerHTML = headerMarkup();
+    if (hadFocus) header.querySelector("[data-record-title]")?.focus?.({ preventScroll: true });
+  }
+
+  function shellMarkup(active) {
+    return html`<div data-record-header>${headerMarkup()}</div>
+      ${recordTabsMarkup(active, context, { label: record.dealMode ? "Deal record sections" : "Company record sections" })}
+      ${RECORD_TABS.map(
+        ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"
+          data-record-panel="${id}"${id === active ? "" : " hidden"}></section>`,
+      ).join("")}
+      ${context.onDeleteDeal ? deleteDealDialogMarkup() : ""}
+      ${!record.dealMode && context.onDeleteCompany ? deleteCompanyDialogMarkup() : ""}`;
   }
 
   async function openCompany(companyId, { dealId = null, returnLabel = "Back", isCurrent = null } = {}) {
@@ -225,36 +178,52 @@ export function createSponsorRecord(context) {
     if (!host) throw new Error("createSponsorRecord: missing [data-crm-record] mount (E integration)");
     record = {
       companyId, company: null, deals: [], selectedDealId: dealId,
+      // A record opened on one deal is that deal's page; see the module note.
+      dealMode: Boolean(dealId),
       isCurrent: typeof isCurrent === "function" ? isCurrent : null,
       selectedDeal: null, activeTab: "overview", returnLabel,
+      row: null, factsLoaded: false, factsTried: false, selectionError: null,
       loaded: new Set(), cursors: {}, people: [], dealsLoaded: false,
       preview: { items: [], relatedWork: [] },
     };
-    host.innerHTML = loadingMarkup("Loading company", context);
+    host.innerHTML = loadingMarkup(record.dealMode ? "Loading deal" : "Loading company", context);
+    const settle = (read) => Promise.resolve().then(read).then((value) => ({ value }), (error) => ({ error }));
     // The company summary is D's cheap projection (GET
     // /directory/companies/:id): direct lookup + notes, no finance/mail/deal
     // bodies. No snapshot fallback and no legacy single-record enrichment —
     // a missing D route is an honest error, never a silent downgrade.
-    let company;
-    try {
-      company = await api(`/directory/companies/${encodeURIComponent(companyId)}`);
-    } catch (error) {
-      if (!current(mine)) return record;
-      host.innerHTML = error?.status === 404
+    // An exact deal is read by its ID beside it, so the deal page never
+    // depends on which page of the company's deals happens to be loaded.
+    const [companyResult, dealResult] = await Promise.all([
+      settle(() => api(`/directory/companies/${encodeURIComponent(companyId)}`)),
+      dealId ? settle(() => api(`/deals/${encodeURIComponent(dealId)}`)) : null,
+    ]);
+    if (!current(mine)) return record;
+    if (companyResult.error) {
+      host.innerHTML = companyResult.error?.status === 404
         ? emptyMarkup("Company not found", "It may have been archived or removed.", context)
-        : errorMarkup(error?.message, context);
+        : errorMarkup(companyResult.error?.message, context);
       return record;
     }
+    record.company = companyResult.value || {};
+    const deal = dealResult?.value || null;
+    if (dealResult?.error) {
+      record.selectionError = dealResult.error?.status === 404
+        ? `Deal ${dealId} was not found.`
+        : `Deal ${dealId} could not be loaded: ${dealResult.error?.message || "unknown error"}.`;
+    } else if (deal && deal.organizationId !== companyId) {
+      record.selectionError = `Deal ${dealId} does not belong to this company.`;
+    } else if (deal) {
+      record.selectedDeal = deal;
+      // Seeded so the header's Edit/Delete and selection resolve without the
+      // Deals tab; the tab's own page replaces it when it loads.
+      record.deals = [deal];
+    }
+    // The deal's row facts come before its header renders (best effort), so
+    // the stage and next action are the Pipeline's from the first paint.
+    if (record.dealMode && record.selectedDeal) await loadDealFacts(mine);
     if (!current(mine)) return record;
-    record.company = company || {};
-    host.innerHTML = html`<div data-record-header>${recordHeaderMarkup(record.company, headerOptions(), context)}</div>
-      ${recordTabsMarkup("overview", context)}
-      ${RECORD_TABS.map(
-        ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"
-          data-record-panel="${id}"${id === "overview" ? "" : " hidden"}></section>`,
-      ).join("")}
-      ${context.onDeleteDeal ? deleteDealDialogMarkup() : ""}
-      ${context.onDeleteCompany ? deleteCompanyDialogMarkup() : ""}`;
+    host.innerHTML = shellMarkup(record.activeTab);
     host.querySelector("[data-record-title]")?.focus?.();
     await loadOverview(mine);
     return record;
@@ -264,6 +233,61 @@ export function createSponsorRecord(context) {
     if (!current(mine)) return;
     const target = panel("overview");
     if (!target || !record) return;
+    return record.dealMode ? loadDealOverview(mine, target) : loadCompanyOverview(mine, target);
+  }
+
+  /**
+   * The deal's Pipeline row: the stage and the next action shown on the row
+   * the operator clicked, from the same read the list uses. Best effort: read
+   * once per record before the page renders, so the header never flips; when
+   * the read fails the page shows the deal from its own record, and Retry
+   * (which clears factsTried) reads it again.
+   */
+  async function loadDealFacts(mine) {
+    if (!record || record.factsLoaded || record.factsTried) return;
+    record.factsTried = true;
+    try {
+      const query = new URLSearchParams({ view: "all", organizationId: record.companyId, limit: "100" });
+      const result = await api(`/pipeline?${query}`);
+      if (!current(mine) || !record) return;
+      record.row = (result.items || []).find((item) => item.id === record.selectedDealId) || null;
+      record.factsLoaded = true;
+    } catch {
+      // The deal record's own status and open Tasks stand in.
+    }
+  }
+
+  async function loadDealOverview(mine, target) {
+    if (!record.selectedDeal) {
+      target.innerHTML = errorMarkup(record.selectionError || "Deal could not be loaded.", context);
+      return;
+    }
+    target.innerHTML = loadingMarkup("Loading deal overview", context);
+    const dealId = record.selectedDeal.id;
+    // The deal's own timeline, notes and open Tasks: a company timeline
+    // never counts a deal's Tasks, which is why a deal page cannot read one.
+    const loader = createActivityLoader({ api, targetType: "deal", targetId: dealId, limit: 3 });
+    await Promise.all([loader.load(), loadDealFacts(mine)]);
+    if (!current(mine) || !record || record.selectedDealId !== dealId) return;
+    paintHeader();
+    if (loader.state.status === "error") {
+      // Unknown, not empty: the deal's facts stay, nothing claims what the
+      // unloaded activity would have shown.
+      target.innerHTML = dealOverviewMarkup({
+        deal: record.selectedDeal, company: record.company, row: record.row,
+        activityError: loader.state.error,
+      }, context);
+      return;
+    }
+    record.preview = { items: loader.state.items, relatedWork: loader.state.relatedWork };
+    target.innerHTML = dealOverviewMarkup({
+      deal: record.selectedDeal, company: record.company, row: record.row,
+      recent: loader.state.items.slice(0, 3), relatedWork: loader.state.relatedWork,
+    }, context);
+    record.loaded.add("overview");
+  }
+
+  async function loadCompanyOverview(mine, target) {
     target.innerHTML = loadingMarkup("Loading overview", context);
     const loader = createActivityLoader({
       api, targetType: "organization", targetId: record.companyId, limit: 3,
@@ -320,17 +344,22 @@ export function createSponsorRecord(context) {
     // One loader + one wiring per record: rapid Activity clicks reuse them
     // instead of duplicating fetches and listeners.
     if (!record.activityLoader) {
-      record.activityLoader = createActivityLoader({ api, targetType: "organization", targetId: record.companyId });
+      // A deal-first record reads its deal's own timeline and notes; the
+      // company record reads the company's.
+      const targetType = record.dealMode ? "deal" : "organization";
+      record.activityLoader = createActivityLoader({
+        api, targetType, targetId: targetType === "deal" ? record.selectedDealId : record.companyId,
+      });
       const withArchive = typeof context.loadArchive === "function";
-      target.innerHTML = activityPanelMarkup({ targetType: "organization" })
+      target.innerHTML = activityPanelMarkup({ targetType })
         + (withArchive ? html`<div data-record-archive-host></div>` : "");
       record.activityWired = wireActivityPanel(target, record.activityLoader, {
         ...context,
         openTaskPanel: typeof context.openTaskPanel === "function" ? context.openTaskPanel : undefined,
       });
       if (withArchive) {
-        paintArchive(target, null);
-        wireArchive(target);
+        archive.paintArchive(target, null);
+        archive.wireArchive(target);
       }
     }
     // Single-flight: a second click while the first page is in flight is a
@@ -345,108 +374,6 @@ export function createSponsorRecord(context) {
     record.activityWired.paint();
     if (record.activityLoader.state.status === "ready") record.loaded.add("activity");
   }
-
-  function archiveLoaderFor() {
-    if (typeof context.loadArchive !== "function" || !record?.selectedDeal) return null;
-    const key = `archive:${record.selectedDeal.id}`;
-    if (!record.archiveLoaders) record.archiveLoaders = new Map();
-    if (!record.archiveLoaders.has(key)) {
-      record.archiveLoaders.set(key, createArchiveLoader({ loadArchive: context.loadArchive, dealId: record.selectedDeal.id }));
-    }
-    return record.archiveLoaders.get(key);
-  }
-
-  function paintArchive(target, loader) {
-    const host = target.querySelector("[data-record-archive-host]");
-    if (!host) return;
-    const active = loader || archiveLoaderFor();
-    if (!record?.selectedDeal) {
-      host.innerHTML = html`<details data-record-archive>
-        <summary>Archived drafts and delivery history</summary>
-        <div class="honest-state">
-          <strong>No deal selected</strong>
-          <p>Select a deal to see its archived drafts and delivery history.</p>
-        </div>
-      </details>`;
-      return;
-    }
-    record.archiveLoader = active;
-    host.innerHTML = archiveDisclosureMarkup(active?.state || { status: "idle" }, context);
-  }
-
-  function wireArchive(target) {
-    const host = target.querySelector("[data-record-archive-host]");
-    if (!host || host.dataset.wiredArchive) return;
-    host.dataset.wiredArchive = "true";
-    // The native details toggle event does NOT bubble (verified by probe:
-    // bubble 0, capture 1), so the host listener must use the capture phase.
-    // Listeners live on the persistent host: paintArchive replaces the
-    // disclosure node on every state change, so node-level listeners
-    // would be lost after the first render.
-    const fail = typeof context.safe === "function" ? context.safe : async (action) => action();
-    // Current generation + selected-deal identity are captured before every
-    // await; a late response paints only when the same deal is still
-    // selected in the same record generation — never under deal B.
-    const guard = (mine, dealId, loader) =>
-      current(mine) && record.selectedDeal?.id === dealId && archiveLoaderFor() === loader;
-    host.addEventListener("toggle", async (event) => {
-      const disclosure = event.target.closest("[data-record-archive]");
-      if (!disclosure || !disclosure.open) return;
-      const loader = archiveLoaderFor();
-      if (!loader || loader.state.status !== "idle") return;
-      const mine = token;
-      const dealId = record.selectedDeal.id;
-      // Paint the loading state immediately; the guarded paint after the
-      // await renders the result only for the current deal+generation.
-      const pending = loader.open();
-      paintArchive(target, loader);
-      await fail(async () => {
-        await pending;
-        if (!guard(mine, dealId, loader)) return;
-        paintArchive(target, loader);
-      }, "Could not load the archive");
-    }, true);
-    host.addEventListener("click", async (event) => {
-      const more = event.target.closest("[data-archive-more]");
-      if (more) {
-        const loader = archiveLoaderFor();
-        if (!loader) return;
-      const mine = token;
-      const dealId = record.selectedDeal.id;
-      await fail(async () => {
-        const pending = loader.loadMore();
-        paintArchive(target, loader);
-        await pending;
-        if (!guard(mine, dealId, loader)) return;
-        paintArchive(target, loader);
-      }, "Could not load older messages");
-      return;
-      }
-      const retry = event.target.closest("[data-archive-retry]");
-      if (retry) {
-        const loader = archiveLoaderFor();
-        if (!loader) return;
-      const mine = token;
-      const dealId = record.selectedDeal.id;
-      await fail(async () => {
-        const pending = loader.retry();
-        paintArchive(target, loader);
-        await pending;
-        if (!guard(mine, dealId, loader)) return;
-        paintArchive(target, loader);
-      }, "Could not load the archive");
-      return;
-      }
-      const review = event.target.closest("[data-archive-review]");
-      if (!review || typeof context.onReviewDraft !== "function") return;
-      const dealId = record?.selectedDeal?.id;
-      await fail(async () => {
-        if (record?.selectedDeal?.id !== dealId) return;
-        return context.onReviewDraft(review.dataset.archiveReview, Number(review.dataset.archiveVersion));
-      }, "Could not open the exact preview");
-    });
-  }
-
   async function loadDeals(mine) {
     const target = panel("deals");
     if (!target || !record) return;
@@ -469,8 +396,8 @@ export function createSponsorRecord(context) {
       if (record.loaded.has("activity") && typeof context.loadArchive === "function") {
         const activityPanel = panel("activity");
         if (activityPanel) {
-          paintArchive(activityPanel, null);
-          wireArchive(activityPanel);
+          archive.paintArchive(activityPanel, null);
+          archive.wireArchive(activityPanel);
         }
       }
     } catch (error) {
@@ -496,6 +423,8 @@ export function createSponsorRecord(context) {
         record.selectionError = null;
         return;
       }
+      // An exact deal link already resolved its deal by ID when it opened.
+      if (record.selectedDeal?.id === record.selectedDealId) return;
       try {
         const deal = await api(`/deals/${encodeURIComponent(record.selectedDealId)}`);
         if (!current(mine)) return;
@@ -521,10 +450,24 @@ export function createSponsorRecord(context) {
     record.selectedDeal = fallback;
   }
 
+  /**
+   * The company's deals. In a deal-first record the list is the way between
+   * them, so the open deal reads "This deal" and the others "Open deal".
+   */
+  function dealsMarkup() {
+    return dealsListMarkup({
+      deals: record.deals,
+      selectedDealId: record.selectedDealId,
+      canAdd: typeof context.onAddDeal === "function",
+      ...(record.dealMode
+        ? { open: true, heading: `Deals from ${record.company?.displayName || "this company"}` }
+        : {}),
+    }, context);
+  }
+
   function paintDeals(target) {
     if (!record) return;
-    const canAdd = typeof context.onAddDeal === "function";
-    target.innerHTML = dealsListMarkup({ deals: record.deals, selectedDealId: record.selectedDealId, canAdd }, context)
+    target.innerHTML = dealsMarkup()
       + (record.selectionError ? errorMarkup(record.selectionError, context) : "")
       + (!record.dealsLoaded && record.cursors.deals
         ? html`<button type="button" data-deals-more>Show more deals</button>`
@@ -613,7 +556,7 @@ export function createSponsorRecord(context) {
     paintHeader();
     const dealsPanel = panel("deals");
     if (dealsPanel && record.loaded.has("deals")) {
-      dealsPanel.innerHTML = dealsListMarkup({ deals: record.deals, selectedDealId: record.selectedDealId }, context);
+      dealsPanel.innerHTML = dealsMarkup();
     }
     if (record.activeTab === "finance") {
       const mine = token;
@@ -622,8 +565,8 @@ export function createSponsorRecord(context) {
     if (record.loaded.has("activity") && typeof context.loadArchive === "function") {
       const activityPanel = panel("activity");
       if (activityPanel) {
-        paintArchive(activityPanel, null);
-        wireArchive(activityPanel);
+        archive.paintArchive(activityPanel, null);
+        archive.wireArchive(activityPanel);
       }
     }
   }
@@ -641,6 +584,15 @@ export function createSponsorRecord(context) {
         await fail(() => switchTab(tab.dataset.recordTab), "Could not open section");
         return;
       }
+      // The deal page's way up to its company record. E opens it in place
+      // and keeps the list origin, so Back there still returns to the list.
+      const companyLink = event.target.closest("[data-record-company]");
+      if (companyLink) {
+        if (!record?.companyId) return;
+        if (typeof context.openLinkedRecord === "function") context.openLinkedRecord("company", record.companyId);
+        else if (typeof context.openCompanyRecord === "function") context.openCompanyRecord(record.companyId);
+        return;
+      }
       if (event.target.closest("[data-goto-people]")) {
         await fail(() => switchTab("people"), "Could not open section");
         return;
@@ -652,6 +604,8 @@ export function createSponsorRecord(context) {
         fail(async () => {
           if (!record) return;
           record.loaded.delete(record.activeTab);
+          // A retry refetches: the section, its finance and a failed row read.
+          record.factsTried = false;
           for (const key of [...record.loaded]) {
             if (key.startsWith("finance:")) record.loaded.delete(key);
           }
@@ -675,7 +629,17 @@ export function createSponsorRecord(context) {
       }
       const pick = event.target.closest("[data-select-deal]");
       if (pick) {
-        selectDeal(pick.dataset.selectDeal);
+        const dealId = pick.dataset.selectDeal;
+        if (record?.dealMode) {
+          // Here the list moves between the company's deals: E reopens the
+          // record on the chosen deal and records its URL, keeping the list
+          // origin for Back.
+          if (dealId === record.selectedDealId) return;
+          if (typeof context.openLinkedRecord === "function") context.openLinkedRecord("deal", dealId);
+          else await openCompany(record.companyId, { dealId, returnLabel: record.returnLabel, isCurrent: record.isCurrent });
+          return;
+        }
+        selectDeal(dealId);
         return;
       }
       const downloadAttachment = event.target.closest("[data-download-attachment]");
@@ -859,10 +823,19 @@ export function createSponsorRecord(context) {
             method: "POST",
             body: JSON.stringify({ doNotContact: !isDnc, ...(note ? { note } : {}) }),
           });
+          if (!record) return;
           if (typeof context.onRecordChanged === "function") {
             context.onRecordChanged({ ...company, doNotContact: !isDnc });
           }
-          await openRecord(company.id, { activeTab: currentTab });
+          // The flag is persisted; reopen in place so the header shows the
+          // company as stored now, back on the section that was open.
+          const { activeTab } = record;
+          await openCompany(record.companyId, {
+            dealId: record.dealMode ? record.selectedDealId : null,
+            returnLabel: record.returnLabel,
+            isCurrent: record.isCurrent,
+          });
+          if (activeTab !== "overview") await switchTab(activeTab);
         }, "Could not update do-not-contact status");
         return;
       }
