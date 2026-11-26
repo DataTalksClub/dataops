@@ -254,3 +254,23 @@ test("record header renders Edit company when onEditCompany is provided and pass
   assert.equal(editedCompanies[0].notes, "Existing notes");
 });
 
+test("reopenDealDetail uses getReturnLabel when provided for clear return path", async () => {
+  const { surface, detail } = migrationHarness({
+    organization,
+    context: {
+      getReturnLabel: () => "Back to Pipeline",
+    },
+    routes: {
+      "GET /directory/companies/c1": organization,
+      "GET /deals?organizationId=c1&limit=50": {
+        items: [{ id: "d1", organizationId: "c1", status: "open", productKind: "one-off" }],
+        nextCursor: null,
+      },
+    },
+  });
+  await detail.reopenDealDetail({ id: "d1", organizationId: "c1" });
+  const rendered = surface.querySelector("[data-crm-record]");
+  assert.match(rendered.innerHTML, /data-record-back>Back to Pipeline</);
+  assert.match(rendered.innerHTML, /id="record-tab-deals"[^>]*aria-selected="true"/);
+});
+

@@ -223,10 +223,11 @@ export function createSponsorRecord(context) {
     const mine = ++token;
     const host = root();
     if (!host) throw new Error("createSponsorRecord: missing [data-crm-record] mount (E integration)");
+    const initialTab = dealId ? "deals" : "overview";
     record = {
       companyId, company: null, deals: [], selectedDealId: dealId,
       isCurrent: typeof isCurrent === "function" ? isCurrent : null,
-      selectedDeal: null, activeTab: "overview", returnLabel,
+      selectedDeal: null, activeTab: initialTab, returnLabel,
       loaded: new Set(), cursors: {}, people: [], dealsLoaded: false,
       preview: { items: [], relatedWork: [] },
     };
@@ -248,15 +249,15 @@ export function createSponsorRecord(context) {
     if (!current(mine)) return record;
     record.company = company || {};
     host.innerHTML = html`<div data-record-header>${recordHeaderMarkup(record.company, headerOptions(), context)}</div>
-      ${recordTabsMarkup("overview", context)}
+      ${recordTabsMarkup(initialTab, context)}
       ${RECORD_TABS.map(
         ([id]) => html`<section role="tabpanel" id="record-panel-${id}" aria-labelledby="record-tab-${id}"
-          data-record-panel="${id}"${id === "overview" ? "" : " hidden"}></section>`,
+          data-record-panel="${id}"${id === initialTab ? "" : " hidden"}></section>`,
       ).join("")}
       ${context.onDeleteDeal ? deleteDealDialogMarkup() : ""}
       ${context.onDeleteCompany ? deleteCompanyDialogMarkup() : ""}`;
     host.querySelector("[data-record-title]")?.focus?.();
-    await loadOverview(mine);
+    await (dealId ? loadDeals(mine) : loadOverview(mine));
     return record;
   }
 

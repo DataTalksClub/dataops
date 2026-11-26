@@ -50,6 +50,7 @@ export function createSponsorCompanyDetail({
   onReviewDraft,
   onEditCompany,
   onAddDeal,
+  getReturnLabel,
 }) {
   const record = createSponsorRecord({
     api,
@@ -198,9 +199,10 @@ export function createSponsorCompanyDetail({
     const dealId = typeof highlightedDeal === "string"
       ? highlightedDeal
       : highlightedDeal?.id || null;
+    const returnLabel = typeof getReturnLabel === "function" ? getReturnLabel() : "CRM";
     await record.openCompany(organization.id, {
       dealId,
-      returnLabel: "CRM",
+      returnLabel,
       isCurrent,
     });
     if (sponsorCommunications) sponsorCommunications.selectedBookingId = dealId;

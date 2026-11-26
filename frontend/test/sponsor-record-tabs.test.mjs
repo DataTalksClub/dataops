@@ -1128,3 +1128,31 @@ test("archive and restore actions render only when wired", async () => {
   assert.doesNotMatch(plain.host.innerHTML, /data-archive-company/);
   assert.doesNotMatch(plain.host.innerHTML, /data-restore-company/);
 });
+
+test("opening a deal activates the Deals tab with deal details and keeps Overview reachable", async () => {
+  const { host, calls, record } = recordHarness({
+    routes: {
+      "GET /directory/companies/c1": company,
+      "GET /activity/organization/c1?limit=3": preview,
+      "GET /deals?organizationId=c1&limit=50": {
+        items: [
+          { id: "d1", organizationId: "c1", status: "agreed", productKind: "package", title: "Q4 Newsletter Bundle", amountEur: 2500 },
+        ],
+        nextCursor: null,
+      },
+    },
+  });
+  const panels = seedPanels(host);
+  await record.openCompany("c1", { dealId: "d1", returnLabel: "Back to Pipeline" });
+  assert.match(host.innerHTML, /id="record-tab-deals"[^>]*aria-selected="true"/);
+  assert.match(host.innerHTML, /id="record-tab-overview"[^>]*aria-selected="false"/);
+  assert.match(host.innerHTML, /data-record-back>Back to Pipeline</);
+  assert.match(host.innerHTML, /data-record-panel="deals"><\/section>/);
+  assert.match(host.innerHTML, /data-record-panel="overview" hidden><\/section>/);
+  assert.match(panels.deals.innerHTML, /Q4 Newsletter Bundle/);
+  assert.match(panels.deals.innerHTML, /€2,500/);
+  assert.equal(calls.some(({ path }) => path === "/activity/organization/c1?limit=3"), false, "no eager overview load when opening a deal");
+  await record.switchTab("overview");
+  assert.equal(panels.overview.hidden, false);
+  assert.match(panels.overview.innerHTML, /Next action/);
+});

@@ -373,17 +373,20 @@ export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, conte
     ${deals
       .map((deal) => {
         const task = deal.openTasks?.[0];
+        const amount = deal.amountEur != null
+          ? new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(deal.amountEur)
+          : "";
         const next = task
           ? `${task.description} · ${formatBerlinDate(task.date)}`
           : deal.status === "lost" ? "" : "No open task";
         const current = selectedDealId === deal.id;
         return html`<li><article class="crm-card crm-company-deal"${current ? ' aria-current="true"' : ""}>
           <div class="crm-deal-card-header">
-            <strong>${escape(({ "one-off": "One-off", package: "Package", course: "Course" }[deal.productKind]) || humanize(deal.productKind || "deal", context))}</strong>
+            <strong>${escape(deal.title || ({ "one-off": "One-off", package: "Package", course: "Course" }[deal.productKind]) || humanize(deal.productKind || "deal", context))}</strong>
             <span class="status-label" data-status="${escape(deal.status)}">${escape(humanize(deal.status, context))}</span>
             <span class="status-label" data-status="contract" data-contract-chip>${deal.contract ? escape("contract: " + deal.contract.status) : ""}</span>
           </div>
-          <p class="crm-deal-meta">${[next].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>
+          <p class="crm-deal-meta">${[deal.title && deal.productKind ? ({ "one-off": "One-off", package: "Package", course: "Course" }[deal.productKind]) || humanize(deal.productKind, context) : "", amount, next].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>
           <div class="row-actions">
             <button type="button" data-select-deal="${escape(deal.id)}"${current ? " disabled" : ""}>${current ? "Selected" : "Select deal"}</button>
             ${canEditDeal ? html`<button type="button" data-edit-deal="${escape(deal.id)}">Edit deal</button>` : ""}
