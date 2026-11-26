@@ -141,9 +141,9 @@ export function guestEventMetadataRow({ el, doc, tDef, draftContent, isSpeakerDo
   const guestZone = guestEventTimeZone(draftContent.guestTimezone || doc.eventMetadata?.guestTimezone);
   if (guestSchedule && !draftContent.guestTimezone) draftContent.guestTimezone = guestZone;
   if (doc.eventMetadata) {
-    const eventText = guestSchedule
+    const eventText = doc.eventMetadata.startIso
       ? dualZoneEventTime(doc.eventMetadata.startIso, doc.eventMetadata.endIso, guestZone, doc.eventMetadata.durationMinutes)
-      : doc.eventMetadata.label;
+      : doc.eventMetadata.date ? `${doc.eventMetadata.date} · Time not set` : "";
     if (eventText) {
       const eventLabel = el("span", "sponsor-doc-event-time", eventText);
       eventLabel.dataset.sponsorDocEvent = "";
