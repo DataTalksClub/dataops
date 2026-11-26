@@ -800,7 +800,6 @@ export function createSponsorDirectoryPages({
     surface.querySelector(".crm-newsletters").hidden = true;
     surface.querySelector(".crm-money").hidden = true;
     surface.querySelector("[data-crm-pipeline]").hidden = true;
-    surface.querySelector(".crm-funnel-scope").hidden = true;
     surface.querySelector(".crm-funnel-controls").hidden = true;
     surface.querySelector(".crm-filter-disclosure").hidden = true;
     surface.classList.toggle("dk-fill", true);
