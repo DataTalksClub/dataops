@@ -4,7 +4,9 @@ import {
   activityItemMarkup,
   formatBerlinDate,
   formatBerlinDateTime,
+  relatedWorkMarkup,
 } from "./sponsor-activity.js";
+import { SPONSOR_PIPELINE_STAGES } from "./sponsor-pipeline.js";
 
 export const RECORD_TABS = Object.freeze([
   ["overview", "Overview"],
@@ -14,9 +16,72 @@ export const RECORD_TABS = Object.freeze([
   ["finance", "Finance"],
 ]);
 
+const PRODUCT_LABELS = Object.freeze({ "one-off": "One-off", package: "Package", course: "Course" });
+
 function humanize(value, context) {
   if (typeof context?.humanizeOptionLabel === "function") return context.humanizeOptionLabel(value);
   return String(value ?? "").replaceAll("-", " ").replaceAll("_", " ");
+}
+
+/** A deal's display name: its title, else the product it sells. */
+export function dealTitle(deal, context = {}) {
+  if (deal?.title) return String(deal.title);
+  return PRODUCT_LABELS[deal?.productKind] || humanize(deal?.productKind || "deal", context);
+}
+
+/** Stage names come from the one stage list the Pipeline rows read. */
+export function stageLabel(stage, context = {}) {
+  return SPONSOR_PIPELINE_STAGES.find(({ id }) => id === stage)?.label || humanize(stage, context);
+}
+
+export function formatDealAmount(amountEur) {
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(amountEur);
+}
+
+/**
+ * Readable owner through the injected ownerName(id) lookup (the Pipeline's
+ * ownerDirectory.name). Never a raw ID: no assignee reads Unassigned, an
+ * unknown or failing lookup reads Unavailable assignee.
+ */
+function ownerLabel(assigneeId, context) {
+  if (!assigneeId) return "Unassigned";
+  let name = "";
+  try {
+    name = typeof context?.ownerName === "function" ? context.ownerName(assigneeId) : "";
+  } catch {
+    name = "";
+  }
+  return name || "Unavailable assignee";
+}
+
+/**
+ * The action a deal page leads with. `row` is the deal's Pipeline row, so
+ * the text and date are the ones on the row the operator clicked, and a row
+ * without a Task means no open task. Without a row the deal's own first open
+ * Task stands in.
+ */
+export function dealNextAction(row, deal) {
+  const none = { text: "No open task", when: "", taskId: null, assigneeId: null, deferredTask: null };
+  const task = row?.nextTask || null;
+  const review = Boolean(row?.replyReview && (!task || task.deferred));
+  if (review) {
+    return {
+      text: "Review newer inbound (inferred)",
+      when: row.inboundAt ? `Inbound ${formatBerlinDate(row.inboundAt)}` : "",
+      taskId: null,
+      assigneeId: null,
+      deferredTask: task,
+    };
+  }
+  const next = row ? task : (deal?.openTasks?.[0] || null);
+  if (!next) return none;
+  return {
+    text: `${task?.deferred ? "Deferred: " : ""}${next.description || "Open task"}`,
+    when: next.date ? formatBerlinDate(next.date) : "",
+    taskId: next.id || null,
+    assigneeId: next.assigneeId || null,
+    deferredTask: null,
+  };
 }
 
 export function loadingMarkup(label, context = {}) {
@@ -152,6 +217,130 @@ export function deleteDealDialogMarkup() {
   </dialog>`;
 }
 
+/**
+ * Header for a record opened on one exact deal (/sponsors/deals/:id). The
+ * deal is the identity; its company is the context and the way up to the
+ * company record, whose company-level actions do not repeat here.
+ */
+export function dealHeaderMarkup({ deal, company, row = null, returnLabel = "Back" }, context = {}) {
+  const canEditDeal = typeof context?.onEditDeal === "function";
+  const canDeleteDeal = typeof context?.onDeleteDeal === "function";
+  const next = dealNextAction(row, deal);
+  const stage = row?.stage || deal?.status || "";
+  const trail = [next.when, next.assigneeId ? ownerLabel(next.assigneeId, context) : ""]
+    .filter(Boolean)
+    .map((value) => ` · ${escape(value)}`)
+    .join("");
+  const deferredTask = next.deferredTask;
+  return html`<header class="dk-split__head crm-deal-head">
+    <button type="button" class="dk-split__back" data-record-back>${escape(returnLabel)}</button>
+    <div class="booking-detail-title">
+      <p class="crm-deal-kicker">Deal for
+        <button type="button" class="crm-row-link" data-record-company${company?.id ? "" : " disabled"}>${escape(company?.displayName || "Unknown sponsor")}</button>
+      </p>
+      <h2 class="dk-split__title" data-record-title tabindex="-1">${escape(dealTitle(deal, context))}</h2>
+      <p>
+        ${stage ? html`<span class="status-label" data-status="${escape(stage)}">${escape(stageLabel(stage, context))}</span>` : ""}
+        ${deal?.amountEur != null ? html`<span class="status-label crm-deal-value" data-status="value">${escape(formatDealAmount(deal.amountEur))}</span>` : ""}
+        ${deal?.contract ? html`<span class="status-label" data-status="contract" data-contract-chip>${escape("contract: " + deal.contract.status)}</span>` : ""}
+      </p>
+      <p class="crm-record-sub crm-deal-next">
+        <span data-deal-next-action><strong>Next action:</strong> ${escape(next.text)}${trail}</span>
+        ${deferredTask
+          ? html`<span class="crm-deal-secondary">Deferred task: ${escape(deferredTask.description || "Open task")}${
+            deferredTask.date ? html` · ${escape(formatBerlinDate(deferredTask.date))}` : ""
+          }</span>`
+          : ""}
+      </p>
+    </div>
+    <div class="crm-deal-actions">
+      ${next.taskId ? html`<button type="button" data-open-task="${escape(next.taskId)}">Open task</button>` : ""}
+      ${canEditDeal ? html`<button type="button" data-edit-deal="${escape(deal.id)}">Edit deal</button>` : ""}
+      ${canDeleteDeal ? html`<button type="button" data-delete-deal="${escape(deal.id)}">Delete deal</button>` : ""}
+    </div>
+  </header>`;
+}
+
+/** Invoice and payment state in the words the Pipeline and Money tabs use. */
+function invoiceSummary(finance, context = {}) {
+  if (!finance) return "";
+  if (finance.invoiceState !== "issued") return humanize(finance.invoiceState, context);
+  const parts = [
+    finance.invoiceNumber ? `Invoice ${finance.invoiceNumber}` : "Invoice without number",
+    humanize(finance.paymentState, context),
+  ];
+  if (finance.timingState && !["not-applicable", "settled"].includes(finance.timingState)) parts.push(humanize(finance.timingState, context));
+  if (finance.dueOn) parts.push(`due ${formatBerlinDate(finance.dueOn)}`);
+  return parts.join(" · ");
+}
+
+/**
+ * Overview for a record opened on one exact deal: the deal's next action and
+ * facts first, then its contact, open work and activity, and only then the
+ * company as context. An activity failure hides the activity and work
+ * sections instead of claiming they are empty.
+ */
+export function dealOverviewMarkup(
+  { deal, company, row = null, recent, relatedWork = [], activityError = "" },
+  context = {},
+) {
+  const next = dealNextAction(row, deal);
+  const contact = row ? row.primaryContact : null;
+  const facts = [
+    ["Stage", stageLabel(row?.stage || deal?.status, context)],
+    ["Value", deal?.amountEur != null ? formatDealAmount(deal.amountEur) : ""],
+    ["Product", PRODUCT_LABELS[deal?.productKind] || humanize(deal?.productKind, context)],
+    ["Invoice", invoiceSummary(deal?.finance, context)],
+    ["Contract", deal?.contract ? humanize(deal.contract.status, context) : ""],
+    ["Last touch", row ? (row.lastContacted ? formatBerlinDate(row.lastContacted) : "Never") : ""],
+  ].filter(([, value]) => value);
+  const primary = company?.primaryPerson;
+  const person = contact || primary || null;
+  return html`<div class="crm-record-overview crm-deal-overview">
+    <section aria-label="Next action">
+      <h3>Next action</h3>
+      <p><strong>${escape(next.text)}</strong>${next.when ? html` · ${escape(next.when)}` : ""}${
+        next.assigneeId ? html` · ${escape(ownerLabel(next.assigneeId, context))}` : ""
+      }</p>
+      ${next.taskId ? html`<button type="button" data-open-task="${escape(next.taskId)}">Open task</button>` : ""}
+    </section>
+    <section aria-label="Deal details">
+      <h3>Deal details</h3>
+      <dl class="crm-deal-facts">
+        ${facts.map(([term, value]) => html`<div><dt>${escape(term)}</dt><dd>${escape(value)}</dd></div>`).join("")}
+      </dl>
+    </section>
+    <section aria-label="Primary contact">
+      <h3>Primary contact</h3>
+      ${person
+        ? html`<p>${escape(person.name || "Unnamed")}${[person.role, person.email].filter(Boolean).map((value) => html` · ${escape(value)}`).join("")}</p>`
+        : html`<p>No primary contact</p>`}
+    </section>
+    ${activityError
+      ? errorMarkup(activityError, context)
+      : html`${relatedWork.length ? relatedWorkMarkup(relatedWork) : ""}
+        <section aria-label="Recent activity">
+          <h3>Recent activity</h3>
+          ${(recent?.length
+            ? html`<ul class="crm-activity-list">${recent.map((item) => activityItemMarkup(item, context)).join("")}</ul>`
+            : html`<p>No recent activity.</p>`)}
+        </section>`}
+    <section aria-label="Company">
+      <h3>Company</h3>
+      <p>${escape(company?.displayName || "Unknown sponsor")}${company?.domain ? html` · ${escape(company.domain)}` : ""}${
+        company?.relationship ? html` · ${escape(humanize(company.relationship, context))}` : ""
+      }</p>
+      <button type="button" data-record-company${company?.id ? "" : " disabled"}>View company record</button>
+    </section>
+    ${company?.notes
+      ? html`<section aria-label="Company summary">
+          <h3>Company summary</h3>
+          <p>${escape(company.notes)}</p>
+        </section>`
+      : ""}
+  </div>`;
+}
+
 /** Confirm dialog for permanently deleting the company; guard errors show in the alert. */
 export function deleteCompanyDialogMarkup() {
   return html`<dialog class="surface-dialog" data-delete-company-dialog>
@@ -186,8 +375,8 @@ export function deletePersonDialogMarkup() {
   </dialog>`;
 }
 
-export function recordTabsMarkup(active, context = {}) {
-  return html`<div class="dk-tabs" role="tablist" aria-label="Company record sections" data-record-tabs>
+export function recordTabsMarkup(active, context = {}, { label = "Company record sections" } = {}) {
+  return html`<div class="dk-tabs" role="tablist" aria-label="${escape(label)}" data-record-tabs>
     ${RECORD_TABS.map(
       ([id, label]) => html`<button type="button" class="dk-tab" role="tab" id="record-tab-${id}"
         aria-selected="${id === active ? "true" : "false"}" tabindex="${id === active ? "0" : "-1"}"
@@ -224,17 +413,7 @@ export function nextTaskMarkup(nextTask, emptyMessage, context = {}) {
   // Readable owner via the injected ownerName(id) lookup (E's existing
   // ownerDirectory.name in pipeline use). Never a raw ID: a missing lookup
   // reads Unassigned, an unknown ID reads Unavailable assignee.
-  let ownerNote = " · Unassigned";
-  if (nextTask.assigneeId) {
-    let name = "";
-    try {
-      name = typeof context.ownerName === "function" ? context.ownerName(nextTask.assigneeId) : "";
-    } catch {
-      name = "";
-    }
-    ownerNote = name ? ` · ${name}` : " · Unavailable assignee";
-  }
-  const ownerPart = html`<span>${escape(ownerNote)}</span>`;
+  const ownerPart = html`<span>${escape(` · ${ownerLabel(nextTask.assigneeId, context)}`)}</span>`;
   const taskButton = nextTask.taskId
     ? html`<button type="button" data-open-task="${escape(nextTask.taskId)}">Open task</button>`
     : "";
@@ -362,30 +541,45 @@ export function dealAttachmentsMarkup(deal) {
   </section>`;
 }
 
-export function dealsListMarkup({ deals, selectedDealId, canAdd = false }, context = {}) {
+/**
+ * The company's deals. In a company record a card's button selects the deal
+ * whose Finance and archive the tabs show; in a deal-first record
+ * (`open: true`) it opens that deal, so the list is the way between the
+ * company's deals and the open one reads "This deal".
+ */
+export function dealsListMarkup({ deals, selectedDealId, canAdd = false, heading = "", open = false }, context = {}) {
   const canEditDeal = typeof context?.onEditDeal === "function";
   const canDeleteDeal = typeof context?.onDeleteDeal === "function";
   if (!deals?.length) {
-    return emptyMarkup("No deals", "Add a deal for this company.", context)
-      + (canAdd ? html`<button type="button" data-add-deal>Add deal</button>` : "");
+    return html`${heading ? html`<h3 class="crm-deals-heading">${escape(heading)}</h3>` : ""}
+      ${emptyMarkup("No deals", "Add a deal for this company.", context)}
+      ${canAdd ? html`<button type="button" data-add-deal>Add deal</button>` : ""}`;
   }
-  return html`<ul class="crm-directory-list">
+  return html`${heading ? html`<h3 class="crm-deals-heading">${escape(heading)}</h3>` : ""}
+    <ul class="crm-directory-list">
     ${deals
       .map((deal) => {
         const task = deal.openTasks?.[0];
+        const amount = deal.amountEur != null ? formatDealAmount(deal.amountEur) : "";
         const next = task
           ? `${task.description} · ${formatBerlinDate(task.date)}`
           : deal.status === "lost" ? "" : "No open task";
+        // With a title as the card's name the product moves to the meta line.
+        const product = deal.title && deal.productKind
+          ? (PRODUCT_LABELS[deal.productKind] || humanize(deal.productKind, context))
+          : "";
         const current = selectedDealId === deal.id;
         return html`<li><article class="crm-card crm-company-deal"${current ? ' aria-current="true"' : ""}>
           <div class="crm-deal-card-header">
-            <strong>${escape(({ "one-off": "One-off", package: "Package", course: "Course" }[deal.productKind]) || humanize(deal.productKind || "deal", context))}</strong>
+            <strong>${escape(dealTitle(deal, context))}</strong>
             <span class="status-label" data-status="${escape(deal.status)}">${escape(humanize(deal.status, context))}</span>
             <span class="status-label" data-status="contract" data-contract-chip>${deal.contract ? escape("contract: " + deal.contract.status) : ""}</span>
           </div>
-          <p class="crm-deal-meta">${[next].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>
+          <p class="crm-deal-meta">${[product, amount, next].filter(Boolean).map((value) => escape(value)).join(" · ")}</p>
           <div class="row-actions">
-            <button type="button" data-select-deal="${escape(deal.id)}"${current ? " disabled" : ""}>${current ? "Selected" : "Select deal"}</button>
+            <button type="button" data-select-deal="${escape(deal.id)}"${current ? " disabled" : ""}>${
+              current ? (open ? "This deal" : "Selected") : (open ? "Open deal" : "Select deal")
+            }</button>
             ${canEditDeal ? html`<button type="button" data-edit-deal="${escape(deal.id)}">Edit deal</button>` : ""}
             ${canDeleteDeal ? html`<button type="button" data-delete-deal="${escape(deal.id)}">Delete deal</button>` : ""}
           </div>

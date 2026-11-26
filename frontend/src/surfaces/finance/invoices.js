@@ -232,8 +232,9 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     </details>`;
 }
 
-export async function mountInvoiceReview(host, context) {
+export async function mountInvoiceReview(host, context, options = {}) {
   const { request, workApiUrl, escapeHtml } = context;
+  const { initialInvoiceId = "", onInvoicesChanged } = options;
   const e = (value) => escapeHtml(String(value ?? ""));
   const api = (path = "", options = {}) =>
     request(workApiUrl(`/api/bookkeeping/invoices${path}`), {
@@ -271,7 +272,9 @@ export async function mountInvoiceReview(host, context) {
     const results = await Promise.allSettled([api(), api("/readiness")]);
     const [queue, readiness] = results;
     if (queue.status === "fulfilled") {
-      list.innerHTML = invoiceLedgerMarkup(queue.value.items || [], escapeHtml);
+      const items = queue.value.items || [];
+      list.innerHTML = invoiceLedgerMarkup(items, escapeHtml);
+      onInvoicesChanged?.(items);
     } else list.textContent = `Cannot load invoices: ${queue.reason.message}`;
     host.querySelector("[data-invoice-readiness]").innerHTML =
       readiness.status === "fulfilled"
@@ -369,8 +372,14 @@ export async function mountInvoiceReview(host, context) {
       openRow(row);
     }
   });
+  async function openInvoice(id) {
+    if (!id) return;
+    await safe(async () => show(await api(`/${encodeURIComponent(id)}`)));
+  }
   host
     .querySelector("[data-invoice-refresh]")
     .addEventListener("click", () => safe(refresh));
   await refresh();
+  if (initialInvoiceId) await openInvoice(initialInvoiceId);
+  return { openInvoice, refresh };
 }

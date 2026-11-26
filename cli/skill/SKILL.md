@@ -136,9 +136,12 @@ corrected invoice itself must first be issued in Finom's UI (DataOps has no
 Finom API; same manual step as marking an invoice paid there). Record the
 correction with a required `reason` plus corrected `invoiceNumber`, `issuedOn`,
 `dueOn`, `sentOn` (omitted fields stay unchanged; explicit `null` clears the
-optional number/sent date), and pass the corrected PDF with `--file` so it
-supersedes the linked original in one audited step - the original document is
-retained, the history records what changed and why, and the projection's
+optional number/sent date), and/or nominal `amountDue` on an unpaid invoice
+without linked receipts or settlement. Pass a replacement PDF with `--file` to
+supersede the linked original in one audited step, or omit `--file` to correct
+`amountDue` against the already linked verified invoice identity without
+uploading a duplicate - the original document is retained, the history records
+what changed and why (including old/new `amountDue`), and the projection's
 `finance.invoiceCorrection` shows the latest correction. The invoice stays
 `issued`; correction before anything was issued fails.
 
@@ -376,7 +379,12 @@ Task and actual Gmail message ID. Later correspondence stays in that email
 thread through the authorized mailbox integration.
 
 The questionnaire collects bio, photo, profiles and preparation materials after
-first contact, with Berlin and guest-local times. Explicit **Save time choice**
+first contact, with Berlin and guest-local times. Guest photos feed the event
+picture, so ask for one up front at least 800 px on the shorter side (square
+headshot, one face, no text or logos; JPG, PNG or WebP under 10 MB). The form and
+`speakers create/update --photo-url` refuse a DataOps-hosted photo below 800 px;
+a photo linked from elsewhere (LinkedIn thumbnails are 100-200 px) is not measured,
+so check it before using it. Explicit **Save time choice**
 accepts a current proposal or available alternative without completed materials;
 ordinary draft/bio saves do not confirm a time. Calendar acceptance also counts.
 Keep the same event and Zoom link; the standard guest join lead is separate from

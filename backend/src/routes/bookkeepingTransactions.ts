@@ -11,6 +11,7 @@ import {
   listBookkeepingItems,
   listTransactions,
   putBookkeepingTransactionWithItems,
+  transactionSponsorDeal,
   updateBookkeepingTransaction,
   type BookkeepingTransactItem,
 } from "../db/bookkeeping";
@@ -737,7 +738,9 @@ export async function handleBookkeepingTransactionRoutes(
       });
     if (method === "GET" && match[1]) {
       const item = await getBookkeepingItem(client, "bookkeeping", match[1]);
-      return item ? json(200, bookkeepingTransactionView(item)) : json(404, { error: "Not found" });
+      if (!item) return json(404, { error: "Not found" });
+      const sponsorDealId = item.sponsorDealId || await transactionSponsorDeal(client, match[1]);
+      return json(200, bookkeepingTransactionView(sponsorDealId ? { ...item, sponsorDealId } : item));
     }
     if (method === "DELETE" && match[1]) {
       return json(405, { error: "Ledger rows are retained. Use the reconciliation void-ledger action with a period, reason, duplicate row, and confirmation." });
@@ -867,7 +870,8 @@ export async function handleBookkeepingTransactionRoutes(
           if (["transactionDate", "paidDate", "counterparty", "amount", "amountEur", "currency"].some((field) => body[field] !== undefined)) {
             await autoAttachConfidentEvidence(client);
           }
-          return json(200, bookkeepingTransactionView(updated!));
+          const sponsorDealId = updated?.sponsorDealId || await transactionSponsorDeal(client, match[1]);
+          return json(200, bookkeepingTransactionView(sponsorDealId ? { ...updated!, sponsorDealId } : updated!));
         } catch (error) {
           const sizeError = auditStorageLimitResponse(error);
           if (sizeError) return sizeError;

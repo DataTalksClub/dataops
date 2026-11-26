@@ -25,6 +25,7 @@ const publicNote = (note: Record<string, unknown>) => ({
   targetId: note.targetId,
   authorId: note.authorId,
   body: note.body,
+  ...(typeof note.sourceKey === 'string' && note.sourceKey ? { sourceKey: note.sourceKey } : {}),
   createdAt: note.createdAt,
   ...(typeof note.updatedAt === 'string' && note.updatedAt ? { updatedAt: note.updatedAt } : {}),
   version: note.version,
@@ -85,6 +86,7 @@ export async function createNote(
     targetId: id,
     authorId,
     body: body.body,
+    ...(sourceKey ? { sourceKey } : {}),
     createdAt,
     version: 1,
   };

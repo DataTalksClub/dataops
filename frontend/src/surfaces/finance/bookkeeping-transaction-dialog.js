@@ -1,3 +1,5 @@
+import { sponsorRecordPath } from "../../core/sponsor-routes.js";
+import { readableTransactionDescription } from "./bookkeeping-ledger.js";
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 const text = (value) => String(value ?? "").trim();
@@ -172,6 +174,7 @@ export function bookkeepingTransactionSummaryMarkup({
   statementCandidates = [],
   statementPending = false,
   statementError = "",
+  editableWhat = false,
   escape,
   formatAmount,
 } = {}) {
@@ -211,6 +214,23 @@ export function bookkeepingTransactionSummaryMarkup({
   const vatExtra = [
     transaction.reverseCharge === true || String(transaction.reverseCharge).toLowerCase() === "true" ? "Reverse charge" : "",
   ].filter(Boolean).join(" · ");
+  const displayDescription = readableTransactionDescription(transaction);
+  const sponsorDealMarkup = filled(transaction.sponsorDealId)
+    ? fieldMarkup(
+        "Sponsor deal",
+        `<a class="bk-transaction-deal-link" href="${e(sponsorRecordPath("deal", transaction.sponsorDealId))}">Open sponsor deal</a>`,
+        e,
+      )
+    : "";
+  const whatMarkup = editableWhat
+    ? `<form class="bk-transaction-what-form" data-what-form>
+        <label class="bk-transaction-what-label">
+          <span>What for</span>
+          <input class="dk-input dk-input--sm" name="description" value="${e(displayDescription)}" maxlength="300" placeholder="Describe what this payment is for" />
+        </label>
+        <button type="submit" class="dk-button dk-button--secondary dk-button--sm">Save</button>
+      </form>`
+    : `<p class="bk-transaction-summary__what"><span>What for</span> ${e(displayDescription || "Not recorded")}</p>`;
   const statementMarkup = statementLink
     ? statementLineMarkup(statementLink, renderers)
     : statementPending || statementError
@@ -222,9 +242,10 @@ export function bookkeepingTransactionSummaryMarkup({
       <h3 id="bk-transaction-summary-heading">Transaction</h3>
       <h4 class="bk-transaction-summary__vendor">${e(transaction.counterparty || "Unknown")}</h4>
       <p class="bk-transaction-summary__amount">${e(signedAmountMarkup(eurValue, "EUR", amount))}</p>
-      <p class="bk-transaction-summary__what"><span>What for</span> ${e(transaction.description || "Not recorded")}</p>
+      ${whatMarkup}
       <dl class="bk-transaction-summary__facts">
         ${fieldMarkup("Raw bank name", e(presentation.rawCounterparty || "Unknown"), e)}
+        ${sponsorDealMarkup}
         ${fieldMarkup("Date", e(transactionDate), e)}
         ${paidDate}
         ${fieldMarkup("Original amount", e(signedAmountMarkup(originalValue, currency, amount)), e)}

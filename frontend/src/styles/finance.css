@@ -1773,3 +1773,87 @@ closes on every tab switch (see setView), so it never covers list content. */
   flex-wrap: wrap;
   gap: var(--dk-space-3);
 }
+
+/* Deal-first record (/sponsors/deals/:id). The deal is the page identity and
+   its company is the context; company actions stay on the company record. */
+.sponsor-crm-surface .crm-deal-head .dk-split__title {
+  font-size: var(--dk-text-lg);
+}
+.sponsor-crm-surface .crm-deal-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-1);
+  margin: 0;
+}
+.sponsor-crm-surface .crm-deal-kicker .crm-row-link {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.sponsor-crm-surface .booking-detail-title > p.crm-deal-next:last-child {
+  display: grid;
+  gap: var(--dk-space-1);
+}
+.sponsor-crm-surface .crm-deal-secondary {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+.sponsor-crm-surface .crm-deal-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-2);
+}
+.sponsor-crm-surface .status-label.crm-deal-value {
+  background: transparent;
+  color: var(--dk-text-heading);
+  font-variant-numeric: tabular-nums;
+}
+/* Pipeline stages without a chip of their own: fill only, neutral border. */
+.status-label[data-status="invoiced" i] {
+  background: var(--dk-info-bg);
+  color: var(--dk-info-text);
+}
+.status-label[data-status="running" i] {
+  background: var(--dk-accent-soft);
+  color: var(--dk-accent-default);
+}
+.status-label[data-status="closed" i] {
+  background: var(--dk-success-bg);
+  color: var(--dk-success-text);
+}
+[data-record-panel="deals"] .crm-deals-heading {
+  margin: 0 0 var(--dk-space-3);
+  color: var(--dk-text-heading);
+  font-size: var(--dk-text-lg);
+}
+.crm-deal-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--dk-border-default);
+  border-radius: var(--dk-radius-md);
+}
+.crm-deal-facts > div {
+  min-width: 0;
+  padding: var(--dk-space-3);
+  border-bottom: 1px solid var(--dk-border-default);
+}
+.crm-deal-facts dt {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+.crm-deal-facts dd {
+  margin: 0;
+  color: var(--dk-text-heading);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .crm-deal-facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
