@@ -113,10 +113,16 @@ function resolveDescription(facts:Facts,text:string,base:ReturnType<typeof extra
   const fallback=cleanDescription(base.fields.description,context);
   if(!description && fallback) {
     const fromSubject=base.extraction.evidence.includes('description from the email subject');
-    const subjectProvider=hints?.subject||hints?.sender?catalogProvider(`${normalizeSubject(hints.subject)}\n${hints.sender||''}`)?.name:undefined;
-    const documentProvider=facts.counterparty?catalogProvider(facts.counterparty)?.name:undefined;
-    if(fromSubject && subjectProvider && documentProvider && subjectProvider!==documentProvider) issues.push('contradiction:description');
-    else description=fallback;
+    // A provider-catalog default describes the vendor, not this purchase: it
+    // is kept only when the document prints it. The forwarded subject is the
+    // sender's own words, so it stands unless it names another provider.
+    if(!fromSubject && !groundedInDocument(fallback,text)) issues.push('uncertain:description');
+    else {
+      const subjectProvider=hints?.subject||hints?.sender?catalogProvider(`${normalizeSubject(hints.subject)}\n${hints.sender||''}`)?.name:undefined;
+      const documentProvider=facts.counterparty?catalogProvider(facts.counterparty)?.name:undefined;
+      if(fromSubject && subjectProvider && documentProvider && subjectProvider!==documentProvider) issues.push('contradiction:description');
+      else description=fallback;
+    }
   }
   return description??null;
 }
