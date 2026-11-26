@@ -11,7 +11,11 @@ import {
   statusBadge,
 } from "./shared.js";
 
-export function planListMarkup(plans, today = berlinToday(), loadError = "") {
+export function planListMarkup(plans, today = berlinToday(), loadError = "", dueSteps = null) {
+  const dueCounts = dueSteps === null ? null : new Map();
+  for (const step of dueSteps || []) {
+    dueCounts.set(step.planId, (dueCounts.get(step.planId) || 0) + 1);
+  }
   const rows = (plans || [])
     .map((plan) => {
       const goals = Array.isArray(plan.goals) ? plan.goals : [];
@@ -23,8 +27,7 @@ export function planListMarkup(plans, today = berlinToday(), loadError = "") {
             )
             .join("")
         : html`<span class="mkt-muted">No goals yet</span>`;
-      const dueCount = plan.stepsDueThisWeek ?? plan.dueThisWeekCount;
-      const dueLabel = dueCount !== undefined && dueCount !== null ? String(dueCount) : "–";
+      const dueLabel = dueCounts === null ? "–" : String(dueCounts.get(plan.id) || 0);
       const lastSnap = goals.flatMap((g) => g.snapshots || [])
         .map((s) => snapshotRange(s).to).sort().at(-1);
       const horizon = [plan.startDate, plan.endDate].filter(Boolean).join(" – ") || "–";

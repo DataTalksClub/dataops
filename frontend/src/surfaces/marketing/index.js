@@ -31,6 +31,14 @@ function formatApiError(error, fallback) {
   return error?.message || fallback;
 }
 
+function isoWeek(date) {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
+  const year = day.getUTCFullYear();
+  const week = Math.ceil(((+day - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
 export function createMarketingSurface(context) {
   const {
     documentList,
@@ -94,10 +102,19 @@ export function createMarketingSurface(context) {
     async function loadPlanList() {
       setRouteTitle("Marketing");
       try {
-        const payload = await request(workApiUrl("/api/marketing/plans"));
+        const [plansResult, stepsResult] = await Promise.allSettled([
+          request(workApiUrl("/api/marketing/plans")),
+          request(workApiUrl("/api/marketing/steps", { week: isoWeek(today) })),
+        ]);
         if (mine !== generation) return;
-        const plans = normalizePlansPayload(payload);
-        body.innerHTML = planListMarkup(plans, today);
+        if (plansResult.status === "rejected") throw plansResult.reason;
+        const plans = normalizePlansPayload(plansResult.value);
+        const dueSteps = stepsResult.status === "fulfilled"
+          ? normalizeStepsPayload(stepsResult.value) : null;
+        const loadError = stepsResult.status === "rejected"
+          ? `Due this week is unavailable. ${formatApiError(stepsResult.reason, "Could not load marketing steps.")}`
+          : "";
+        body.innerHTML = planListMarkup(plans, today, loadError, dueSteps);
       } catch (error) {
         if (mine !== generation) return;
         body.innerHTML = planListMarkup([], today, formatApiError(error, "Could not load marketing plans."));

@@ -12,7 +12,7 @@ import { filterStepsByTab, planDetailMarkup, planListMarkup } from "../src/surfa
 import { ALEXEY_WEEKLY_REVIEW_LIMIT, weeklyReviewMarkup } from "../src/surfaces/marketing/review.js";
 import { FakeDocument, FakeElement, nextTicks } from "./support/fake-dom.mjs";
 
-function surfaceHarness(request, route) {
+function surfaceHarness(request, route, today = "2026-11-25") {
   const root = new FakeElement("main");
   const documentRef = new FakeDocument(root);
   const titles = [];
@@ -25,7 +25,7 @@ function surfaceHarness(request, route) {
     navigateCanonicalWorkspace: (dest) => navigations.push(dest),
     request,
     setRouteTitle: (t) => titles.push(t),
-    todayIsoDate: () => "2026-11-25",
+    todayIsoDate: () => today,
     workApiUrl: (p, query = {}) => {
       const search = new URLSearchParams();
       for (const [k, v] of Object.entries(query)) {
@@ -133,6 +133,57 @@ describe("marketing API contract and rendering", () => {
     assert.match(markup, /at risk/);
     assert.match(planListMarkup([]), /No marketing plans yet/);
     assert.match(planListMarkup([], "2026-11-25", "Unavailable"), /Unavailable/);
+  });
+
+  test("plan list counts the current ISO week's steps through one collection read", async () => {
+    const calls = [];
+    const otherPlan = { ...plan, id: "authority", title: "Authority" };
+    const h = surfaceHarness(async (url) => {
+      calls.push(url);
+      if (url === "/api/marketing/plans") return { items: [plan, otherPlan] };
+      assert.equal(url, "/api/marketing/steps?week=2026-W48");
+      return { items: [
+        { ...step, publishDate: "2026-11-23" },
+        { ...step, id: "s-87654321", publishDate: "2026-11-29" },
+      ] };
+    }, route("/marketing"));
+    await h.surface.renderMarketingSurface();
+    assert.deepEqual(calls, ["/api/marketing/plans", "/api/marketing/steps?week=2026-W48"]);
+    const rows = page(h.root).match(/<tr>[\s\S]*?<\/tr>/g);
+    assert.match(rows[1], /Academy Visibility[\s\S]*class="mkt-num">2<\/td>/);
+    assert.match(rows[2], /Authority[\s\S]*class="mkt-num">0<\/td>/);
+  });
+
+  test("plan list uses the ISO week year around New Year", async () => {
+    const calls = [];
+    const h = surfaceHarness(async (url) => {
+      calls.push(url);
+      return { items: url === "/api/marketing/plans" ? [plan] : [] };
+    }, route("/marketing"), "2027-01-01");
+    await h.surface.renderMarketingSurface();
+    assert.deepEqual(calls, ["/api/marketing/plans", "/api/marketing/steps?week=2026-W53"]);
+  });
+
+  test("failed step counts keep plans visible, show unknown and can be retried", async () => {
+    let failed = true;
+    const h = surfaceHarness(async (url) => {
+      if (url === "/api/marketing/plans") return { items: [plan] };
+      if (failed) throw new Error("Step service unavailable");
+      return { items: [{ ...step, publishDate: "2026-11-25" }] };
+    }, route("/marketing"));
+    await h.surface.renderMarketingSurface();
+    assert.match(page(h.root), /Academy Visibility/);
+    assert.match(page(h.root), /Due this week is unavailable\. Step service unavailable/);
+    assert.match(page(h.root), /class="mkt-num">–<\/td>/);
+    assert.doesNotMatch(page(h.root), /class="mkt-num">0<\/td>/);
+    assert.match(page(h.root), /data-mkt-retry/);
+    failed = false;
+    await h.root.children[0].dispatch("click", {
+      target: { closest: (selector) => selector === "[data-mkt-retry]" ? {} : null },
+    });
+    await nextTicks();
+    assert.doesNotMatch(page(h.root), /Due this week is unavailable/);
+    assert.match(page(h.root), /class="mkt-num">1<\/td>/);
   });
 
   test("ISO week and month snapshots render real chart points and tables", () => {
