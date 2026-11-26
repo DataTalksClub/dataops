@@ -5,7 +5,7 @@ import type { LlmExtraction } from '../src/invoices/llm';
 import {validateFields} from '../src/invoices/model';
 const facts:LlmExtraction={docType:'invoice',direction:'expense',counterparty:'Example Tools GmbH',invoiceNumber:'INV-123',date:'2026-10-01',currency:'EUR',net:'100.00',vat:'19.00',gross:'119.00',vatRate:'19',reverseCharge:false,paymentChannel:null,description:'Hosting',confidence:'high',uncertainFields:[]};
 const llm=(fields=facts)=>async()=>({fields,model:'recorded',latencyMs:1,usage:{inputTokens:100,outputTokens:50}});
-const unknown='Example Tools GmbH\nInvoice number: INV-123\nInvoice date: 2026-10-01\nNet EUR 100.00\nVAT 19% EUR 19.00\nTotal: EUR 119.00';
+const unknown='Example Tools GmbH\nInvoice number: INV-123\nInvoice date: 2026-10-01\nHosting\nNet EUR 100.00\nVAT 19% EUR 19.00\nTotal: EUR 119.00';
 
 test('unknown layouts use the reader and preserve net/VAT and indicative EUR amounts',async()=>{
  const r=await convertExtractedFinance(await extractFinanceText(unknown,{llm:llm()}));
@@ -48,7 +48,7 @@ test('a new upload extracts finance fields before completion returns and a later
  const {handleBookkeepingResourceRoutes}=await import('../src/routes/bookkeepingResources');
  const {putBookkeepingItem,getBookkeepingItem}=await import('../src/db/bookkeeping');
  const pdf=await PDFDocument.create();const page=pdf.addPage();const font=await pdf.embedFont(StandardFonts.Helvetica);
- const lines=['Hetzner Online GmbH','Invoice no.: 123456789','Invoice date: 01/10/2026','Tax code Tax rate','A1 19 %','Total € 100.00 € 19.00 € 119.00'];
+ const lines=['Hetzner Online GmbH','Invoice no.: 123456789','Invoice date: 01/10/2026','Dedicated Server EX44, October 2026','Tax code Tax rate','A1 19 %','Total € 100.00 € 19.00 € 119.00'];
  lines.forEach((line,i)=>page.drawText(line,{x:40,y:750-i*22,size:12,font}));
  const bytes=Buffer.from(await pdf.save());
  const saved=process.env.BOOKKEEPING_DOCUMENTS_BUCKET;process.env.BOOKKEEPING_DOCUMENTS_BUCKET='synthetic-versioned-bucket';process.env.BOOKKEEPING_DOCUMENTS_KMS_KEY='synthetic-kms-key';
