@@ -485,7 +485,12 @@ body[data-workspace-view] .task-modal-panel button,
 }/* Forwarded invoices: the section body keeps the 16px inset; the dense
    ledger mirrors the published expense sheet, one light row per invoice. */
 .invoice-review-section > :not(header) { margin-inline: var(--dk-space-4); }
-.invoice-review-section > [data-invoice-detail] { padding-block: var(--dk-space-6) var(--dk-space-4); }
+/* The section is a grid sized to its widest content. Without this the
+   no-wrap invoice table would stretch every block in the review to its width
+   and clip the open draft at the card's edge; the table scrolls inside its
+   own wrap instead. */
+.invoice-review-section > [data-invoice-review] { min-width: 0; }
+.invoice-review-section [data-invoice-detail] { padding-block: var(--dk-space-6) var(--dk-space-4); }
 .invoice-review-section [data-invoice-list] { margin-block-end: var(--dk-space-4); }
 .invoice-review-section [data-invoice-list] small { display: block; }
 .invoice-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--dk-space-4); }
@@ -495,7 +500,9 @@ body[data-workspace-view] .task-modal-panel button,
 .invoice-destinations { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--dk-space-4); padding: 0; list-style: none; }
 .invoice-destinations li { border: 1px solid var(--dk-border-default); padding: var(--dk-space-4); overflow-wrap: anywhere; }
 [data-invoice-detail] details { margin: var(--dk-space-4) 0; }
-[data-invoice-detail] fieldset { margin-top: var(--dk-space-4); }
+/* A fieldset refuses to shrink below its content; let the field grid drop to
+   one column on a phone instead of running past the card. */
+[data-invoice-detail] fieldset { margin-top: var(--dk-space-4); min-inline-size: 0; }
 [data-invoice-detail] small { display: block; }
 .invoice-ledger-summary { margin: 0 0 var(--dk-space-2); color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
 .invoice-ledger-wrap { width: 100%; min-width: 0; overflow-x: auto; border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); }
@@ -519,6 +526,8 @@ body[data-workspace-view] .task-modal-panel button,
   /* Rows are the tap targets here: every ledger row clears the 44px floor. */
   .invoice-ledger td { padding: var(--dk-space-3) var(--dk-space-2); }
   .invoice-ledger .invoice-what { max-width: 220px; }
+  /* The draft's workflow actions are not a per-item row: they wrap instead of running off the screen. */
+  .invoice-review-section [data-invoice-detail] .row-actions { flex-wrap: wrap; }
 }
 .knowledge-history-panel { max-width: 1100px; padding-bottom: 20px; }.history-search-form { display: flex; gap: 12px; align-items: end; padding: 16px 20px; }.history-search-form label { display: grid; gap: 6px; flex: 1; }.history-search-form input { width: 100%; min-width: 0; }#history-status { padding: 0 20px; }#history-versions { overflow: auto; padding: 0 20px; max-height: 32vh; }.history-version { padding: 12px 0; border-bottom: 1px solid var(--dk-border-default); }.history-version p { margin: 6px 0; }.history-version code { display: block; overflow-wrap: anywhere; font-size: 12px; margin-bottom: 8px; }.history-version button { margin-right: 8px; }#history-comparison:not([hidden]) { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 20px; overflow: auto; }#history-comparison section { min-width: 0; }#history-comparison pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; overflow: auto; }#lint-section { display: flex; align-items: center; gap: 12px; padding: 12px 20px 0; }
 @media (max-width: 600px) {.history-search-form { flex-direction: column; align-items: stretch; }#history-comparison:not([hidden]) { grid-template-columns: 1fr; }
