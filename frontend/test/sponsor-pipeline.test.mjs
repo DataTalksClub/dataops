@@ -37,6 +37,9 @@ test("Sponsors creates ride on their collections, never the page header", async 
   // Add deal follows the Pipeline list title; Refresh suggestions trails.
   assert.match(markup, /crm-list-head">[\s\S]*?data-crm-list-heading>Pipeline<\/h2>\s*<button[^>]*data-dk-create[^>]*data-add-deal/);
   assert.match(markup, /dk-collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
+  // Stage totals and scope note are grouped in one summary; search & primary controls sit in the toolbar.
+  assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline[\s\S]*?crm-funnel-scope/);
+  assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?data-pipeline-view[\s\S]*?crm-filter-disclosure[\s\S]*?data-crm-status/);
   // Add company follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);
 });
