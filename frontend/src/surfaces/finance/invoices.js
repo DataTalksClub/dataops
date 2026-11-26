@@ -232,9 +232,34 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     </details>`;
 }
 
+// Shell of the forwarded-invoice review. The open draft's detail sits above
+// the list: a list longer than the screen must not push the draft the user
+// just opened out of view.
+export function invoiceReviewShellMarkup(sectionHead) {
+  return `${sectionHead}
+    <p aria-live="polite" data-invoice-status>
+    </p>
+    <details>
+    <summary>Publication readiness</summary>
+    <div data-invoice-readiness>Checking configuration…</div>
+    </details>
+    <article data-invoice-detail hidden tabindex="-1">
+    </article>
+    <div data-invoice-list>Loading invoices…</div>`;
+}
+
+// Mark the open draft's row, so the detail above the list can be matched to
+// its row once the list is scrolled or refreshed.
+export function markOpenInvoiceRow(list, record) {
+  list.querySelectorAll("[data-review-invoice]").forEach((row) => {
+    if (record && row.dataset.reviewInvoice === record.id) row.setAttribute("aria-current", "true");
+    else row.removeAttribute("aria-current");
+  });
+}
+
 export async function mountInvoiceReview(host, context, options = {}) {
   const { request, workApiUrl, escapeHtml } = context;
-  const { initialInvoiceId = "", onInvoicesChanged } = options;
+  const { onInvoicesChanged } = options;
   const e = (value) => escapeHtml(String(value ?? ""));
   const api = (path = "", options = {}) =>
     request(workApiUrl(`/api/bookkeeping/invoices${path}`), {
@@ -242,21 +267,12 @@ export async function mountInvoiceReview(host, context, options = {}) {
       headers: { "content-type": "application/json" },
     });
   const json = (method, body) => ({ method, body: JSON.stringify(body) });
-  host.innerHTML = `${financeSectionHead({
+  host.innerHTML = invoiceReviewShellMarkup(financeSectionHead({
     id: "invoice-review-heading",
     title: "Forwarded invoices",
     hint: "Verified rows publish automatically.",
     actions: `<button class="dk-button dk-button--secondary dk-button--sm" type="button" data-invoice-refresh>Refresh invoices</button>`,
-  })}
-    <p aria-live="polite" data-invoice-status>
-    </p>
-    <details>
-    <summary>Publication readiness</summary>
-    <div data-invoice-readiness>Checking configuration…</div>
-    </details>
-    <div data-invoice-list>Loading invoices…</div>
-    <article data-invoice-detail hidden>
-    </article>`;
+  }));
   const status = host.querySelector("[data-invoice-status]");
   const list = host.querySelector("[data-invoice-list]");
   const detail = host.querySelector("[data-invoice-detail]");
@@ -274,6 +290,7 @@ export async function mountInvoiceReview(host, context, options = {}) {
     if (queue.status === "fulfilled") {
       const items = queue.value.items || [];
       list.innerHTML = invoiceLedgerMarkup(items, escapeHtml);
+      markOpenInvoiceRow(list, selected);
       onInvoicesChanged?.(items);
     } else list.textContent = `Cannot load invoices: ${queue.reason.message}`;
     host.querySelector("[data-invoice-readiness]").innerHTML =
@@ -286,6 +303,7 @@ export async function mountInvoiceReview(host, context, options = {}) {
     selected = record;
     detail.hidden = false;
     detail.innerHTML = invoiceDetailMarkup(record, escapeHtml);
+    markOpenInvoiceRow(list, selected);
     detail
       .querySelector("[data-invoice-document]")
       .addEventListener("click", () =>
@@ -357,9 +375,27 @@ export async function mountInvoiceReview(host, context, options = {}) {
       ),
     );
   }
+  // Opening a draft moves focus to it, because the row that was clicked
+  // disappears, and brings it into view under its section header and the way
+  // back (a row clicked far down the list, or a ledger that was scrolled). A
+  // draft already on screen stays where it is. Saving or verifying re-renders
+  // in place.
+  function reveal() {
+    if (!host.isConnected || !detail.getClientRects().length) return;
+    detail.focus({ preventScroll: true });
+    const top = detail.getBoundingClientRect().top;
+    if (top >= 0 && top < window.innerHeight / 2) return;
+    host.closest("[data-secondary]")?.scrollIntoView({ block: "start" });
+  }
+  async function openRecord(id) {
+    await safe(async () => {
+      show(await api(`/${encodeURIComponent(id)}`));
+      reveal();
+    });
+  }
   function openRow(row) {
     const id = row?.dataset?.reviewInvoice;
-    if (id) safe(async () => show(await api(`/${encodeURIComponent(id)}`)));
+    if (id) openRecord(id);
   }
   list.addEventListener("click", (event) => {
     openRow(event.target.closest("[data-review-invoice]"));
@@ -373,13 +409,18 @@ export async function mountInvoiceReview(host, context, options = {}) {
     }
   });
   async function openInvoice(id) {
-    if (!id) return;
-    await safe(async () => show(await api(`/${encodeURIComponent(id)}`)));
+    if (id) await openRecord(id);
+  }
+  // The forwarded-invoice list stands alone: no draft stays open from an
+  // earlier visit.
+  function closeInvoice() {
+    selected = undefined;
+    detail.hidden = true;
+    markOpenInvoiceRow(list, selected);
   }
   host
     .querySelector("[data-invoice-refresh]")
     .addEventListener("click", () => safe(refresh));
   await refresh();
-  if (initialInvoiceId) await openInvoice(initialInvoiceId);
-  return { openInvoice, refresh };
+  return { openInvoice, closeInvoice, refresh };
 }

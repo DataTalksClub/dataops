@@ -91,6 +91,9 @@ Dependencies
                            the same with depends_on.
 
 Required resources (ids from \`dataops resources list\`)
+  --target-url URL        Filter Tasks by their Marketing step target URL
+  --primary-keyword TEXT  Filter Tasks by their Marketing step keyword
+  --done-criteria TEXT    Filter Tasks by their Marketing step completion criteria
   --requires a,b           Only Tasks that need at least one of these
   --exclude-requires a,b   Drop Tasks that need any of these
   --can-do a,b             Only Tasks whose every requirement is in this set: what you have
@@ -472,6 +475,7 @@ export async function list(args, io) {
   const card = optionalString(args, "card");
   const resources = requiresQuery(args);
   const browser = browserQuery(args);
+  const marketing = {target_url: optionalString(args, 'targetUrl'), primary_keyword: optionalString(args, 'primaryKeyword'), done_criteria: optionalString(args, 'doneCriteria')};
   const limit = args.limit !== undefined ? integer(args.limit, "limit") : undefined;
   const cursor = optionalString(args, "cursor");
 
@@ -481,7 +485,7 @@ export async function list(args, io) {
   if (date || from || status || card) {
     view = "filter";
     const query = {
-      owner, cardId: card, status, date, startDate: from, endDate: to, ...resources, ...browser,
+      owner, cardId: card, status, date, startDate: from, endDate: to, ...resources, ...browser, ...marketing,
       ...(limit !== undefined ? { limit } : {}),
       ...(cursor !== undefined ? { cursor } : {}),
     };
@@ -514,7 +518,7 @@ export async function list(args, io) {
       const rows = [];
       let next;
       do {
-        const page = await api.get("/api/tasks", { query: { ...query, owner, ...resources, ...browser, ...(next ? { cursor: next } : {}) } });
+        const page = await api.get("/api/tasks", { query: { ...query, owner, ...resources, ...browser, ...marketing, ...(next ? { cursor: next } : {}) } });
         rows.push(...tasksOf(page));
         next = page?.nextCursor;
       } while (next);

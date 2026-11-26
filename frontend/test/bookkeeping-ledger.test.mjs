@@ -834,3 +834,33 @@ test("drafts without a document date stay visible in their intake month", () => 
   assert.ok(inLens(draft, "2026-11"));
   assert.match(ledgerRowMarkup(draft, { vocab: {}, e: escapeHtml }), /datetime="2026-11-25" title="Invoice received date"/);
 });
+
+test("a pending draft without a description says so instead of showing a fallback label", () => {
+  const draft = pendingInvoiceEntry({
+    id: "inv-no-description",
+    status: "pending",
+    source: { artifactId: "art-1" },
+    fields: { transactionDate: "2026-11-22", counterparty: "OpenCode", amount: "10.00", currency: "USD" },
+  });
+  const markup = ledgerRowMarkup(draft, { vocab: {}, e: escapeHtml });
+  assert.match(markup, /No description yet — add one in review/);
+  assert.doesNotMatch(markup, /Business expense/);
+
+  // A known vendor's canned purpose is not a finding either.
+  const knownVendor = pendingInvoiceEntry({
+    id: "inv-known-vendor",
+    status: "pending",
+    source: { artifactId: "art-2" },
+    fields: { transactionDate: "2026-11-22", counterparty: "OpenAI", amount: "20.00", currency: "USD" },
+  });
+  assert.match(ledgerRowMarkup(knownVendor, { vocab: {}, e: escapeHtml }), /No description yet — add one in review/);
+  assert.doesNotMatch(ledgerRowMarkup(knownVendor, { vocab: {}, e: escapeHtml }), /OpenAI services/);
+
+  // Verified rows keep the fallback: their description was reviewed.
+  const verified = { id: "tx-1", transactionDate: "2026-11-10", counterparty: "Local Print Shop", description: "", entryType: "expense", amount: "5.00", currency: "EUR" };
+  assert.match(ledgerRowMarkup(verified, { vocab: {}, e: escapeHtml }), /Business expense/);
+
+  // The hint is searchable, so drafts that still need a description can be found.
+  assert.deepEqual(filterEntries([draft, verified], { q: "no description" }), [draft]);
+  assert.deepEqual(filterEntries([draft], { q: "opencode" }), [draft]);
+});

@@ -128,6 +128,7 @@ export function isScopedTokenRequestAllowed(
     || matchesPrefix(path, '/api/event-records')
     || matchesPrefix(path, '/api/people')
     || matchesPrefix(path, '/api/books')
+    || matchesPrefix(path, '/api/marketing')
     || matchesPrefix(path, '/api/podcast-episodes')
     || matchesPrefix(path, '/api/podcast-first-contact')
     || matchesPrefix(path, '/api/calendar-holds')

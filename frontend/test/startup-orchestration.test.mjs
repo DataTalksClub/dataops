@@ -47,7 +47,7 @@ describe("startup route classification", () => {
   test("defers every self-loading view and nothing else", () => {
     assert.deepEqual(
       [...SELF_LOADING_VIEWS].sort(),
-      ["bookkeeping", "calendar", "finance", "inbox", "inventory", "newsletter", "podcast", "sponsors", "users"],
+      ["bookkeeping", "calendar", "finance", "inbox", "inventory", "marketing", "newsletter", "podcast", "sponsors", "users"],
     );
     for (const view of SELF_LOADING_VIEWS) {
       assert.equal(isStartupDeferredRoute({ view }), true, view);

@@ -97,8 +97,7 @@ export async function sponsorPipeline(client: DynamoDBDocumentClient, query: Rec
     && (!search || [row.organizationName, row.title, row.primaryContact?.name, row.primaryContact?.email, row.nextTask?.description].some((value) => String(value || '').toLowerCase().includes(search))));
   const counts = Object.fromEntries(PIPELINE_STAGES.map((stage) => [stage, searched.filter((row) => row.stage === stage).length]));
   const view = query.view || 'actionable';
-  const filtered = searched.filter((row) => {
-    if (query.stage && row.stage !== query.stage) return false;
+  const viewed = searched.filter((row) => {
     if (query.owner && row.nextTask?.assigneeId !== query.owner) return false;
     const date = row.nextTask?.date;
     if (query.nextActionFrom && (!date || date < query.nextActionFrom)) return false;
@@ -116,12 +115,16 @@ export async function sponsorPipeline(client: DynamoDBDocumentClient, query: Rec
       default: return false;
     }
   });
+  // Same filters as the list except the stage chip, so each chip can say how
+  // many of its deals the current view shows.
+  const viewCounts = Object.fromEntries(PIPELINE_STAGES.map((stage) => [stage, viewed.filter((row) => row.stage === stage).length]));
+  const filtered = query.stage ? viewed.filter((row) => row.stage === query.stage) : viewed;
   filtered.sort((a, b) => query.sort === 'recent'
     ? String(b.updatedAt).localeCompare(String(a.updatedAt)) || a.id.localeCompare(b.id)
     : Number(['open', 'closed', 'lost'].includes(a.stage)) - Number(['open', 'closed', 'lost'].includes(b.stage))
       || String(a.nextTask?.date || '9999').localeCompare(String(b.nextTask?.date || '9999')) || String(b.updatedAt).localeCompare(String(a.updatedAt)) || a.id.localeCompare(b.id));
   const offset = Number(query.cursor || 0), limit = Number(query.limit || 30);
-  return { today, through, view, financeEnabled: financeEnabled(), counts, actionableCount: searched.filter((row) => row.actionable).length,
+  return { today, through, view, financeEnabled: financeEnabled(), counts, viewCounts, totalDeals: searched.length, actionableCount: searched.filter((row) => row.actionable).length,
     total: filtered.length, items: filtered.slice(offset, offset + limit),
     nextCursor: offset + limit < filtered.length ? String(offset + limit) : null };
 }
