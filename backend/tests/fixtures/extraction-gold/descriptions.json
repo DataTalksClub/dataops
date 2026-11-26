@@ -96,5 +96,21 @@
     "hints": { "subject": "Rechnung 2026-001", "sender": "buchhaltung@example.test" },
     "reader": { "counterparty": "Beispiel Handel GmbH", "invoiceNumber": "2026-001", "date": "2026-10-01", "currency": "EUR", "net": "42.02", "vat": "7.98", "gross": "50.00", "vatRate": "19", "description": "Premium streaming bundle for the team", "confidence": "high" },
     "expected": { "description": null, "needsReview": false, "issues": ["uncertain:description", "missing:description"] }
+  },
+  {
+    "id": "overview-table-names-the-services",
+    "note": "Synthetic twin of a Hetzner invoice (draft 6291b3da) whose overview table prints one service per line. The description names those services, as the operator typed by hand, instead of the catalog's guess.",
+    "text": "\nHetzner Online GmbH\nInvoice no.: 123456791\nInvoice date: 01/11/2026\nInvoice 123456791\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nDedicated Server   10/28   € 100.00   € 19.00 A1   € 119.00\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 110.08   € 20.92   € 131.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 110.08   € 110.08   € 20.92   € 131.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": "Dedicated Server and Storage", "method": "template:hetzner", "needsReview": false }
+  },
+  {
+    "id": "overview-table-single-service",
+    "note": "A storage-only Hetzner invoice: the overview prints one service, so the description is that service and not the catalog's 'Dedicated server' guess.",
+    "text": "\nHetzner Online GmbH\nInvoice no.: 123456792\nInvoice date: 01/11/2026\nInvoice 123456792\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 10.08   € 1.92   € 12.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 10.08   € 10.08   € 1.92   € 12.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": "Storage", "method": "template:hetzner", "needsReview": false }
   }
 ]

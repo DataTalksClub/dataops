@@ -1,5 +1,5 @@
 import { BlankConversionError, catalogProvider, extractInvoiceText, finomCustomer, normalizePdfText, normalizeSubject, pdfText, type InvoiceHints } from './extract';
-import { cleanDescription, groundedInDocument, lineItemDescription } from './description';
+import { cleanDescription, groundedInDocument, lineItemDescription, serviceOverviewDescription } from './description';
 import { extractWithLlm, needsPdfInput, type LlmExtraction, type LlmResult } from './llm';
 import { date, validCurrency, type Invoice, type InvoiceFields } from './model';
 import { loadEcbRates } from '../finance/rates';
@@ -101,9 +101,10 @@ export function validateFinanceFacts(f: Facts, expectedPeriod?: string): string[
 }
 /**
  * One ledger description per document, best evidence first: the reader's phrase
- * or the template's, then the first printed line item, then the provider
- * catalog or forwarded subject. Generic, ungrounded or contradicted values are
- * dropped (null) and the draft is flagged rather than given a guess.
+ * or the template's, then the first printed line item, then the services named
+ * in an overview table, then the provider catalog or forwarded subject.
+ * Generic, ungrounded or contradicted values are dropped (null) and the draft
+ * is flagged rather than given a guess.
  */
 function resolveDescription(facts:Facts,text:string,raw:string,base:ReturnType<typeof extractInvoiceText>,hints:InvoiceHints|undefined,issues:string[]):string|null {
   const context={counterparty:facts.counterparty,invoiceNumber:facts.invoiceNumber};
@@ -113,6 +114,7 @@ function resolveDescription(facts:Facts,text:string,raw:string,base:ReturnType<t
   // dash as a NUL glyph, which the invoice-number normalizer turns into spaces
   // before a month name.
   description??=lineItemDescription(raw);
+  description??=serviceOverviewDescription(raw,context);
   const fallback=cleanDescription(base.fields.description,context);
   if(!description && fallback) {
     const fromSubject=base.extraction.evidence.includes('description from the email subject');
