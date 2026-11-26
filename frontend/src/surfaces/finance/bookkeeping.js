@@ -155,16 +155,12 @@ export function createBookkeepingSurface(context) {
       link.click();
     }
 
-    // The route mirrors the list context (month + filters) and the open
-    // item. User navigation pushes a history entry so browser Back returns
-    // to the same transaction list; filter keystrokes replace in place.
     const router = createBookkeepingRouter({
       locationRef,
       historyRef,
       getRoute: () => ({ lens, defaultLens, filters, tx: selectedId, view, invoice: selectedInvoiceId }),
       setRoute: (route) => {
-        if (route.lens) lens = route.lens;
-        else if (defaultLens) lens = defaultLens;
+        lens = route.lens || defaultLens || lens;
         filters = route.filters;
         view = route.view;
         selectedInvoiceId = route.invoice;
@@ -187,6 +183,7 @@ export function createBookkeepingSurface(context) {
         if (transactionDialog.open) transactionDialog.close();
       },
       openDraft: (invoiceId) => openMountedInvoice(invoiceId),
+      isLive: () => surface.isConnected,
     });
     const syncUrl = router.sync;
 
@@ -617,6 +614,14 @@ export function createBookkeepingSurface(context) {
       invoiceDrafts = (Array.isArray(items) ? items : []).filter((item) => item.status === "pending");
       surface.querySelector("[data-invoices-meta]").textContent = invoiceDrafts.length ? `${invoiceDrafts.length} to review` : "";
     }
+    // The invoice review can publish drafts, so the ledger reloads once it closes.
+    function reloadAfterInvoices() {
+      void Promise.all([api("/transactions"), api("/invoices")]).then(([txResult, invResult]) => {
+        entries = txResult.items || [];
+        applyInvoiceItems(invResult.items || []);
+        renderAll();
+      }).catch(() => {});
+    }
 
     const transactionModal = createBookkeepingTransactionModal({
       dialog: transactionDialog,
@@ -644,7 +649,7 @@ export function createBookkeepingSurface(context) {
       onClose: () => {
         selectedId = "";
         ledger.querySelector('[aria-selected="true"]')?.removeAttribute("aria-selected");
-        syncUrl();
+        if (!router.returnToPrevious()) syncUrl();
       },
     });
 
@@ -720,24 +725,18 @@ export function createBookkeepingSurface(context) {
       if (more.open && !more.contains(event.target)) more.open = false;
       const link = event.target.closest("[data-view-link]");
       if (!link) return;
+      // The section's ← button returns the way browser Back does.
+      const returned = link.dataset.viewLink === "" && router.returnToPrevious();
       const previousView = view;
       view = link.dataset.viewLink || "";
       if (view !== "invoices") selectedInvoiceId = ""; else if (!selectedInvoiceId) void openMountedInvoice("");
       renderView();
-      if (view === "" && previousView === "invoices") {
-        void Promise.all([api("/transactions"), api("/invoices")]).then(([txResult, invResult]) => {
-          entries = txResult.items || [];
-          applyInvoiceItems(invResult.items || []);
-          renderAll();
-        }).catch(() => {});
-      }
+      if (view === "" && previousView === "invoices") reloadAfterInvoices();
       if (view === "package") {
         renderPackageReview();
         renderVat();
       }
-      // Switching views is navigation: Back returns to the previous view
-      // with the same list context.
-      syncUrl({ push: true });
+      if (!returned) syncUrl({ push: true });
     });
 
     surface

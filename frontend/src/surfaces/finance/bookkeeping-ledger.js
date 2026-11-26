@@ -223,36 +223,68 @@ export function markSelectedLedgerRow(ledger, selectedId) {
 // router reaches it through accessors so the surface module stays small.
 // openDraft("") leaves the forwarded-invoice list on its own, closing a
 // draft left open by an earlier visit.
+// The address the shell routes to this surface; a history entry anywhere
+// else (another workspace) is the shell's to restore.
+const BOOKKEEPING_PATH = "/bookkeeping";
+// History state of an entry the surface pushed to open an item or a view:
+// the entry below it is where its own back buttons return, as Back does.
+const OPENED_FROM = "bookkeepingOpenedFrom";
+// The router of the bookkeeping surface on screen. The shell renders a new
+// surface for every visit, so a new router retires the previous one instead
+// of leaving it to react to every later Back and Forward.
+let liveRouter = null;
+
 export function createBookkeepingRouter({
   locationRef, historyRef, getRoute, setRoute, render, findEntry,
-  openEntry, closeEntry, openDraft,
+  openEntry, closeEntry, openDraft, isLive,
 }) {
+  // A surface reads and writes history only while it is the one on screen
+  // at the bookkeeping address. The shell renders a new surface for each
+  // route it rebuilds, and a request of the old one can still finish after
+  // that; such a late callback must not rewrite the address, or the entry
+  // of another workspace turns back into /bookkeeping.
+  const ownsHistory = () => Boolean(locationRef)
+    && String(locationRef.pathname || "").replace(/\/+$/, "") === BOOKKEEPING_PATH
+    && (isLive ? Boolean(isLive()) : true);
   function sync({ push = false } = {}) {
-    if (getRoute().view === "tuition" || !historyRef?.replaceState || !locationRef) return;
+    if (getRoute().view === "tuition" || !historyRef?.replaceState || !ownsHistory()) return;
     const { lens, defaultLens, filters, tx, view, invoice } = getRoute();
     const query = writeBookkeepingRoute({ lens, defaultLens, filters, tx, view, invoice });
-    const next = `/bookkeeping${query}`;
+    const next = `${BOOKKEEPING_PATH}${query}`;
     if (`${locationRef.pathname}${locationRef.search}` === next) return;
-    if (push && historyRef.pushState) historyRef.pushState(historyRef.state, "", next);
+    if (push && historyRef.pushState)
+      historyRef.pushState({ ...historyRef.state, [OPENED_FROM]: true }, "", next);
     else historyRef.replaceState(historyRef.state, "", next);
   }
-  // Browser Back/Forward restores the route (list context + open item)
-  // without reloading the surface.
-  if (typeof globalThis.addEventListener === "function") {
-    globalThis.addEventListener("popstate", () => {
-      const route = readBookkeepingRoute(locationRef?.search || "");
-      // Tuition keeps its own history entries.
-      if (route.view === "tuition") return;
-      setRoute(route);
-      render();
-      const entry = route.tx ? findEntry(route.tx) : null;
-      if (entry) openEntry(entry);
-      else closeEntry();
-      sync();
-      if (route.view === "invoices") void openDraft(route.invoice);
-    });
+  // The back button or Close of an item opened from the entry below returns
+  // there, as browser Back does, so Back afterwards does not open it again.
+  // A direct address has no such entry: false, and the caller navigates.
+  function returnToPrevious() {
+    if (!ownsHistory() || !historyRef?.back || !historyRef.state?.[OPENED_FROM]) return false;
+    historyRef.back();
+    return true;
   }
-  return { sync };
+  // Browser Back/Forward restores the route (list context + open item)
+  // without reloading the surface. Back to another workspace is the shell's.
+  function restore() {
+    if (!ownsHistory()) return;
+    const route = readBookkeepingRoute(locationRef.search);
+    // Tuition keeps its own history entries.
+    if (route.view === "tuition") return;
+    setRoute(route);
+    render();
+    const entry = route.tx ? findEntry(route.tx) : null;
+    if (entry) openEntry(entry);
+    else closeEntry();
+    sync();
+    if (route.view === "invoices") void openDraft(route.invoice);
+  }
+  const lifetime = new AbortController();
+  if (typeof globalThis.addEventListener === "function")
+    globalThis.addEventListener("popstate", restore, { signal: lifetime.signal });
+  liveRouter?.retire();
+  liveRouter = { sync, returnToPrevious, retire: () => lifetime.abort() };
+  return liveRouter;
 }
 
 // What a click inside the ledger should do, without touching history or
