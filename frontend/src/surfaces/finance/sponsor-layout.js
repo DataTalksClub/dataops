@@ -41,10 +41,12 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEsc
       Loading sponsor CRM…
     </p>
     ${renderCrmNav(crmNavModel(initialTab), { escapeHtml })}
-    <p class="crm-funnel-scope">Stage totals reflect search and company; owner, date, view and stage filter the list below</p>
-    <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
+    <section class="crm-pipeline-summary" data-crm-pipeline-summary aria-label="Pipeline stage totals">
+      <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
+      <p class="crm-funnel-scope">Stage totals reflect search and company; owner, date, view and stage filter the list below.</p>
+    </section>
     <details class="crm-alerts">
-      <summary data-crm-alert-summary>Alerts</summary>
+      <summary data-crm-alert-summary>Sponsor alerts</summary>
       <div data-crm-alerts>Loading alerts…</div>
     </details>
     <div class="dk-split crm-layout" data-crm-split data-view="list">
@@ -62,36 +64,37 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEsc
               d="M20 12a8 8 0 1 1-2.34-5.66 M20 4v4h-4"/></svg></button>
           </div>
         </header>
-        <details class="crm-filter-disclosure"><summary>Search &amp; filters</summary>
-        <div class="crm-filters dk-split__tools">
-          <label
-            >Search sponsors
-            <input
-              data-crm-search
-              type="search"
-              placeholder="Company, person, next action" /></label
-          ><label
-            >Stage
-            <select data-crm-status>
-              <option value="">All statuses</option>
-              ${dealStatusOptions}
-            </select></label
-          >
+        <div class="crm-pipeline-toolbar">
+          <div class="crm-funnel-controls">
+            <label class="crm-search-field"
+              ><span>Search</span>
+              <input
+                data-crm-search
+                type="search"
+                placeholder="Company, person, next action" /></label
+            ><label>Show <select data-pipeline-view>
+              <option value="actionable">Needs attention</option><option value="active">Active deals</option>
+              <option value="early">Early prospects</option><option value="overdue">Overdue</option>
+              <option value="reply">Needs reply</option>
+              <option value="unscheduled">Missing next step / date</option><option value="all">All deals</option><option value="closed">Closed / lost</option></select></label>
+            <label>Sort <select data-pipeline-sort><option value="next-action">Next action</option><option value="recent">Recently updated</option></select></label>
+          </div>
+          <details class="crm-filter-disclosure"><summary>More filters <span class="crm-filter-badge" data-crm-filter-badge hidden></span></summary>
+            <div class="crm-filters dk-split__tools">
+              <label
+                >Stage
+                <select data-crm-status>
+                  <option value="">All statuses</option>
+                  ${dealStatusOptions}
+                </select></label
+              ><label class="crm-owner-filter">Next action owner
+                <select data-pipeline-owner><option value="">All owners</option></select></label>
+              <label>Next action from <input data-pipeline-from type="date" /></label>
+              <label>Through <input data-pipeline-to type="date" /></label>
+            </div>
+          </details>
+          <div data-pipeline-views></div>
         </div>
-          <label class="crm-owner-filter">Next action owner
-            <select data-pipeline-owner><option value="">All owners</option></select></label>
-        </details>
-        <div class="crm-funnel-controls">
-          <label>Show <select data-pipeline-view>
-            <option value="actionable">Needs attention</option><option value="active">Active deals</option>
-            <option value="early">Early prospects</option><option value="overdue">Overdue</option>
-            <option value="reply">Needs reply</option>
-            <option value="unscheduled">Missing next step / date</option><option value="all">All deals</option><option value="closed">Closed / lost</option></select></label>
-          <label>Sort <select data-pipeline-sort><option value="next-action">Next action</option><option value="recent">Recently updated</option></select></label>
-          <label>Next action from <input data-pipeline-from type="date" /></label>
-          <label>Through <input data-pipeline-to type="date" /></label>
-        </div>
-        <div data-pipeline-views></div>
         <div class="dk-split__scroll" data-crm-list-scroll>
           <div data-crm-bookings class="crm-booking-list">Loading pipeline…</div>
         </div>

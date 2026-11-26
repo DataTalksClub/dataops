@@ -398,8 +398,13 @@ body[data-workspace-view="sponsors"] .library-view {
     max-width: 100%;
     margin: 0 !important;
   }
-  .crm-pipeline {
+  .sponsor-crm-surface > .crm-pipeline-summary {
     order: 2;
+    flex: 0 0 auto;
+    min-width: 0;
+    margin: 0 !important;
+  }
+  .crm-pipeline {
     flex: 0 0 auto;
     min-width: 0;
     margin: 0 !important;

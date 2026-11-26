@@ -161,8 +161,6 @@ body[data-workspace-view="sponsors"] .document-list {
   line-height: 1.2;
 }.sponsor-crm-surface .crm-alerts {
   overflow: visible;
-  border: 0;
-  background: transparent;
 }.sponsor-crm-surface .crm-alert-row {
   display: flex;
   flex-wrap: wrap;
