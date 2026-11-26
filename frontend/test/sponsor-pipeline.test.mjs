@@ -51,7 +51,15 @@ test("Sponsors creates ride on their collections, never the page header", async 
   assert.match(markup, /dk-collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
   // Stage totals and scope note are grouped in one summary; search & primary controls sit in the toolbar.
   assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline/);
-  assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?data-pipeline-view[\s\S]*?crm-filter-disclosure[\s\S]*?data-crm-status/);
+  assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?crm-filter-disclosure/);
+  // One view selector: the saved-view bar. View and Stage are hidden state
+  // carriers, not visible duplicates; stage is filtered by the chips only.
+  assert.match(markup, /<input data-pipeline-view type="hidden"/);
+  assert.match(markup, /<input data-crm-status type="hidden"/);
+  const toolbar = markup.slice(markup.indexOf("crm-pipeline-toolbar"), markup.indexOf("data-crm-list-scroll"));
+  assert.doesNotMatch(toolbar, /<select data-pipeline-view|<select data-crm-status|Show </);
+  const disclosure = toolbar.slice(toolbar.indexOf("crm-filter-disclosure"), toolbar.indexOf("data-pipeline-views"));
+  assert.doesNotMatch(disclosure, /Stage/);
   // Add company follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);
 });

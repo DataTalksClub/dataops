@@ -95,7 +95,7 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
     surface.querySelector('[data-booking-count]').textContent = pipelineMatchSummary(result);
     const badge = surface.querySelector('[data-crm-filter-badge]');
     if (badge) {
-      const activeFilters = ['[data-crm-status]', '[data-pipeline-owner]', '[data-pipeline-from]', '[data-pipeline-to]']
+      const activeFilters = ['[data-pipeline-owner]', '[data-pipeline-from]', '[data-pipeline-to]']
         .filter((sel) => surface.querySelector(sel)?.value).length;
       badge.textContent = activeFilters ? String(activeFilters) : '';
       badge.hidden = !activeFilters;

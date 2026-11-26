@@ -114,7 +114,7 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     // Seeded deals carry no tasks, so the default actionable view is honestly
     // empty; All deals shows the seeded funnel.
     await expect(page.locator('[data-crm-bookings]')).toContainText('No matching deals');
-    await page.locator('[data-pipeline-view]').selectOption('all');
+    await page.locator('[data-views-bar="pipeline"] [data-views-select]').selectOption('builtin:pipeline:all');
     const funnelRows = page.locator('[data-crm-bookings] tbody tr');
     await expect(funnelRows.first()).toBeVisible();
     // Stage totals filter the same bounded rows.
