@@ -1,5 +1,5 @@
 // Package and VAT views for the bookkeeping surface.
-import { formatAmount, monthLabel } from "./bookkeeping-format.js";
+import { formatAmount, monthLabel, selectReportEntries } from "./bookkeeping-format.js";
 import { eurValue } from "./bookkeeping-ledger.js";
 import { packageReviewMarkup } from "./bookkeeping-views.js";
 import { html } from "./shared.js";
@@ -43,17 +43,32 @@ export function createBookkeepingReports({
         (!account.statementRequiredThroughMonth ||
           lens <= account.statementRequiredThroughMonth),
     );
-    const monthEntries = lensEntries().filter((entry) => !isReportExemptEntry(entry));
+    // The package lists reportable allocation children, never payment totals.
+    const { included: monthEntries, excluded: excludedEntries } =
+      selectReportEntries(lensEntries(), isReportExemptEntry);
     const unconverted = monthEntries.filter((entry) => eurValue(entry) === null);
     surface.querySelector("[data-report]").disabled = !isMonth || unconverted.length > 0;
-    const excludedCount = lensEntries().filter(isReportExemptEntry).length;
+    const excludedCount = excludedEntries.length;
+    // An ordinary entry is evidenced by its own links. Evidence of an
+    // allocated payment comes from its reportable children's allocation
+    // documents; parent-level links are not attributable to a child.
     const linkedDocIds = new Set(
       links
-        .filter((link) => monthEntries.some((entry) => entry.id === link.transactionId))
+        .filter((link) =>
+          monthEntries.some((entry) => !entry.sourceTransactionId && entry.id === link.transactionId),
+        )
         .map((link) => String(link.documentId)),
     );
+    const allocationDocIds = new Set(
+      monthEntries
+        .filter((entry) => entry.sourceTransactionId)
+        .map((entry) => String(entry.allocationDocumentId)),
+    );
     const evidenceDocs = documents.filter(
-      (document) => document.documentType !== "bank-statement" && linkedDocIds.has(document.id),
+      (document) =>
+        document.documentType !== "bank-statement" &&
+        (linkedDocIds.has(document.id) ||
+          (document.status === "active" && allocationDocIds.has(String(document.id)))),
     );
     const statementStates = businessAccounts.map((account) => ({
       account,
