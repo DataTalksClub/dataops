@@ -198,7 +198,7 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
   if(facts.vat!==null && facts.currency) fields.vatCurrency=facts.currency;
   if(facts.docType==='credit_note' && !customerCreditNote) fields.subtype='Refund';
   else if(customerCreditNote) delete fields.subtype;
-  return {fields,facts,extraction:{method,evidence:[...base.extraction.evidence,`finance:${method}`],issues:[...new Set(issues)],documentType:facts.docType,direction:facts.direction,needsReview:issues.length>0,...(facts.paymentChannel?{paymentChannel:facts.paymentChannel}:{}),...(creditCandidates?{candidates:creditCandidates}:{})},...(result?{usage:result.usage,model:result.model}:{})};
+  return {fields,facts,extraction:{method,evidence:[...base.extraction.evidence,`finance:${method}`],issues:[...new Set(issues)],documentType:facts.docType,direction:facts.direction,needsReview:issues.some(issue=>!issue.endsWith(':description')),...(facts.paymentChannel?{paymentChannel:facts.paymentChannel}:{}),...(creditCandidates?{candidates:creditCandidates}:{})},...(result?{usage:result.usage,model:result.model}:{})};
 }
 /** Indicative conversion is separate from the actual EUR bank payment. */
 export async function convertExtractedFinance(result:FinanceExtraction):Promise<FinanceExtraction> {
