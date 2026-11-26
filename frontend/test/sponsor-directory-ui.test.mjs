@@ -48,7 +48,7 @@ const rows = { escapeHtml, humanDate: (value) => String(value).slice(0, 10) };
 test("primary navigation is Pipeline, Companies, People with canonical list paths", async () => {
   assert.deepEqual(CRM_PRIMARY_TABS.map(({ id }) => id), ["pipeline", "companies", "people"]);
   assert.deepEqual(CRM_MORE_LINKS.map(({ label }) => label),
-    ["Follow-ups", "Lead discovery", "Newsletter sources", "Money"]);
+    ["Follow-ups", "Potential leads", "Newsletters", "Money"]);
   const routes = await import("../src/core/sponsor-routes.js");
   const model = crmNavModel("people");
   assert.deepEqual(model.primary.map(({ href }) => href),
@@ -81,15 +81,19 @@ test("every existing canonical URL stays reachable and maps to a tab", async () 
   assert.equal(at("/sponsors").sponsorsTab, "pipeline");
 });
 
-test("nav marks the current tab and keeps More reachable with an open state", () => {
+test("nav marks the current tab; More is a closed dropdown that names the active secondary page", () => {
   const markup = renderCrmNav(crmNavModel("people"), { escapeHtml });
   assert.match(markup, /data-crm-nav-tab="people" aria-current="page"/);
   assert.doesNotMatch(markup, /data-crm-nav-tab="pipeline" aria-current/);
   assert.match(markup, /<details class="crm-more" data-crm-nav-more>/);
-  assert.match(markup, /href="\/sponsors\/leads"[^>]*>Lead discovery/);
-  const money = renderCrmNav(crmNavModel("money"), { escapeHtml });
-  assert.match(money, /<details class="crm-more" data-crm-nav-more open>/);
-  assert.match(money, /data-crm-nav-tab="money" aria-current="page"/);
+  assert.match(markup, /data-crm-nav-more-label aria-label="More CRM views">More</);
+  assert.match(markup, /href="\/sponsors\/leads"[^>]*>Potential leads/);
+  for (const [tab, label] of [["followups", "Follow-ups"], ["leads", "Potential leads"], ["newsletters", "Newsletters"], ["money", "Money"]]) {
+    const current = renderCrmNav(crmNavModel(tab), { escapeHtml });
+    assert.doesNotMatch(current, /crm-more" data-crm-nav-more open/);
+    assert.match(current, new RegExp(`data-crm-nav-more-label aria-label="More CRM views" aria-current="page">${label}<`));
+    assert.match(current, new RegExp(`data-crm-nav-tab="${tab}" aria-current="page"`));
+  }
 });
 
 // --- Directory state: URL parsing, validation, API-exact queries ---
