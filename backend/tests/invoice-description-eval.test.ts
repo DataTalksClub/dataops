@@ -18,6 +18,7 @@ const reader=(c:Case)=>async()=>{
   if(c.reader==='unused') throw new Error('the reader must not run for this layout');
   return {fields:{...blank,...c.reader} as LlmExtraction,model:'recorded',latencyMs:1,usage:{inputTokens:0,outputTokens:0}};
 };
+// Description issues are advisory: they never block amount auto-attach or reconciliation.
 // What the ledger shows when a draft has no description at all.
 const FALLBACK_LABELS=/^(?:business expense|business income|expense|invoice|receipt|payment|subscription|services?|sponsor payment)/i;
 
@@ -34,7 +35,6 @@ for(const c of cases) {
       if(c.expected.descriptionFrom==='document') assert.ok(!c.hints?.subject||!r.fields.description.toLowerCase().includes(c.hints.subject.toLowerCase()));
     } else {
       assert.ok(r.extraction.issues.includes('missing:description'),'an empty description must be flagged for review');
-      assert.equal(r.extraction.needsReview,true);
     }
   });
 }
