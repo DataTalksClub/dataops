@@ -1,5 +1,4 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import yaml from "js-yaml";
 import { UsageError } from "../errors.mjs";
 import { apiFor } from "../session.mjs";
 import { enc, positional, required, list } from "../format.mjs";
@@ -316,6 +315,14 @@ export const metrics = nested(async (action, a, io) => {
 });
 export async function importPlan(a, io) {
   const file = required(a, "file", "file");
+  let yaml;
+  try {
+    yaml = (await import("js-yaml")).default;
+  } catch {
+    throw new UsageError(
+      "Marketing imports need the js-yaml package; run with dependencies installed.",
+    );
+  }
   const input = yaml.load(readFileSync(file, "utf8"), {
     schema: yaml.JSON_SCHEMA,
   });

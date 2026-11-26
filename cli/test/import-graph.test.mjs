@@ -78,6 +78,16 @@ describe("CLI without installed dependencies", () => {
     assert.match(result.stdout, /--from-file/);
   });
 
+  test("Marketing imports fail with a usage error when YAML dependencies are absent", async (t) => {
+    const dir = cleanCheckout(t);
+    const file = path.join(dir, "plan.yaml");
+    writeFileSync(file, "plan:\n  title: Test plan\n");
+    const result = runCli(t, dir, ["marketing", "import", "--file", file]);
+    assert.equal(result.status, 2, result.stderr);
+    assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND/);
+    assert.match(result.stderr, /Marketing imports need the js-yaml package/);
+  });
+
   test("YAML template files fail with a usage error, not a module crash", async (t) => {
     const dir = cleanCheckout(t);
     const file = path.join(dir, "def.yaml");
