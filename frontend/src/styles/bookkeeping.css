@@ -3,12 +3,20 @@
    same dakit roles as the calendar. Loaded after the legacy finance sheets,
    so the few overrides below win on order at equal specificity. */
 
+/* Remove the scroll container's top padding on Bookkeeping so sticky table
+   headers lock flush at the top edge of .dk-main with no gap for rows to
+   peek through above them; .bookkeeping-surface restores the visual inset. */
+.dk-main.page-shell:has(.bookkeeping-surface:not([hidden])) {
+  padding-top: 0;
+}
+
 .bookkeeping-surface.bookkeeping-surface {
   display: flex;
   flex-direction: column;
   gap: var(--dk-space-3);
   max-width: none;
   min-height: 0;
+  padding-top: var(--dk-space-6);
 }
 .bookkeeping-surface [hidden] { display: none; }
 
@@ -220,6 +228,12 @@ tr.bk-month__totals-row > th {
 .bk-col-flag .dk-icon-button:hover,
 .bk-col-account .dk-icon-button:hover { color: var(--dk-text-primary); }
 .bk-col-class { padding-left: var(--dk-space-1); padding-right: var(--dk-space-1); overflow: hidden; }
+/* Inline selects add their own 1px border + --dk-space-1 left padding; offset
+   the cell's left padding by that amount so text/dashes align across
+   regular/deal rows, pending-invoice rows, and column headers. */
+.bookkeeping-surface .bk-table td.bk-col-class:has(.bk-inline-select) {
+  padding-left: calc(var(--dk-space-2) - var(--dk-space-1) - 1px);
+}
 .bookkeeping-surface .bk-col-subtype .bk-inline-select { width: 8.5em; }
 .bookkeeping-surface .bk-col-category .bk-inline-select { width: 10.5em; }
 .bk-flag { display: inline-flex; color: var(--dk-text-faint); }
@@ -278,6 +292,7 @@ tr.bk-month__totals-row > th {
 
 /* ---- phone: compact rows, details full screen --------------------------- */
 @media (max-width: 820px) {
+  .bookkeeping-surface.bookkeeping-surface { padding-top: var(--dk-space-4); }
   /* One header row: the period navigator names the page on a phone (the
      topbar already says Bookkeeping), the title stays for assistive tech. */
   .bk-header.dk-page-header { flex-wrap: nowrap; gap: var(--dk-space-2); }
