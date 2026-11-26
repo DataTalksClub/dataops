@@ -108,8 +108,16 @@ export function validateFinanceFacts(f: Facts, expectedPeriod?: string): string[
  */
 function resolveDescription(facts:Facts,text:string,raw:string,base:ReturnType<typeof extractInvoiceText>,hints:InvoiceHints|undefined,issues:string[]):string|null {
   const context={counterparty:facts.counterparty,invoiceNumber:facts.invoiceNumber};
+  // A provider-catalog default describes the vendor, not this purchase. The
+  // template facts copy it from the deterministic pass, so it can arrive here
+  // looking like a document phrase; wherever it comes from it is not one. The
+  // printed line item or overview services win, and the last tier re-admits it
+  // only when the document prints it.
+  const catalogDefaults=[facts.counterparty,hints?.subject,hints?.sender].flatMap(value=>value?[catalogProvider(value)?.description]:[]);
+  const isCatalogDefault=(value:string)=>catalogDefaults.some(guess=>guess?.toLowerCase()===value.toLowerCase());
   let description=cleanDescription(facts.description,context);
-  if(description && !groundedInDocument(description,text)) {issues.push('uncertain:description');description=undefined;}
+  if(description && isCatalogDefault(description)) description=undefined;
+  else if(description && !groundedInDocument(description,text)) {issues.push('uncertain:description');description=undefined;}
   // The line item is read from the raw text: some fonts print the billed-period
   // dash as a NUL glyph, which the invoice-number normalizer turns into spaces
   // before a month name.
