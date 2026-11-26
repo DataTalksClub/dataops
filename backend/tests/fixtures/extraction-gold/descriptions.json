@@ -58,5 +58,66 @@
     "text": "Credit note\nCredit note number CN-0001-CN-01\nDate: 2026-10-05\nExample Cloud, Inc.\nUnused time on Cloud VPS plan\nCredited total EUR 25.00",
     "reader": { "docType": "credit_note", "counterparty": "Example Cloud, Inc.", "invoiceNumber": "CN-0001-CN-01", "date": "2026-10-05", "currency": "EUR", "net": "25.00", "vat": "0.00", "gross": "25.00", "vatRate": "0", "description": "Unused time on Cloud VPS plan", "confidence": "high" },
     "expected": { "description": "Unused time on Cloud VPS plan" }
+  },
+  {
+    "id": "catalog-default-contradicts-document-template",
+    "note": "The provider catalog guesses 'Dedicated server' for every Hetzner invoice. The document prints a storage box, so the guess is dropped and review is asked for the description instead of a plausible wrong line.",
+    "text": "Hetzner Online GmbH\nInvoice no.: 123456789\nInvoice date: 01/10/2026\nStorage Box 100 TB, October 2026\nTax code Tax rate\nA1 19 %\nTotal € 100.00 € 19.00 € 119.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": null, "method": "template:hetzner", "needsReview": false, "issues": ["uncertain:description", "missing:description"] }
+  },
+  {
+    "id": "catalog-default-contradicts-document-reader-null",
+    "note": "Reader path, reader returned no description: the same catalog guess must not come back through the fallback tier.",
+    "text": "Invoice\nInvoice number 8811\nInvoice date: 2026-10-05\nHetzner Online GmbH\nDomain registration example.test, 1 year\nTotal 10.00 EUR",
+    "reader": { "counterparty": "Hetzner Online GmbH", "invoiceNumber": "8811", "date": "2026-10-05", "currency": "EUR", "net": "8.40", "vat": "1.60", "gross": "10.00", "vatRate": "19", "description": null, "confidence": "high" },
+    "expected": { "description": null, "issues": ["uncertain:description", "missing:description"] }
+  },
+  {
+    "id": "catalog-default-printed-in-document",
+    "note": "The catalog phrase is kept only when the document itself prints what it says.",
+    "text": "Hetzner Online GmbH\nInvoice no.: 123456790\nInvoice date: 01/10/2026\nDedicated Server EX44, October 2026\nTax code Tax rate\nA1 19 %\nTotal € 100.00 € 19.00 € 119.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": "Dedicated server", "method": "template:hetzner", "needsReview": false }
+  },
+  {
+    "id": "stripe-table-period-dash-printed-as-null",
+    "note": "Synthetic twin of a real Stripe-layout receipt: the font prints the billed-period dash as a NUL glyph before a month name, which the invoice-number normalizer turns into spaces. The line item must still carry its period.",
+    "text": "Receipt\nInvoice number EXAMPLE-0002 \u0000 0001\nDate paid November 12, 2026\nAnthropic, PBC\nBill to\nSynthetic Customer GmbH\nDescription Qty Unit price Tax Amount\nUltra plan\nNov 12 \u0000 Dec 12, 2026\n1 €180.00 0% €180.00\nSubtotal €180.00\nTotal €180.00\nAmount paid €180.00",
+    "reader": "unused",
+    "expected": { "description": "Ultra plan, Nov 12 - Dec 12, 2026", "method": "template:stripe", "needsReview": false }
+  },
+  {
+    "id": "german-subject-is-the-invoice-number",
+    "note": "The reader phrase is not printed and the forwarded subject is only 'Rechnung' plus the invoice number: a generic label in German must not become the description where 'Invoice 2026-001' already does not.",
+    "text": "Rechnung\nRechnungsnummer 2026-001\nDatum 01.10.2026\nBeispiel Handel GmbH\nGesamt netto 42,02 EUR\nUmsatzsteuer 19% 7,98 EUR\nGesamt brutto 50,00 EUR\nVielen Dank fuer Ihren Auftrag und Ihr Vertrauen in unser Haus.",
+    "hints": { "subject": "Rechnung 2026-001", "sender": "buchhaltung@example.test" },
+    "reader": { "counterparty": "Beispiel Handel GmbH", "invoiceNumber": "2026-001", "date": "2026-10-01", "currency": "EUR", "net": "42.02", "vat": "7.98", "gross": "50.00", "vatRate": "19", "description": "Premium streaming bundle for the team", "confidence": "high" },
+    "expected": { "description": null, "needsReview": false, "issues": ["uncertain:description", "missing:description"] }
+  },
+  {
+    "id": "overview-table-names-the-services",
+    "note": "Synthetic twin of a Hetzner invoice (draft 6291b3da) whose overview table prints one service per line. The issuer line makes the template facts carry the catalog guess 'Dedicated server', which one printed word would ground; the description must still name the services, as the operator typed by hand.",
+    "text": "Hetzner Online GmbH\nMusterweg 1, 12345 Musterstadt\nInvoice no.: 123456791\nInvoice date: 01/11/2026\nInvoice 123456791\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nDedicated Server   10/28   € 100.00   € 19.00 A1   € 119.00\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 110.08   € 20.92   € 131.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 110.08   € 110.08   € 20.92   € 131.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": "Dedicated Server and Storage", "method": "template:hetzner", "needsReview": false }
+  },
+  {
+    "id": "overview-table-single-service",
+    "note": "A storage-only Hetzner invoice: the overview prints one service, so the description is that service and not the catalog's 'Dedicated server' guess.",
+    "text": "Hetzner Online GmbH\nInvoice no.: 123456792\nInvoice date: 01/11/2026\nInvoice 123456792\nOverview\nService   Period   Total (excl. VAT)   Tax   Total\nStorage   11/01   € 10.08   € 1.92 A1   € 12.00\nTotal   € 10.08   € 1.92   € 12.00\nTax code   Tax rate   Total (excl. VAT)   Taxable   Tax   Total\nA1   19 %   € 10.08   € 10.08   € 1.92   € 12.00",
+    "hints": { "subject": "Invoice from Hetzner", "sender": "billing@example.test" },
+    "reader": "unused",
+    "expected": { "description": "Storage", "method": "template:hetzner", "needsReview": false }
+  },
+  {
+    "id": "catalog-default-printed-in-aws-invoice",
+    "note": "AWS is the provider whose catalog phrase is a fair summary of the bill: the template facts carry it and the document prints it, so the last tier keeps it. The per-service list is not turned into a description.",
+    "text": "VAT Invoice\nAmazon Web Services EMEA SARL\nVAT Invoice Number: EUINDE26-124\nVAT Invoice Date: October 1, 2026\nTOTAL AMOUNT USD 119.00\nTOTAL VAT USD 19.00\nInvoice Summary\nAWS Service Charges USD 119.00\nAmazon Elastic Compute Cloud USD 100.00\nCharges USD 100.00\nVAT USD 19.00\nNet Charges (After Credits/Discounts, excl. Tax) USD 100.00\nVAT - 19% USD 19.00",
+    "reader": "unused",
+    "expected": { "description": "Cloud services", "method": "template:aws", "needsReview": false }
   }
 ]
