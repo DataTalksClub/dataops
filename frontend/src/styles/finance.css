@@ -1458,13 +1458,17 @@ closes on every tab switch (see setView), so it never covers list content. */
     flex: none;
     min-height: auto;
   }
-  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) { gap: var(--dk-space-3); }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) { gap: var(--dk-space-2); }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-alerts { padding: var(--dk-space-1) var(--dk-space-2); }
   .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-layout {
     display: block;
     flex: none;
     min-height: 0;
     overflow: visible;
+    order: 3;
   }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-alerts { order: 2; }
+  .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) > .crm-pipeline-summary { order: 4; }
   .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master { display: block; overflow: visible; }
   .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master [data-crm-list-scroll] { overflow: visible; }
   .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-pipeline { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: var(--dk-space-1); }
