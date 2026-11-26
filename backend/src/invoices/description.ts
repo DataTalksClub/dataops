@@ -4,8 +4,8 @@
 // than a plausible-looking guess.
 
 const MAX_LENGTH = 120;
-const GENERIC = /^(?:business\s+expenses?|expenses?|invoices?|receipts?|payments?|purchases?|orders?|services?|subscriptions?|products?|items?|charges?|fees?|credit\s+notes?|refunds?|documents?|statements?|bills?|misc(?:ellaneous)?|other|n\/?a|none|unknown|sponsor\s+payment(?:\s+for\s+deal\s+\S+)?)\.?$/i;
-const GENERIC_WITH_NUMBER = /^(?:invoice|receipt|payment|order|credit\s+note|refund|bill)\s*(?:no\.?|number|#|nr\.?)?\s*[:#]?\s*[A-Z0-9][A-Z0-9\-/._]*$/i;
+const GENERIC = /^(?:business\s+expenses?|expenses?|invoices?|receipts?|payments?|purchases?|orders?|services?|subscriptions?|products?|items?|charges?|fees?|credit\s+notes?|refunds?|documents?|statements?|bills?|misc(?:ellaneous)?|other|n\/?a|none|unknown|sponsor\s+payment(?:\s+for\s+deal\s+\S+)?|rechnung(?:en)?|rechnungsnummern?|quittung(?:en)?|bestellung(?:en)?|gutschrift(?:en)?|zahlung(?:en)?|belege?|factures?|fattur[ae]|facturas?|reçus?|recibos?|ricevut[ae])\.?$/i;
+const GENERIC_WITH_NUMBER = /^(?:invoice|receipt|payment|order|credit\s+note|refund|bill|rechnung(?:s\s?nummer|snr\.?)?|quittung|bestellung|gutschrift|zahlung|beleg|facture|fattura|factura|reçu|recibo|ricevuta)\s*(?:no\.?|number|#|nr\.?)?\s*[:#]?\s*[A-Z0-9][A-Z0-9\-/._]*$/i;
 const GENERIC_FROM_VENDOR = /^(?:invoice|receipt|payment|order|statement|subscription|charge)s?\s+(?:from|for|to)\s+.{0,60}$/i;
 
 const norm = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
