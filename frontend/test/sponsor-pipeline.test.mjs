@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { pipelineControlsFromFilters, renderSponsorPipelineList, renderSponsorPipelineFilters } from "../src/surfaces/finance/sponsor-pipeline.js";
 import { escapeHtml } from "../src/core/html.js";
 
@@ -28,6 +29,17 @@ test("funnel totals are server-wide rather than page counts and include closed/l
   assert.match(markup, /data-pipeline-status="agreed" aria-pressed="true"/);
 });
 
+test("chips show the deals the current view lists, and say when it hides some", async () => {
+  const { pipelineChipCount, pipelineMatchSummary } = await import("../src/surfaces/finance/sponsor-pipeline.js");
+  const counts = { invoiced: 18, agreed: 2 }, viewCounts = { invoiced: 5, agreed: 2 };
+  assert.equal(pipelineChipCount(counts, viewCounts, "invoiced"), "5 of 18");
+  assert.equal(pipelineChipCount(counts, viewCounts, "agreed"), "2");
+  assert.equal(pipelineChipCount(counts, undefined, "invoiced"), "18");
+  assert.match(renderSponsorPipelineFilters({ counts, viewCounts, selected: "", escapeHtml }), /Invoiced <strong>5 of 18/);
+  assert.equal(pipelineMatchSummary({ total: 6, totalDeals: 78 }), "6 matching deals · 78 deals in total");
+  assert.equal(pipelineMatchSummary({ total: 1, totalDeals: 1 }), "1 matching deal");
+});
+
 test("Sponsors creates ride on their collections, never the page header", async () => {
   const { sponsorSurfaceMarkup } = await import("../src/surfaces/finance/sponsor-layout.js");
   const markup = sponsorSurfaceMarkup((value) => value);
@@ -37,6 +49,9 @@ test("Sponsors creates ride on their collections, never the page header", async 
   // Add deal follows the Pipeline list title; Refresh suggestions trails.
   assert.match(markup, /crm-list-head">[\s\S]*?data-crm-list-heading>Pipeline<\/h2>\s*<button[^>]*data-dk-create[^>]*data-add-deal/);
   assert.match(markup, /dk-collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
+  // Stage totals and scope note are grouped in one summary; search & primary controls sit in the toolbar.
+  assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline/);
+  assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?data-pipeline-view[\s\S]*?crm-filter-disclosure[\s\S]*?data-crm-status/);
   // Add company follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);
 });
@@ -112,4 +127,12 @@ test("saved-view sorts map onto pipeline controls without changing the list endp
     { view: "overdue", stage: "", search: "", owner: "", sort: "next-action",
       nextActionFrom: "2026-10-01", nextActionBefore: "2026-10-17" },
   );
+});
+
+test("narrow CRM tabs keep the folded alerts bar full width instead of shrinking to its label", () => {
+  const css = readFileSync(new URL("../src/styles/responsive.css", import.meta.url), "utf8");
+  const rule = css.match(/\.sponsor-crm-surface > \.crm-alerts \{([^}]*)\}/);
+  assert.ok(rule, "responsive.css must style the direct .crm-alerts child of the CRM surface");
+  assert.match(rule[1], /flex:\s*1 1 100%/);
+  assert.match(rule[1], /min-width:\s*0/);
 });
