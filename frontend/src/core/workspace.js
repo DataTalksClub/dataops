@@ -35,6 +35,7 @@ export const WORKSPACE_PATH_BY_VIEW = Object.freeze({
   calendar: "/calendar",
   podcast: "/podcast",
   inbox: "/inbox",
+  marketing: "/marketing",
 });
 
 export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
@@ -102,6 +103,12 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/podcast": { view: "podcast", tasksSection: "queue", params: ["view"] },
   "/podcast/schedule": { view: "podcast", tasksSection: "queue", params: [] },
   "/podcast/:episodeId": { view: "podcast", tasksSection: "queue", params: ["view"] },
+  "/marketing": { view: "marketing", tasksSection: "queue", params: [] },
+  "/marketing/plans/:planId": { view: "marketing", tasksSection: "queue", params: [] },
+  "/marketing/plans/:planId/goals/:goalRef": { view: "marketing", tasksSection: "queue", params: [] },
+  "/marketing/steps/:stepId": { view: "marketing", tasksSection: "queue", params: [] },
+  "/marketing/review": { view: "marketing", tasksSection: "queue", params: ["week"] },
+  "/marketing/metrics": { view: "marketing", tasksSection: "queue", params: [] },
   "/processes": {
     view: "docs",
     tasksSection: "queue",

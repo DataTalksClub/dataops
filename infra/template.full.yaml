@@ -334,6 +334,32 @@ Resources:
         - { Key: Project, Value: DataOps }
         - { Key: App, Value: DataOpsV1 }
         - { Key: DataClass, Value: PrivateExecutionState }
+  DataOpsMarketingTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub ${AWS::StackName}-marketing
+      BillingMode: PAY_PER_REQUEST
+      DeletionProtectionEnabled: true
+      SSESpecification: { SSEEnabled: true }
+      PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }
+      AttributeDefinitions:
+        - { AttributeName: PK, AttributeType: S }
+        - { AttributeName: SK, AttributeType: S }
+        - { AttributeName: stepId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: PK, KeyType: HASH }
+        - { AttributeName: SK, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-StepId
+          KeySchema:
+            - { AttributeName: stepId, KeyType: HASH }
+          Projection: { ProjectionType: ALL }
+      Tags:
+        - { Key: Project, Value: DataOps }
+        - { Key: App, Value: DataOpsV1 }
+        - { Key: DataClass, Value: PrivateExecutionState }
   DataOpsSponsorCrmTable:
     Type: AWS::DynamoDB::Table
     DeletionPolicy: Retain
@@ -1190,6 +1216,8 @@ Resources:
               - !Sub ${DataOpsPodcastEpisodesTable.Arn}/index/*
               - !GetAtt DataOpsPeopleTable.Arn
               - !GetAtt DataOpsBooksTable.Arn
+              - !GetAtt DataOpsMarketingTable.Arn
+              - !Sub ${DataOpsMarketingTable.Arn}/index/*
         - Statement:
             Effect: Allow
             Action:
@@ -1213,6 +1241,7 @@ Resources:
               - !GetAtt DataOpsPodcastEpisodesTable.Arn
               - !GetAtt DataOpsPeopleTable.Arn
               - !GetAtt DataOpsBooksTable.Arn
+              - !GetAtt DataOpsMarketingTable.Arn
               - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/dapier-*
         - Statement:
             Effect: Allow
@@ -1342,6 +1371,7 @@ Resources:
           DATAOPS_SECRETS_KMS_KEY: !Ref SecretsStoreKey
           DATAOPS_PEOPLE_TABLE: !Ref DataOpsPeopleTable
           DATAOPS_BOOKS_TABLE: !Ref DataOpsBooksTable
+          DATAOPS_MARKETING_TABLE: !Ref DataOpsMarketingTable
           SPONSOR_FINANCE_ENABLED: !Ref SponsorFinanceEnabled
           NEWSLETTER_OPEN_ALERT_LEAD_DAYS: !Ref NewsletterOpenAlertLeadDays
           NEWSLETTER_WORKFLOW_ALERT_LEAD_DAYS: !Ref NewsletterWorkflowAlertLeadDays

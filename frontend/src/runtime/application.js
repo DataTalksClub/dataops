@@ -35,6 +35,7 @@ import { createWorkDetailSurface } from "../surfaces/work-detail/index.js";
 import { createKnowledgeSurface } from "../surfaces/knowledge/index.js";
 import { createDocumentEditor } from "../surfaces/document-editor/index.js";
 import { createPodcastSurface } from "../surfaces/podcast/index.js";
+import { createMarketingSurface } from "../surfaces/marketing/index.js";
 import { createInboxSurface } from "../surfaces/inbox.js";
 import { createOperatingModelSurface } from "../surfaces/operating-model.js";
 import { createApiClient, resolveApiBase } from "../shell/api.js";
@@ -53,6 +54,7 @@ import { createSurfaceBridge, createSurfaceComposition } from "./surface-composi
 let knowledgeSurface;
 let documentEditorSurface;
 let podcastSurface;
+let marketingSurface;
 let inboxSurface;
 let operatingModelSurface;
 let navigationShell;
@@ -165,6 +167,7 @@ const {
   getRenderCalendarSurface: () => renderCalendarSurface,
   getRenderDocsSurface: () => renderDocsSurface,
   getRenderInboxSurface: () => inboxSurface?.renderInbox || (() => undefined),
+  getRenderMarketingSurface: () => marketingSurface?.renderMarketingSurface || (() => undefined),
   getRenderNewsletterSurface: () => renderNewsletterSurface,
   getRenderOperatingModel: () => operatingModelSurface?.renderOperatingModel || (() => undefined),
   getRenderPodcastSurface: () =>
@@ -588,6 +591,17 @@ podcastSurface = createPodcastSurface({
   navigateCanonicalWorkspace,
   request,
   setRouteTitle,
+});
+
+marketingSurface = createMarketingSurface({
+  apiUrl,
+  documentList,
+  getActiveWorkspaceRoute,
+  navigateCanonicalWorkspace,
+  request,
+  setRouteTitle,
+  todayIsoDate,
+  workApiUrl,
 });
 
 inboxSurface = createInboxSurface({

@@ -1,0 +1,374 @@
+{
+  "brandQueryRegex": "(?i)(datatalks|data ?talks|zoomcamp|zoom camp|alexey grigorev|grigorev|dtc academy)",
+  "brandDefinitionSince": "2026-11-25",
+  "weeklyLimit": 2,
+  "prompts": [
+    "P01",
+    "P02",
+    "P03",
+    "P04",
+    "P05",
+    "P06",
+    "P07",
+    "P08",
+    "P09",
+    "P10",
+    "P11",
+    "P12",
+    "P13",
+    "P14",
+    "P15",
+    "P16",
+    "P17",
+    "P18",
+    "P19",
+    "P20",
+    "P21",
+    "P22",
+    "P23"
+  ],
+  "excluded": {
+    "waitlist": "Canonical source has not been confirmed.",
+    "ga4": "Analytics access and property have not been confirmed.",
+    "ahrefsVerification": "Site verification is an operator action outside code scope."
+  },
+  "metrics": [
+    {
+      "key": "gsc_nonbrand_clicks",
+      "unit": "count",
+      "sources": [
+        "gsc"
+      ],
+      "scopes": [
+        "site",
+        "prefix:",
+        "page:",
+        "queryset:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Gsc nonbrand clicks",
+      "brandFilter": true
+    },
+    {
+      "key": "gsc_nonbrand_impressions",
+      "unit": "count",
+      "sources": [
+        "gsc"
+      ],
+      "scopes": [
+        "site",
+        "prefix:",
+        "page:",
+        "queryset:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Gsc nonbrand impressions",
+      "brandFilter": true
+    },
+    {
+      "key": "gsc_page_clicks",
+      "unit": "count",
+      "sources": [
+        "gsc"
+      ],
+      "scopes": [
+        "page:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Gsc page clicks",
+      "brandFilter": false
+    },
+    {
+      "key": "gsc_page_impressions",
+      "unit": "count",
+      "sources": [
+        "gsc"
+      ],
+      "scopes": [
+        "page:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Gsc page impressions",
+      "brandFilter": false
+    },
+    {
+      "key": "gsc_avg_position",
+      "unit": "position",
+      "sources": [
+        "gsc"
+      ],
+      "scopes": [
+        "queryset:"
+      ],
+      "period": "week",
+      "direction": "down",
+      "label": "Gsc avg position",
+      "brandFilter": false
+    },
+    {
+      "key": "bing_clicks",
+      "unit": "count",
+      "sources": [
+        "bing",
+        "manual"
+      ],
+      "scopes": [
+        "site"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Bing clicks",
+      "brandFilter": false
+    },
+    {
+      "key": "bing_impressions",
+      "unit": "count",
+      "sources": [
+        "bing",
+        "manual"
+      ],
+      "scopes": [
+        "site"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Bing impressions",
+      "brandFilter": false
+    },
+    {
+      "key": "bing_ai_citations",
+      "unit": "count",
+      "sources": [
+        "manual"
+      ],
+      "scopes": [
+        "site"
+      ],
+      "period": "month",
+      "direction": "up",
+      "label": "Bing ai citations",
+      "brandFilter": false
+    },
+    {
+      "key": "aeo_named",
+      "unit": "count",
+      "sources": [
+        "aeo-panel"
+      ],
+      "scopes": [
+        "engine:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Aeo named",
+      "brandFilter": false
+    },
+    {
+      "key": "aeo_cited",
+      "unit": "count",
+      "sources": [
+        "aeo-panel"
+      ],
+      "scopes": [
+        "engine:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Aeo cited",
+      "brandFilter": false
+    },
+    {
+      "key": "aeo_prompt_named",
+      "unit": "share",
+      "sources": [
+        "aeo-panel"
+      ],
+      "scopes": [
+        "prompt:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Aeo prompt named",
+      "brandFilter": false
+    },
+    {
+      "key": "referring_domains",
+      "unit": "count",
+      "sources": [
+        "ahrefs-free",
+        "treg-seranking",
+        "treg-moz",
+        "manual"
+      ],
+      "scopes": [
+        "domain:"
+      ],
+      "period": "month",
+      "direction": "up",
+      "label": "Referring domains",
+      "brandFilter": false
+    },
+    {
+      "key": "domain_rating",
+      "unit": "score",
+      "sources": [
+        "ahrefs-free",
+        "manual"
+      ],
+      "scopes": [
+        "domain:"
+      ],
+      "period": "month",
+      "direction": "up",
+      "label": "Domain rating",
+      "brandFilter": false
+    },
+    {
+      "key": "moz_da",
+      "unit": "score",
+      "sources": [
+        "treg-moz",
+        "manual"
+      ],
+      "scopes": [
+        "domain:"
+      ],
+      "period": "month",
+      "direction": "up",
+      "label": "Moz da",
+      "brandFilter": false
+    },
+    {
+      "key": "seranking_da",
+      "unit": "score",
+      "sources": [
+        "treg-seranking",
+        "manual"
+      ],
+      "scopes": [
+        "domain:"
+      ],
+      "period": "month",
+      "direction": "up",
+      "label": "SE Ranking DA",
+      "brandFilter": false
+    },
+    {
+      "key": "linking_domains_academy",
+      "unit": "count",
+      "sources": [
+        "ahrefs-free",
+        "treg-seranking",
+        "manual"
+      ],
+      "scopes": [
+        "prefix:"
+      ],
+      "period": "month",
+      "direction": "up",
+      "label": "Linking domains academy",
+      "brandFilter": false
+    },
+    {
+      "key": "serp_position",
+      "unit": "position",
+      "sources": [
+        "treg",
+        "manual"
+      ],
+      "scopes": [
+        "keyword:"
+      ],
+      "period": "week",
+      "direction": "down",
+      "label": "Serp position",
+      "brandFilter": false
+    },
+    {
+      "key": "academy_visits",
+      "unit": "count",
+      "sources": [
+        "dataops"
+      ],
+      "scopes": [
+        "site",
+        "track:",
+        "page:",
+        "prefix:",
+        "utm_content:",
+        "utm_campaign:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Academy visits",
+      "brandFilter": false
+    },
+    {
+      "key": "newsletter_clicks",
+      "unit": "count",
+      "sources": [
+        "dataops"
+      ],
+      "scopes": [
+        "site",
+        "issue:",
+        "card:"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Newsletter clicks",
+      "brandFilter": false
+    },
+    {
+      "key": "sponsor_inquiries",
+      "unit": "count",
+      "sources": [
+        "manual"
+      ],
+      "scopes": [
+        "site"
+      ],
+      "period": "week",
+      "direction": "up",
+      "label": "Sponsor inquiries",
+      "brandFilter": false
+    }
+  ],
+  "aeoPanel": {
+    "id": "academy-23",
+    "promptIds": [
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P08",
+      "P09",
+      "P10",
+      "P11",
+      "P12",
+      "P13",
+      "P14",
+      "P15",
+      "P16",
+      "P17",
+      "P18",
+      "P19",
+      "P20",
+      "P21",
+      "P22",
+      "P23"
+    ],
+    "brandPromptIds": [
+      "P08",
+      "P09",
+      "P10"
+    ]
+  }
+}
