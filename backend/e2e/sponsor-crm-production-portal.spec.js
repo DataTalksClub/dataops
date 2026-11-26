@@ -605,11 +605,10 @@ test.describe("production sponsor CRM portal", () => {
     await expect(page.locator('[data-record-panel="overview"]')).toContainText('Deal details');
     await page.screenshot({ path: '.tmp/sponsor-deal-overview-desktop.png' });
     await page.setViewportSize({ width: 390, height: 844 });
-    const closeSidebar = page.locator("#sidebar-close-button");
-    if (await closeSidebar.isVisible()) await closeSidebar.click();
+    await expect(page.locator("#sidebar-close-button")).toBeHidden();
     await expect(page.locator('[data-record-title]')).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await page.screenshot({ path: '.tmp/sponsor-deal-overview-mobile.png', fullPage: true });
+    await page.screenshot({ path: '.tmp/sponsor-deal-overview-mobile.png', fullPage: true, animations: 'disabled' });
     await page.setViewportSize({ width: 1280, height: 720 });
     // Finance evidence loads only when its tab opens; the communication
     // history stays lazy: nothing reads it until the archive disclosure
