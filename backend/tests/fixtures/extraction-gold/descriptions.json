@@ -88,5 +88,13 @@
     "text": "Receipt\nInvoice number EXAMPLE-0002 \u0000 0001\nDate paid November 12, 2026\nAnthropic, PBC\nBill to\nSynthetic Customer GmbH\nDescription Qty Unit price Tax Amount\nUltra plan\nNov 12 \u0000 Dec 12, 2026\n1 €180.00 0% €180.00\nSubtotal €180.00\nTotal €180.00\nAmount paid €180.00",
     "reader": "unused",
     "expected": { "description": "Ultra plan, Nov 12 - Dec 12, 2026", "method": "template:stripe", "needsReview": false }
+  },
+  {
+    "id": "german-subject-is-the-invoice-number",
+    "note": "The reader phrase is not printed and the forwarded subject is only 'Rechnung' plus the invoice number: a generic label in German must not become the description where 'Invoice 2026-001' already does not.",
+    "text": "Rechnung\nRechnungsnummer 2026-001\nDatum 01.10.2026\nBeispiel Handel GmbH\nGesamt netto 42,02 EUR\nUmsatzsteuer 19% 7,98 EUR\nGesamt brutto 50,00 EUR\nVielen Dank fuer Ihren Auftrag und Ihr Vertrauen in unser Haus.",
+    "hints": { "subject": "Rechnung 2026-001", "sender": "buchhaltung@example.test" },
+    "reader": { "counterparty": "Beispiel Handel GmbH", "invoiceNumber": "2026-001", "date": "2026-10-01", "currency": "EUR", "net": "42.02", "vat": "7.98", "gross": "50.00", "vatRate": "19", "description": "Premium streaming bundle for the team", "confidence": "high" },
+    "expected": { "description": null, "needsReview": false, "issues": ["uncertain:description", "missing:description"] }
   }
 ]
