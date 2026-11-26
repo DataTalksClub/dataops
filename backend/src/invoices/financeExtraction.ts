@@ -105,11 +105,14 @@ export function validateFinanceFacts(f: Facts, expectedPeriod?: string): string[
  * catalog or forwarded subject. Generic, ungrounded or contradicted values are
  * dropped (null) and the draft is flagged rather than given a guess.
  */
-function resolveDescription(facts:Facts,text:string,base:ReturnType<typeof extractInvoiceText>,hints:InvoiceHints|undefined,issues:string[]):string|null {
+function resolveDescription(facts:Facts,text:string,raw:string,base:ReturnType<typeof extractInvoiceText>,hints:InvoiceHints|undefined,issues:string[]):string|null {
   const context={counterparty:facts.counterparty,invoiceNumber:facts.invoiceNumber};
   let description=cleanDescription(facts.description,context);
   if(description && !groundedInDocument(description,text)) {issues.push('uncertain:description');description=undefined;}
-  description??=lineItemDescription(text);
+  // The line item is read from the raw text: some fonts print the billed-period
+  // dash as a NUL glyph, which the invoice-number normalizer turns into spaces
+  // before a month name.
+  description??=lineItemDescription(raw);
   const fallback=cleanDescription(base.fields.description,context);
   if(!description && fallback) {
     const fromSubject=base.extraction.evidence.includes('description from the email subject');
@@ -192,7 +195,7 @@ export async function extractFinanceText(raw:string, options:{pdf?:Buffer; hints
   if(facts.docType==='credit_note') facts.direction=customerCreditNote?'income':'expense';
   issues.push(...validateFinanceFacts(facts,options.expectedPeriod));
   if(facts.invoiceNumber) facts.invoiceNumber=facts.invoiceNumber.replace(/[\u0000\u2010-\u2014\u2212]/g,'-').replace(/\s*-\s*/g,'-');
-  facts.description=resolveDescription(facts,text,base,options.hints,issues);
+  facts.description=resolveDescription(facts,text,raw,base,options.hints,issues);
   if(facts.description===null && facts.docType!=='other') issues.push('missing:description');
   const fields:InvoiceFields={...base.fields};
   const mapping={counterparty:'counterparty',invoiceNumber:'invoiceNumber',date:'transactionDate',currency:'currency',net:'netAmount',vat:'vatAmount',gross:'amount',vatRate:'vatRate',description:'description'} as const;
