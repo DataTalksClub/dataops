@@ -220,7 +220,7 @@ export function filterEntries(entries, filters, { accountNameOf = resolveAccount
     if (query) {
       const presentation = bookkeepingVendorPresentation(entry);
       const haystack = [
-        entry.counterparty, presentation.canonicalCounterparty, presentation.description,
+        entry.counterparty, presentation.canonicalCounterparty, rowDescription(entry, presentation),
         entry.description, entry.statementRef, entry.subtype,
         entry.category, entry.period, entry.comment, entry.amount, entry.amountEur,
       ].join(" ").toLowerCase();
@@ -247,6 +247,18 @@ export function readableTransactionDescription(entry) {
     return "Sponsor payment";
   }
   return raw;
+}
+
+const MISSING_DRAFT_DESCRIPTION = "No description yet — add one in review";
+
+/**
+ * The text a row shows under its counterparty. A pending draft's description is
+ * the parser's finding: when there is none, say so rather than borrow the vendor
+ * or category fallback that stands in for verified rows.
+ */
+export function rowDescription(entry, presentation = bookkeepingVendorPresentation(entry)) {
+  return readableTransactionDescription(entry)
+    || (entry?.pendingInvoiceDraft ? MISSING_DRAFT_DESCRIPTION : presentation.description);
 }
 
 export function pendingInvoiceEntry(invoice) {
@@ -409,7 +421,7 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
   const flagged = !isDraft && needsCategory(entry);
   const presentation = bookkeepingVendorPresentation(entry);
   const counterparty = String(entry.counterparty || "").trim() || presentation.canonicalCounterparty;
-  const description = readableTransactionDescription(entry) || presentation.description;
+  const description = rowDescription(entry, presentation);
   const showDescription = Boolean(description);
   const vat = vatPresentation(isDraft ? entry : financeEntry);
   const invoiceEvidence = isDraft ? invoiceSourceDocuments(entry) : hasInvoice(entry.id);
