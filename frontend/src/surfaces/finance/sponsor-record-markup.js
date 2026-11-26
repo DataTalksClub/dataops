@@ -66,7 +66,7 @@ export function dealNextAction(row, deal) {
   const review = Boolean(row?.replyReview && (!task || task.deferred));
   if (review) {
     return {
-      text: "Review newer inbound (inferred)",
+      text: "Newer inbound to review",
       when: row.inboundAt ? `Inbound ${formatBerlinDate(row.inboundAt)}` : "",
       taskId: null,
       assigneeId: null,

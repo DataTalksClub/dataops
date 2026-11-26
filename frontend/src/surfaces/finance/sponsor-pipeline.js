@@ -25,18 +25,21 @@ export function pipelineMatchSummary({ total = 0, totalDeals = 0 } = {}) {
   return totalDeals > total ? `${matching} · ${totalDeals} deals in total` : matching;
 }
 
+const COMMITTED_STAGES = ['agreed', 'invoiced', 'running'];
+
 function row(item, { escapeHtml: e, humanSponsorDate: date, ownerName }) {
   const contact = item.primaryContact;
   const task = item.nextTask;
   const review = item.replyReview && (!task || task.deferred);
-  const action = review ? 'Review newer inbound (inferred)' : task ? `${task.deferred ? 'Deferred: ' : ''}${task.description}` : 'No open task';
+  const action = review ? 'Newer inbound to review' : task ? `${task.deferred ? 'Deferred: ' : ''}${task.description}` : 'No open task';
   const when = review ? `Inbound ${date(item.inboundAt)}` : task?.date ? date(task.date) : '';
   const deferred = review && task?.deferred ? `Deferred task: ${task.description}` : '';
   const amount = item.amountEur != null ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(item.amountEur) : '—';
   return html`<tr>
     <td><button class="crm-row-link" data-open-deal="${e(item.id)}">${e(item.organizationName)}</button>
       ${item.title ? html`<small>${e(item.title)}</small>` : ''}
-      <small>${contact ? e([contact.name, contact.email].filter(Boolean).join(' · ')) : 'No primary contact'}</small>
+      ${contact ? html`<small>${e([contact.name, contact.email].filter(Boolean).join(' · '))}</small>`
+        : COMMITTED_STAGES.includes(item.stage) ? html`<small class="crm-missing">No primary contact</small>` : ''}
       <small class="crm-phone-stage">${e(item.stage)}</small></td>
     <td>${e(SPONSOR_PIPELINE_STAGES.find(({ id }) => id === item.stage)?.label || item.stage)}</td>
     <td>${task && !review

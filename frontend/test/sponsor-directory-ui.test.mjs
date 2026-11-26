@@ -385,8 +385,8 @@ test("company rows stay honest without a primary person, touch or deals", () => 
     primaryPerson: null, lastTouch: null, openDealCount: 0,
   }, rows);
   assert.match(markup, /Quiet &lt;Co&gt;/);
-  assert.match(markup, /No primary contact/);
-  assert.match(markup, /No recorded contact/);
+  assert.doesNotMatch(markup, /No primary contact/);
+  assert.doesNotMatch(markup, /No recorded contact/);
   assert.match(markup, /0 open deals/);
   assert.match(markup, /Archived/);
 });
@@ -406,8 +406,9 @@ test("person rows never invent a company and surface role plus preferred email",
     id: "p-2", companyName: null, name: "Bo", emails: [], active: true, lastTouch: null,
   }, rows);
   assert.match(unlinked, /Unlinked/);
-  assert.match(unlinked, /No role recorded/);
-  assert.match(unlinked, /No email/);
+  assert.doesNotMatch(unlinked, /No role recorded|No email/);
+  const quoted = renderPersonRow({ id: "p-3", name: "'Nick Solis'", emails: [], active: true }, rows);
+  assert.match(quoted, />Nick Solis<\/a>/);
   assert.match(unlinked, /<a href="\/sponsors\/people\/p-2" data-open-person="p-2">Bo<\/a>/);
   assert.doesNotMatch(unlinked, /<button/);
 });
