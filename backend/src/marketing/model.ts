@@ -16,6 +16,8 @@ export const BACKLINK_OUTREACH_STATES = [
   "added_confirmed",
   "already_present",
   "reciprocal_link",
+  "mirror",
+  "discovery_only",
 ] as const;
 export type BacklinkOutreachState = (typeof BACKLINK_OUTREACH_STATES)[number];
 export const BACKLINK_BUCKETS = [
@@ -44,6 +46,9 @@ export interface BacklinkCheck extends Dict {
   matchedHref: string | null;
   matchedRel: string[];
   matchCount: number;
+  pageNofollow?: boolean;
+  pageNoindex?: boolean;
+  pageRobotsDirectives?: string[];
   reason: string;
 }
 export interface BacklinkPair extends Dict {
@@ -462,6 +467,21 @@ export function validateBacklinkCheck(check: BacklinkCheck) {
   requireThat(
     Number.isInteger(check.matchCount) && check.matchCount >= 0,
     "Invalid matchCount",
+  );
+  requireThat(
+    check.pageNofollow === undefined || typeof check.pageNofollow === "boolean",
+    "Invalid pageNofollow",
+  );
+  requireThat(
+    check.pageNoindex === undefined || typeof check.pageNoindex === "boolean",
+    "Invalid pageNoindex",
+  );
+  requireThat(
+    check.pageRobotsDirectives === undefined ||
+      (Array.isArray(check.pageRobotsDirectives) &&
+        check.pageRobotsDirectives.length <= 20 &&
+        check.pageRobotsDirectives.every((d) => typeof d === "string" && d.length <= 64)),
+    "Invalid pageRobotsDirectives",
   );
   requireThat(
     typeof check.reason === "string" && check.reason.length <= 500,

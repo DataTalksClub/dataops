@@ -106,6 +106,7 @@ export interface PageFetchResult {
   httpStatus: number | null;
   finalUrl: string | null;
   html: string;
+  xRobotsTag?: string | null;
   reason: string;
 }
 
@@ -295,6 +296,7 @@ export async function fetchPublicHtmlPage(
         httpStatus: response.status,
         finalUrl: currentUrl.href,
         html: text,
+        xRobotsTag: response.headers.get("x-robots-tag") || null,
         reason: `HTTP ${response.status}`,
       };
     } catch (error) {
@@ -418,6 +420,115 @@ export function matchesTargetUrl(candidateHref: string, targetUrl: string): bool
   return true;
 }
 
+const PARAMETERIZED_ROBOTS_DIRECTIVES = new Set([
+  "max-snippet",
+  "max-image-preview",
+  "max-video-preview",
+  "unavailable_after",
+]);
+
+const APPLICABLE_ROBOTS_BOTS = new Set(["all", "robots", "googlebot"]);
+
+export interface PageRobotsInfo {
+  metaNofollow: boolean;
+  metaNoindex: boolean;
+  headerNofollow: boolean;
+  headerNoindex: boolean;
+  pageNofollow: boolean;
+  pageNoindex: boolean;
+  directives: string[];
+}
+
+export function extractPageRobotsDirectives(
+  html: string,
+  xRobotsTag?: string | null,
+): PageRobotsInfo {
+  let metaNofollow = false;
+  let metaNoindex = false;
+  let headerNofollow = false;
+  let headerNoindex = false;
+
+  if (html) {
+    const cleaned = html
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+    const metaRegex = /<meta\b([^>]*)>/gi;
+    let metaMatch: RegExpExecArray | null;
+    while ((metaMatch = metaRegex.exec(cleaned)) !== null) {
+      const attrs = metaMatch[1];
+      let metaName = "";
+      let metaContent = "";
+      const attrRegex =
+        /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+      let attrMatch: RegExpExecArray | null;
+      while ((attrMatch = attrRegex.exec(attrs)) !== null) {
+        const name = attrMatch[1].toLowerCase();
+        const value = decodeHtmlEntities(
+          attrMatch[2] ?? attrMatch[3] ?? attrMatch[4] ?? "",
+        ).trim();
+        if (name === "name") metaName = value.toLowerCase();
+        else if (name === "content") metaContent = value;
+      }
+      if (!metaName || !APPLICABLE_ROBOTS_BOTS.has(metaName)) continue;
+      const tokens = metaContent
+        .toLowerCase()
+        .split(/[\s,]+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      for (const token of tokens) {
+        if (token === "nofollow" || token === "none") metaNofollow = true;
+        if (token === "noindex" || token === "none") metaNoindex = true;
+      }
+    }
+  }
+
+  if (xRobotsTag && typeof xRobotsTag === "string") {
+    let currentBot: string | null = null;
+    for (const rawSegment of xRobotsTag.split(/[\r\n,]+/)) {
+      const segment = rawSegment.trim();
+      if (!segment) continue;
+      let rest = segment;
+      const prefixMatch = /^([a-z0-9_-]+)\s*:\s*(.*)$/i.exec(segment);
+      if (
+        prefixMatch &&
+        !PARAMETERIZED_ROBOTS_DIRECTIVES.has(prefixMatch[1].toLowerCase())
+      ) {
+        currentBot = prefixMatch[1].toLowerCase();
+        rest = prefixMatch[2];
+      }
+      if (currentBot !== null && !APPLICABLE_ROBOTS_BOTS.has(currentBot)) {
+        continue;
+      }
+      const tokens = rest
+        .toLowerCase()
+        .split(/\s+/)
+        .map((t) => t.trim())
+        .filter(Boolean);
+      for (const token of tokens) {
+        if (token === "nofollow" || token === "none") headerNofollow = true;
+        if (token === "noindex" || token === "none") headerNoindex = true;
+      }
+    }
+  }
+
+  const directives: string[] = [];
+  if (metaNoindex) directives.push("meta:noindex");
+  if (metaNofollow) directives.push("meta:nofollow");
+  if (headerNoindex) directives.push("x-robots-tag:noindex");
+  if (headerNofollow) directives.push("x-robots-tag:nofollow");
+
+  return {
+    metaNofollow,
+    metaNoindex,
+    headerNofollow,
+    headerNoindex,
+    pageNofollow: metaNofollow || headerNofollow,
+    pageNoindex: metaNoindex || headerNoindex,
+    directives,
+  };
+}
+
 export function classifyBacklinkCheck(
   page: PageFetchResult,
   targetUrl: string,
@@ -432,9 +543,27 @@ export function classifyBacklinkCheck(
       matchedHref: null,
       matchedRel: [],
       matchCount: 0,
+      pageNofollow: false,
+      pageNoindex: false,
+      pageRobotsDirectives: [],
       reason: page.reason || "Source page unavailable",
     };
   }
+  const robots = extractPageRobotsDirectives(page.html, page.xRobotsTag);
+  const robotsFields = {
+    pageNofollow: robots.pageNofollow,
+    pageNoindex: robots.pageNoindex,
+    pageRobotsDirectives: robots.directives,
+  };
+  const pageNofollowLabel =
+    robots.metaNofollow && robots.headerNofollow
+      ? "page robots meta + X-Robots-Tag nofollow"
+      : robots.metaNofollow
+        ? "page robots meta nofollow"
+        : robots.headerNofollow
+          ? "page X-Robots-Tag nofollow"
+          : "";
+
   const anchors = extractAnchors(page.html, page.finalUrl || targetUrl);
   const matches = anchors.filter((a) => matchesTargetUrl(a.resolvedHref, targetUrl));
   if (matches.length === 0) {
@@ -446,13 +575,16 @@ export function classifyBacklinkCheck(
       matchedHref: null,
       matchedRel: [],
       matchCount: 0,
-      reason: "Target link not found on page",
+      ...robotsFields,
+      reason: robots.pageNoindex
+        ? "Target link not found on page (page noindex)"
+        : "Target link not found on page",
     };
   }
   const followMatch = matches.find(
     (m) => !m.rel.some((token) => QUALIFIED_REL_TOKENS.has(token)),
   );
-  if (followMatch) {
+  if (followMatch && !robots.pageNofollow) {
     return {
       checkedAt,
       bucket: "added_follow",
@@ -461,10 +593,31 @@ export function classifyBacklinkCheck(
       matchedHref: followMatch.resolvedHref,
       matchedRel: followMatch.rel,
       matchCount: matches.length,
-      reason: "Link present (follow)",
+      ...robotsFields,
+      reason: robots.pageNoindex
+        ? "Link present (follow; page noindex)"
+        : "Link present (follow)",
+    };
+  }
+  if (followMatch && robots.pageNofollow) {
+    const parts = [pageNofollowLabel];
+    if (robots.pageNoindex) parts.push("page noindex");
+    return {
+      checkedAt,
+      bucket: "added_qualified",
+      httpStatus: page.httpStatus,
+      finalUrl: page.finalUrl,
+      matchedHref: followMatch.resolvedHref,
+      matchedRel: followMatch.rel,
+      matchCount: matches.length,
+      ...robotsFields,
+      reason: `Link present (${parts.join("; ")})`,
     };
   }
   const qualified = matches[0];
+  const parts = [`rel=${qualified.rel.join(" ")}`];
+  if (pageNofollowLabel) parts.push(pageNofollowLabel);
+  if (robots.pageNoindex) parts.push("page noindex");
   return {
     checkedAt,
     bucket: "added_qualified",
@@ -473,7 +626,8 @@ export function classifyBacklinkCheck(
     matchedHref: qualified.resolvedHref,
     matchedRel: qualified.rel,
     matchCount: matches.length,
-    reason: `Link present (rel=${qualified.rel.join(" ")})`,
+    ...robotsFields,
+    reason: `Link present (${parts.join("; ")})`,
   };
 }
 

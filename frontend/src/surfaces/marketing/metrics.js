@@ -25,6 +25,8 @@ const OUTREACH_STATES = [
   "added_confirmed",
   "already_present",
   "reciprocal_link",
+  "mirror",
+  "discovery_only",
 ];
 
 function renderAuthoritySeriesCell(series) {
@@ -108,11 +110,17 @@ function renderBacklinkGroup(meta, items) {
         ? html`<a class="mkt-link" href="${escapeHtml(check.matchedHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(check.matchedHref)}</a>`
         : html`<span class="mkt-muted">–</span>`;
       const ownerLabel = pair.owner ? ` (${pair.owner})` : "";
+      const robotsFlags = [
+        check?.pageNofollow ? html`<span class="dk-badge dk-badge--info">page nofollow</span>` : "",
+        check?.pageNoindex ? html`<span class="dk-badge dk-badge--warning">page noindex</span>` : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
       return html`<tr>
         <td><a class="mkt-link" href="${escapeHtml(pair.sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(pair.sourceUrl)}</a></td>
         <td><a class="mkt-link" href="${escapeHtml(pair.targetUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(pair.targetUrl)}</a></td>
         <td class="mkt-nowrap"><span class="dk-badge">${escapeHtml(pair.outreachState)}${escapeHtml(ownerLabel)}</span></td>
-        <td>${hrefCell}<div class="mkt-muted">rel: ${escapeHtml(relLabel)}</div></td>
+        <td>${hrefCell}<div class="mkt-muted">rel: ${escapeHtml(relLabel)}</div>${robotsFlags ? html`<div>${robotsFlags}</div>` : ""}</td>
         <td>
           <div class="mkt-nowrap">${escapeHtml(checkedAt)}${check?.httpStatus ? ` · HTTP ${check.httpStatus}` : ""}</div>
           <div class="mkt-muted">${escapeHtml(check?.reason || "Not checked yet")}</div>

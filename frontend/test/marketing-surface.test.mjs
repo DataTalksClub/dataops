@@ -374,7 +374,7 @@ describe("marketing API contract and rendering", () => {
           },
         },
       ],
-      summary: { total: 2, added_follow: 1, added_qualified: 0, absent: 0, unavailable: 1, unchecked: 0 },
+      summary: { total: 3, added_follow: 1, added_qualified: 1, absent: 0, unavailable: 1, unchecked: 0 },
       groups: {
         added_follow: [
           {
@@ -396,7 +396,28 @@ describe("marketing API contract and rendering", () => {
             },
           },
         ],
-        added_qualified: [],
+        added_qualified: [
+          {
+            id: "bl-3",
+            sourceUrl: "https://staging.example.org/post",
+            targetUrl: "https://example.org/",
+            outreachState: "reciprocal_link",
+            version: 1,
+            latestCheck: {
+              checkedAt: "2026-11-26T12:00:00Z",
+              bucket: "added_qualified",
+              httpStatus: 200,
+              finalUrl: "https://staging.example.org/post",
+              matchedHref: "https://example.org/",
+              matchedRel: [],
+              matchCount: 1,
+              pageNofollow: true,
+              pageNoindex: true,
+              pageRobotsDirectives: ["meta:noindex", "meta:nofollow"],
+              reason: "Link present (page robots meta nofollow; page noindex)",
+            },
+          },
+        ],
         absent: [],
         unavailable: [
           {
@@ -435,6 +456,10 @@ describe("marketing API contract and rendering", () => {
     assert.match(htmlOut, /<strong>57\/100<\/strong>/);
     assert.match(htmlOut, /No DR snapshot yet/);
     assert.match(htmlOut, /Added \(follow\)/);
+    assert.match(htmlOut, /Added \(qualified\)/);
+    assert.match(htmlOut, /page nofollow/);
+    assert.match(htmlOut, /page noindex/);
+    assert.match(htmlOut, /page robots meta nofollow/);
     assert.match(htmlOut, /Unavailable/);
     assert.match(htmlOut, /alexey_sent \(alexey\)/);
 

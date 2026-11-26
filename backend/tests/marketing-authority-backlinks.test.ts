@@ -191,6 +191,117 @@ test("route/target identity matching and backlink bucket classification", async 
   assert.equal(audited.get("p2")?.bucket, "added_qualified");
 });
 
+test("page-level robots meta and X-Robots-Tag classify plain anchors accurately", async () => {
+  const plainAnchorHtml = '<a href="https://www.evidentlyai.com/">Evidently</a>';
+
+  // Fixture 1: HTML robots meta nofollow (+ noindex) on a plain anchor must NOT be added_follow.
+  const metaNofollow = classifyBacklinkCheck(
+    {
+      ok: true,
+      httpStatus: 200,
+      finalUrl: "https://staging.example.org/blog/post.html",
+      html: `<html><head><meta name="robots" content="noindex, nofollow"></head><body>${plainAnchorHtml}</body></html>`,
+      reason: "HTTP 200",
+    },
+    "https://www.evidentlyai.com/",
+    "2026-11-26T12:00:00.000Z",
+  );
+  assert.equal(metaNofollow.bucket, "added_qualified");
+  assert.equal(metaNofollow.matchedHref, "https://www.evidentlyai.com/");
+  assert.deepEqual(metaNofollow.matchedRel, []);
+  assert.equal(metaNofollow.pageNofollow, true);
+  assert.equal(metaNofollow.pageNoindex, true);
+  assert.deepEqual(metaNofollow.pageRobotsDirectives, ["meta:noindex", "meta:nofollow"]);
+  assert.match(metaNofollow.reason, /page robots meta nofollow/);
+  assert.match(metaNofollow.reason, /page noindex/);
+
+  // Fixture 2: HTTP X-Robots-Tag nofollow on a plain anchor (propagated via fetchPublicHtmlPage + auditBacklinkPairs).
+  const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }];
+  const headerFetch = (async () =>
+    new Response(`<html><body>${plainAnchorHtml}</body></html>`, {
+      status: 200,
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "x-robots-tag": "noindex, nofollow",
+      },
+    })) as unknown as typeof fetch;
+  const headerAudited = await auditBacklinkPairs(
+    [
+      {
+        id: "hdr-1",
+        sourceUrl: "https://staging.example.org/header-nofollow",
+        targetUrl: "https://www.evidentlyai.com/",
+      },
+    ],
+    { fetchFn: headerFetch, lookupFn: publicLookup, now: () => "2026-11-26T12:00:00.000Z" },
+  );
+  const headerCheck = headerAudited.get("hdr-1")!;
+  assert.equal(headerCheck.bucket, "added_qualified");
+  assert.equal(headerCheck.matchedHref, "https://www.evidentlyai.com/");
+  assert.deepEqual(headerCheck.matchedRel, []);
+  assert.equal(headerCheck.pageNofollow, true);
+  assert.equal(headerCheck.pageNoindex, true);
+  assert.deepEqual(headerCheck.pageRobotsDirectives, [
+    "x-robots-tag:noindex",
+    "x-robots-tag:nofollow",
+  ]);
+  assert.match(headerCheck.reason, /page X-Robots-Tag nofollow/);
+  assert.match(headerCheck.reason, /page noindex/);
+
+  // Fixture 3: noindex-only (meta and X-Robots-Tag) is an indexing flag only, NOT nofollow.
+  const metaNoindexOnly = classifyBacklinkCheck(
+    {
+      ok: true,
+      httpStatus: 200,
+      finalUrl: "https://partner.example/noindex-only",
+      html: `<html><head><meta name="robots" content="noindex"></head><body>${plainAnchorHtml}</body></html>`,
+      reason: "HTTP 200",
+    },
+    "https://www.evidentlyai.com/",
+    "2026-11-26T12:00:00.000Z",
+  );
+  assert.equal(metaNoindexOnly.bucket, "added_follow");
+  assert.equal(metaNoindexOnly.pageNofollow, false);
+  assert.equal(metaNoindexOnly.pageNoindex, true);
+  assert.deepEqual(metaNoindexOnly.pageRobotsDirectives, ["meta:noindex"]);
+  assert.match(metaNoindexOnly.reason, /follow; page noindex/);
+
+  const headerNoindexOnly = classifyBacklinkCheck(
+    {
+      ok: true,
+      httpStatus: 200,
+      finalUrl: "https://partner.example/header-noindex-only",
+      html: `<html><body>${plainAnchorHtml}</body></html>`,
+      xRobotsTag: "noindex",
+      reason: "HTTP 200",
+    },
+    "https://www.evidentlyai.com/",
+    "2026-11-26T12:00:00.000Z",
+  );
+  assert.equal(headerNoindexOnly.bucket, "added_follow");
+  assert.equal(headerNoindexOnly.pageNofollow, false);
+  assert.equal(headerNoindexOnly.pageNoindex, true);
+  assert.deepEqual(headerNoindexOnly.pageRobotsDirectives, ["x-robots-tag:noindex"]);
+  assert.match(headerNoindexOnly.reason, /follow; page noindex/);
+
+  // Other-bot-scoped X-Robots-Tag must not mark the page nofollow for general crawlers.
+  const otherBotCheck = classifyBacklinkCheck(
+    {
+      ok: true,
+      httpStatus: 200,
+      finalUrl: "https://partner.example/otherbot",
+      html: `<html><body>${plainAnchorHtml}</body></html>`,
+      xRobotsTag: "otherbot: noindex, nofollow",
+      reason: "HTTP 200",
+    },
+    "https://www.evidentlyai.com/",
+    "2026-11-26T12:00:00.000Z",
+  );
+  assert.equal(otherBotCheck.bucket, "added_follow");
+  assert.equal(otherBotCheck.pageNofollow, false);
+  assert.equal(otherBotCheck.pageNoindex, false);
+});
+
 test("Ahrefs adapter stays unavailable without credentials and parses official v3 response when configured", async () => {
   const prev = process.env.AHREFS_API_TOKEN;
   delete process.env.AHREFS_API_TOKEN;
