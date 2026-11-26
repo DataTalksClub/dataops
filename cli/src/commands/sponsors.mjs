@@ -77,9 +77,11 @@ Usage
       Before uploading, record the issued invoice or supply its verified issue/due dates.
   dataops sponsors correct-invoice <deal-id> --data @correction.json [--file corrected.pdf] [--apply]
       Correct an issued invoice: required reason, corrected invoiceNumber/issuedOn/dueOn/sentOn
-      (omitted metadata stays unchanged; null clears optional number/sent date), and optionally
-      the corrected PDF issued in Finom's UI, which supersedes the linked original in one audited
-      step. The original document is retained; nothing is generated or emailed.
+      (omitted metadata stays unchanged; null clears optional number/sent date), optional amountDue
+      on an unpaid invoice with no linked receipts or settlement (tied to the already linked
+      verified invoice or a replacement PDF), and optionally the corrected PDF issued in Finom's UI,
+      which supersedes the linked original in one audited step. The original document is retained;
+      nothing is generated or emailed.
   dataops sponsors approve-settlement <deal-id> --data @approval.json [--apply]
       Explicit owner-approved noncash reduction; creates no bookkeeping income.
       Required: amount,currency,reason,approvedBy,approvedOn,evidence. Optional replacesPaymentId.

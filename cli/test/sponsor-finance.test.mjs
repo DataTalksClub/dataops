@@ -9,7 +9,7 @@ import { attachInvoice } from "../src/commands/sponsors.mjs";
 
 const args = (data, extra = {}) => ({ _: ["synthetic-deal"], data: JSON.stringify(data), url: "https://portal.example.test", json: true, ...extra });
 const io = { print() {} };
-async function mocked(finance, fn) {
+async function mocked(finance, fn, extraProjection = {}) {
   const originalFetch = globalThis.fetch, oldToken = process.env.DATAOPS_TOKEN;
   process.env.DATAOPS_TOKEN = "synthetic-test-token";
   const calls = [];
@@ -17,8 +17,8 @@ async function mocked(finance, fn) {
     const call = { url, ...options, body: options.body && JSON.parse(options.body) };
     calls.push(call);
     return new Response(JSON.stringify(options.method === "GET"
-      ? url.endsWith("/finance") ? { finance } : { version: 3 }
-      : { projection: { finance: { ...finance, version: 9 } } }));
+      ? url.endsWith("/finance") ? { finance, ...extraProjection } : { version: 3 }
+      : { projection: { finance: { ...finance, version: 9 }, ...extraProjection } }));
   };
   try { await fn(calls); } finally {
     globalThis.fetch = originalFetch;
@@ -177,6 +177,86 @@ test("correcting with a superseding PDF uploads it and links the corrected docum
       assert.equal(applied.request.sourceId, "stored-corrected");
       assert.ok(uploadedBody);
     });
+  } finally { await rm(directory, { recursive: true }); }
+});
+
+test("correcting amountDue on an already-linked verified replacement invoice pins document identity without uploading a duplicate", async () => {
+  const finance = { version: 8, amountDue: "500", invoiceNumber: "DEMO/12-R", issuedOn: "2026-09-01", dueOn: "2026-10-01", sentOn: "2026-09-02" };
+  const invoice = { id: "stored-replacement", label: "Invoice stored-r", uploadedAt: "2026-09-02T00:00:00.000Z", identityToken: "verified-replacement-token" };
+  await mocked(finance, async (calls) => {
+    for (const bad of ["0", "0.00", "-10", "+10", "010", "10.12345", "", null, 450]) {
+      await assert.rejects(correctInvoice(args({ reason: "Bad amount", amountDue: bad }), io), /positive decimal string/);
+    }
+    const preview = await correctInvoice(args({ reason: "Match replacement invoice total", amountDue: "450" }), io);
+    assert.deepEqual(preview.request, {
+      invoiceNumber: "DEMO/12-R", issuedOn: "2026-09-01", dueOn: "2026-10-01", sentOn: "2026-09-02",
+      amountDue: "450", reason: "Match replacement invoice total",
+      expectedDocumentId: "stored-replacement", expectedDocumentIdentityToken: "verified-replacement-token",
+      dealVersion: 3, expectedVersion: 8,
+    });
+    assert.ok(calls.every((call) => call.method === "GET"));
+
+    const output = [];
+    const code = await run([
+      "sponsors", "correct-invoice", "synthetic-deal",
+      "--url", "https://portal.example.test",
+      "--data", JSON.stringify({ reason: "Match replacement invoice total", amountDue: "450" }),
+      "--idempotency-key", "synthetic-amount-corr-key",
+      "--apply", "--json",
+    ], { log: (line) => output.push(line), error: assert.fail });
+    assert.equal(code, 0);
+    const parsed = JSON.parse(output.join("\n"));
+    assert.equal(parsed.mode, "apply");
+    assert.equal(parsed.request.amountDue, "450");
+    assert.equal(parsed.request.expectedDocumentId, "stored-replacement");
+    assert.equal(parsed.request.expectedDocumentIdentityToken, "verified-replacement-token");
+    assert.equal(calls.some((call) => call.url.includes("/documents/prepare")), false, "must not upload a duplicate PDF");
+    const write = calls.find((call) => call.method === "POST");
+    assert.ok(write.url.endsWith("/finance/invoice-correction"));
+    assert.equal(write.headers["Idempotency-Key"], "synthetic-amount-corr-key");
+  }, { invoice, payments: [] });
+
+  // Rejects amount correction without --file when no verified invoice is linked.
+  await mocked(finance, async () => {
+    await assert.rejects(correctInvoice(args({ reason: "No linked doc", amountDue: "450" }), io), /already linked verified invoice/);
+  }, { payments: [] });
+
+  // Rejects amount correction when payments or settlement adjustments exist.
+  await mocked(finance, async () => {
+    await assert.rejects(correctInvoice(args({ reason: "Has payment", amountDue: "450" }), io), /payments or settlement adjustments exist/);
+  }, { invoice, payments: [{ id: "tx-1", amount: "100", currency: "EUR", source: "ledger" }] });
+  await mocked({ ...finance, settlementAdjustment: { amount: "50", currency: "EUR" } }, async () => {
+    await assert.rejects(correctInvoice(args({ reason: "Has settlement", amountDue: "450" }), io), /payments or settlement adjustments exist/);
+  }, { invoice, payments: [] });
+});
+
+test("correcting amountDue together with --file uploads the replacement PDF and omits expectedDocumentId", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "dataops-finance-cli-")), file = join(directory, "corrected.pdf");
+  await writeFile(file, "%PDF-1.7\nSynthetic corrected invoice\n%%EOF");
+  try {
+    await mocked({ version: 8, amountDue: "500", issuedOn: "2026-09-01", dueOn: "2026-10-01" }, async (calls) => {
+      const preview = await correctInvoice(args({ reason: "Replacement with new total", amountDue: "425" }, { file }), io);
+      assert.equal(preview.request.amountDue, "425");
+      assert.equal(preview.request.expectedDocumentId, undefined);
+      assert.ok(calls.every((call) => call.method === "GET"));
+      const originalMock = globalThis.fetch;
+      globalThis.fetch = async (url, options = {}) => {
+        if (url.endsWith("/documents/prepare")) return new Response(JSON.stringify({ document: { id: "stored-new" } }));
+        if (url.includes("/candidates/invoices")) return new Response(JSON.stringify({ items: [{ id: "stored-new", identityToken: "verified-new" }] }));
+        if (url.endsWith("/finance/invoice-correction")) {
+          const data = JSON.parse(options.body);
+          assert.equal(data.amountDue, "425");
+          assert.equal(data.sourceId, "stored-new");
+          assert.equal(data.identityToken, "verified-new");
+          assert.equal(data.expectedDocumentId, undefined);
+          return new Response(JSON.stringify({ result: { financeVersion: 9 }, projection: { invoiceState: "issued" } }));
+        }
+        return originalMock(url, options);
+      };
+      const applied = await correctInvoice(args({ reason: "Replacement with new total", amountDue: "425" }, { file, apply: true }), io);
+      assert.equal(applied.request.amountDue, "425");
+      assert.equal(applied.request.sourceId, "stored-new");
+    }, { invoice: { id: "stored-old", identityToken: "verified-old" }, payments: [] });
   } finally { await rm(directory, { recursive: true }); }
 });
 
