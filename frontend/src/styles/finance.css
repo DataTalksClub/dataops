@@ -1460,7 +1460,7 @@ closes on every tab switch (see setView), so it never covers list content. */
 }
 .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master { display: block; overflow: visible; }
 .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master [data-crm-list-scroll] { overflow: visible; }
-.crm-funnel-table small { font-size: max(var(--dk-text-xs), 12px); }
+.crm-funnel-table small { font-size: var(--dk-text-sm); }
 @media (max-width: 820px) {
   .dk-main.page-shell:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
   #library-view:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
