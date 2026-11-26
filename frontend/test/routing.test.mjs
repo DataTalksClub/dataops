@@ -92,6 +92,16 @@ describe("canonical workspace routing", () => {
     assert.equal(canonicalWorkspaceUrl("/bookkeeping", { month: "2026-09" }), "/bookkeeping?month=2026-09");
   });
 
+  test("the forwarded-invoice draft open for review is part of the bookkeeping address", () => {
+    // Undeclared, the shell drops it when it canonicalises the address on
+    // Back/Forward, and the entry reopens the list without the draft.
+    const url = "/bookkeeping?view=invoices&invoice=draft-9";
+    const route = parseWorkspaceLocation(url, browserLocation(url));
+    assert.equal(route.params.get("invoice"), "draft-9");
+    assert.equal(route.canonicalUrl, url);
+    assert.equal(route.normalized, false);
+  });
+
   test("the inventory page answers on its own /invertory address", () => {
     const route = parseWorkspaceLocation("/invertory", browserLocation("/invertory"));
     assert.equal(route.view, "inventory");
