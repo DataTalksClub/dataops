@@ -512,6 +512,8 @@ body[data-workspace-view] .task-modal-panel button,
 .invoice-ledger .invoice-statement { max-width: 100px; overflow: hidden; text-overflow: ellipsis; color: var(--dk-text-muted); }
 .invoice-ledger tbody tr { cursor: pointer; }
 .invoice-ledger tbody tr:hover { background: var(--dk-bg-muted); }
+/* The open draft's row, the same accent as the open transaction in the ledger above. */
+.invoice-ledger tbody tr[aria-current="true"] td { background: var(--dk-accent-soft); }
 .invoice-ledger tbody tr:focus-visible { outline: 3px solid var(--dk-focus-ring); outline-offset: -3px; }
 @media (max-width: 820px) {
   /* Rows are the tap targets here: every ledger row clears the 44px floor. */

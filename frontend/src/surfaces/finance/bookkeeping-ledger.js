@@ -221,6 +221,8 @@ export function markSelectedLedgerRow(ledger, selectedId) {
 // Back returns to the same transaction list; filter keystrokes and
 // re-renders replace in place. The surface owns its mutable state; the
 // router reaches it through accessors so the surface module stays small.
+// openDraft("") leaves the forwarded-invoice list on its own, closing a
+// draft left open by an earlier visit.
 export function createBookkeepingRouter({
   locationRef, historyRef, getRoute, setRoute, render, findEntry,
   openEntry, closeEntry, openDraft,
@@ -247,7 +249,7 @@ export function createBookkeepingRouter({
       if (entry) openEntry(entry);
       else closeEntry();
       sync();
-      if (route.view === "invoices" && route.invoice) void openDraft(route.invoice);
+      if (route.view === "invoices") void openDraft(route.invoice);
     });
   }
   return { sync };

@@ -279,11 +279,11 @@ export function createBookkeepingSurface(context) {
         });
       }
     }
+    // No id: the forwarded-invoice list stands alone, closing a draft left open earlier.
     async function openMountedInvoice(invoiceId) {
-      if (!invoiceId) return;
       try {
         const handle = invoiceReviewApi || await invoiceMountPromise;
-        await handle?.openInvoice(invoiceId);
+        if (invoiceId) await handle?.openInvoice(invoiceId); else handle?.closeInvoice();
       } catch (error) {
         status.textContent = `Could not open the invoice: ${error.message}`;
       }
@@ -722,7 +722,7 @@ export function createBookkeepingSurface(context) {
       if (!link) return;
       const previousView = view;
       view = link.dataset.viewLink || "";
-      if (view !== "invoices") selectedInvoiceId = "";
+      if (view !== "invoices") selectedInvoiceId = ""; else if (!selectedInvoiceId) void openMountedInvoice("");
       renderView();
       if (view === "" && previousView === "invoices") {
         void Promise.all([api("/transactions"), api("/invoices")]).then(([txResult, invResult]) => {
