@@ -207,6 +207,52 @@ export function writeBookkeepingRoute({ lens, defaultLens, filters, tx, view, in
   return query ? `?${query}` : "";
 }
 
+// Highlight the open line item in the rendered table.
+export function markSelectedLedgerRow(ledger, selectedId) {
+  ledger.querySelectorAll("[data-tx]").forEach((row) => {
+    if (row.dataset.tx === selectedId) row.setAttribute("aria-selected", "true");
+    else row.removeAttribute("aria-selected");
+  });
+}
+
+// History routing for the bookkeeping surface: the route mirrors the list
+// context (month + filters) and the open item. User navigation (opening a
+// line item, a draft, or a secondary view) pushes a history entry so browser
+// Back returns to the same transaction list; filter keystrokes and
+// re-renders replace in place. The surface owns its mutable state; the
+// router reaches it through accessors so the surface module stays small.
+export function createBookkeepingRouter({
+  locationRef, historyRef, getRoute, setRoute, render, findEntry,
+  openEntry, closeEntry, openDraft,
+}) {
+  function sync({ push = false } = {}) {
+    if (getRoute().view === "tuition" || !historyRef?.replaceState || !locationRef) return;
+    const { lens, defaultLens, filters, tx, view, invoice } = getRoute();
+    const query = writeBookkeepingRoute({ lens, defaultLens, filters, tx, view, invoice });
+    const next = `/bookkeeping${query}`;
+    if (`${locationRef.pathname}${locationRef.search}` === next) return;
+    if (push && historyRef.pushState) historyRef.pushState(historyRef.state, "", next);
+    else historyRef.replaceState(historyRef.state, "", next);
+  }
+  // Browser Back/Forward restores the route (list context + open item)
+  // without reloading the surface.
+  if (typeof globalThis.addEventListener === "function") {
+    globalThis.addEventListener("popstate", () => {
+      const route = readBookkeepingRoute(locationRef?.search || "");
+      // Tuition keeps its own history entries.
+      if (route.view === "tuition") return;
+      setRoute(route);
+      render();
+      const entry = route.tx ? findEntry(route.tx) : null;
+      if (entry) openEntry(entry);
+      else closeEntry();
+      sync();
+      if (route.view === "invoices" && route.invoice) void openDraft(route.invoice);
+    });
+  }
+  return { sync };
+}
+
 // What a click inside the ledger should do, without touching history or
 // rendering: open a document, clear the filters, open a transaction line
 // item, or open one pending invoice draft for review. Form controls and
