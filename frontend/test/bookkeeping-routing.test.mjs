@@ -235,3 +235,109 @@ test("Back to the forwarded-invoice list with no open draft leaves the list on i
     globalThis.addEventListener = originalAddEventListener;
   }
 });
+
+// A router wired to counters on a fresh history stub; `route` is the
+// surface state it reports.
+function routerHarness({ pathname = "/bookkeeping", isLive } = {}) {
+  const writes = [], signals = [];
+  const listeners = new Map();
+  const locationRef = { pathname, search: "" };
+  const historyRef = {
+    state: null,
+    pushState: (state, _title, url) => { writes.push(["push", url, state]); locationRef.search = url.slice(pathname.length); historyRef.state = state; },
+    replaceState: (state, _title, url) => { writes.push(["replace", url]); locationRef.search = url.slice(pathname.length); historyRef.state = state; },
+  };
+  const route = { lens: "", defaultLens: "", filters: {}, tx: "", view: "", invoice: "" };
+  const calls = { set: 0, rendered: 0, opened: 0, closed: 0, drafted: [] };
+  const originalAddEventListener = globalThis.addEventListener;
+  globalThis.addEventListener = (name, listener, options) => {
+    listeners.set(name, listener);
+    if (options?.signal) signals.push(options.signal);
+  };
+  const router = createBookkeepingRouter({
+    locationRef,
+    historyRef,
+    getRoute: () => ({ ...route }),
+    setRoute: (next) => { calls.set += 1; Object.assign(route, next); },
+    render: () => { calls.rendered += 1; },
+    findEntry: () => null,
+    openEntry: () => { calls.opened += 1; },
+    closeEntry: () => { calls.closed += 1; },
+    openDraft: (invoiceId) => { calls.drafted.push(invoiceId); },
+    isLive,
+  });
+  return {
+    router, calls, writes, signals, locationRef, historyRef, route,
+    popstate: () => listeners.get("popstate")?.(),
+    restore: () => { globalThis.addEventListener = originalAddEventListener; },
+  };
+}
+
+test("Back to another workspace is the shell's: the surface neither restores nor rewrites it", () => {
+  const harness = routerHarness({ pathname: "/invertory" });
+  try {
+    harness.locationRef.search = "?month=2026-11";
+    harness.popstate();
+    harness.router.sync({ push: true });
+    assert.deepEqual(harness.calls, { set: 0, rendered: 0, opened: 0, closed: 0, drafted: [] });
+    assert.deepEqual(harness.writes, []);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("a surface the shell replaced no longer reads or writes history", () => {
+  let live = true;
+  const harness = routerHarness({ isLive: () => live });
+  try {
+    live = false;
+    harness.locationRef.search = "?tx=tx-1";
+    harness.popstate();
+    harness.router.sync({ push: true });
+    assert.equal(harness.calls.set, 0);
+    assert.deepEqual(harness.writes, []);
+
+    live = true;
+    harness.popstate();
+    assert.equal(harness.calls.set, 1);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("the back button and Close return to the entry an item was opened from", () => {
+  const harness = routerHarness();
+  let backs = 0;
+  harness.historyRef.back = () => { backs += 1; };
+  try {
+    // A direct address has no entry to return to.
+    assert.equal(harness.router.returnToPrevious(), false);
+
+    // Opening an item pushes an entry marked as opened from the one below it.
+    harness.route.tx = "tx-1";
+    harness.router.sync({ push: true });
+    assert.deepEqual(harness.writes, [["push", "/bookkeeping?tx=tx-1", { bookkeepingOpenedFrom: true }]]);
+    assert.equal(harness.router.returnToPrevious(), true);
+    assert.equal(backs, 1);
+
+    // On the entry below, the one Back restored, there is nothing to return to.
+    harness.historyRef.state = null;
+    assert.equal(harness.router.returnToPrevious(), false);
+    assert.equal(backs, 1);
+  } finally {
+    harness.restore();
+  }
+});
+
+test("a new router retires the previous surface's Back/Forward listener", () => {
+  const first = routerHarness();
+  const second = routerHarness();
+  try {
+    assert.equal(first.signals.length, 1);
+    assert.equal(first.signals[0].aborted, true);
+    assert.equal(second.signals.length, 1);
+    assert.equal(second.signals[0].aborted, false);
+  } finally {
+    second.restore();
+  }
+});
