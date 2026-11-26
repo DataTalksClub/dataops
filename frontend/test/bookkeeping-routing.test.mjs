@@ -200,3 +200,38 @@ test("opening an item pushes history; Back restores the list context", () => {
     globalThis.addEventListener = originalAddEventListener;
   }
 });
+
+test("Back to the forwarded-invoice list with no open draft leaves the list on its own", () => {
+  const locationRef = { pathname: "/bookkeeping", search: "" };
+  const historyRef = {
+    state: null,
+    pushState: () => {},
+    replaceState: () => {},
+  };
+  const listeners = new Map();
+  const originalAddEventListener = globalThis.addEventListener;
+  globalThis.addEventListener = (name, listener) => listeners.set(name, listener);
+  const drafted = [];
+  try {
+    createBookkeepingRouter({
+      locationRef,
+      historyRef,
+      getRoute: () => ({ lens: "", defaultLens: "", filters: { q: "", account: "", dir: "", category: "" }, tx: "", view: "", invoice: "" }),
+      setRoute: () => {},
+      render: () => {},
+      findEntry: () => null,
+      openEntry: () => {},
+      closeEntry: () => {},
+      // An empty id is how the surface closes a draft left open by an
+      // earlier visit.
+      openDraft: (invoiceId) => { drafted.push(invoiceId); },
+    });
+    locationRef.search = "?view=invoices&invoice=draft-9";
+    listeners.get("popstate")();
+    locationRef.search = "?view=invoices";
+    listeners.get("popstate")();
+    assert.deepEqual(drafted, ["draft-9", ""]);
+  } finally {
+    globalThis.addEventListener = originalAddEventListener;
+  }
+});
