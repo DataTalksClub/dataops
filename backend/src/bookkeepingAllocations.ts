@@ -473,3 +473,34 @@ export function readTransactionAllocations(
   }
   return result;
 }
+
+/**
+ * Accountant-facing child rows for a payment with invoice allocations. Parent-only
+ * classification markers are dropped so each child is classified on its own
+ * category/text; the parent `id` is kept so omit/month-gate lookups still match.
+ */
+export function projectTransactionAllocations(
+  transaction: Record<string, unknown>,
+): Record<string, unknown>[] {
+  return readTransactionAllocations(transaction).map((allocation) => {
+    const child: Record<string, unknown> = {
+      ...transaction,
+      sourceTransactionId: String(transaction.id || ""),
+      allocationDocumentId: allocation.documentId,
+      invoiceId: allocation.invoiceId,
+      invoiceNumber: allocation.invoiceNumber,
+      counterparty: allocation.counterparty,
+      description: allocation.description,
+      amount: allocation.amount,
+      currency: allocation.currency,
+      amountEur: allocation.amountEur,
+      vatAmount: allocation.vatAmount,
+      vatCurrency: allocation.vatCurrency,
+      category: allocation.category || transaction.category,
+      subtype: allocation.subtype || transaction.subtype,
+    };
+    for (const key of ["mandatoryKind", "ownerPayType", "kind", "taxType", "allocations"])
+      delete child[key];
+    return child;
+  });
+}

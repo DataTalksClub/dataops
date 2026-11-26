@@ -20,6 +20,7 @@ import {
 import { preflightOrganizations } from '../vies/service';
 import { assertAccountantPaymentReady, MonthGateError } from "../reconcile/monthService";
 import { accountantCashDate } from "../finance/accountantReport";
+import { projectTransactionAllocations, readTransactionAllocations } from "../bookkeepingAllocations";
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
 import {
   headDocumentObject,
@@ -106,12 +107,13 @@ export async function handleBookkeepingReportRoutes(
       });
     const monthTransactions = ledger
       .filter((t) => accountantCashDate(t).startsWith(month) && !omitted.has(String(t.id)));
-    const excludedTransactions = monthTransactions.filter(
-      isReportExemptTransaction,
-    );
-    const transactions = monthTransactions.filter(
-      (t) => !isReportExemptTransaction(t),
-    );
+    // Classify each reportable child of an allocated payment on its own.
+    const projected = monthTransactions.flatMap((t) => {
+      const children = projectTransactionAllocations(t);
+      return children.length ? children : [t];
+    });
+    const excludedTransactions = projected.filter(isReportExemptTransaction);
+    const transactions = projected.filter((t) => !isReportExemptTransaction(t));
     const unconverted = transactions.filter(
       (t) =>
         String(t.currency || "EUR").toUpperCase() !== "EUR" &&
@@ -123,17 +125,31 @@ export async function handleBookkeepingReportRoutes(
         unconvertedTransactionIds: unconverted.map((t) => String(t.id)),
       });
     const links = await listBookkeepingItems(client, "link");
+    const parentOf = (t: Record<string, unknown>) => String(t.sourceTransactionId || t.id);
+    const allocatedParentIds = new Set(
+      monthTransactions.filter((t) => readTransactionAllocations(t).length).map((t) => String(t.id)),
+    );
+    const includedParentIds = new Set(transactions.map(parentOf));
+    // Evidence of an allocated payment comes from its reportable children only;
+    // parent-level links are not attributable to a child.
     const linkedIds = new Set(
       links
-        .filter((l) => transactions.some((t) => t.id === l.transactionId))
+        .filter((l) => includedParentIds.has(String(l.transactionId)) && !allocatedParentIds.has(String(l.transactionId)))
         .map((l) => String(l.documentId)),
     );
-    const excludedTransactionIds = new Set(excludedTransactions.map((transaction) => String(transaction.id)));
+    for (const t of transactions) if (t.allocationDocumentId) linkedIds.add(String(t.allocationDocumentId));
+    const excludedTransactionIds = new Set(excludedTransactions.map(parentOf));
     const excludedLinkedIds = new Set(
       links
-        .filter((link) => excludedTransactionIds.has(String(link.transactionId)))
+        .filter((link) => excludedTransactionIds.has(String(link.transactionId)) && !includedParentIds.has(String(link.transactionId)))
         .map((link) => String(link.documentId)),
     );
+    for (const link of links)
+      if (allocatedParentIds.has(String(link.transactionId)) && !linkedIds.has(String(link.documentId)))
+        excludedLinkedIds.add(String(link.documentId));
+    for (const t of excludedTransactions)
+      if (t.allocationDocumentId && !linkedIds.has(String(t.allocationDocumentId)))
+        excludedLinkedIds.add(String(t.allocationDocumentId));
     const selectedPrivate = new Set(
       Array.isArray(body?.privateDocumentIds)
         ? body!.privateDocumentIds.map(String)
@@ -163,7 +179,7 @@ export async function handleBookkeepingReportRoutes(
             id: reportId,
             month,
             status: "ready",
-            transactionIds: transactions.map((t) => t.id),
+            transactionIds: [...includedParentIds],
             documentIds: includedDocs.map((d) => d.id),
             reconciliation: {
               transactionCount: transactions.length,
