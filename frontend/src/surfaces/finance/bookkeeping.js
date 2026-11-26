@@ -10,6 +10,7 @@ import {
   accountsOf,
   bankOnlyEntryFromMonthRow,
   CLASSIFICATION_FIELDS,
+  createBookkeepingRouter,
   displayRowCount,
   emptyLedgerMarkup,
   filterEntries,
@@ -21,6 +22,7 @@ import {
   ledgerClickAction,
   linkedEvidenceDocuments,
   ledgerTableMarkup,
+  markSelectedLedgerRow,
   needsCategory,
   pendingInvoiceEntry,
   readBookkeepingRoute,
@@ -28,7 +30,6 @@ import {
   suggestionLoader,
   suggestionsMarkup,
   vocabulary,
-  writeBookkeepingRoute,
 } from "./bookkeeping-ledger.js";
 import { mountInvoiceReview } from "./invoices.js";
 import { createBookkeepingTransactionModal } from "./bookkeeping-transaction-modal.js";
@@ -155,19 +156,39 @@ export function createBookkeepingSurface(context) {
     }
 
     // The route mirrors the list context (month + filters) and the open
-    // item. User navigation (opening a line item, a draft, or a secondary
-    // view) pushes a history entry so browser Back returns to the same
-    // transaction list; filter keystrokes and re-renders replace in place.
-    function syncUrl({ push = false } = {}) {
-      if (view === "tuition" || !historyRef?.replaceState || !locationRef) return;
-      const query = writeBookkeepingRoute({
-        lens, defaultLens, filters, tx: selectedId, view, invoice: selectedInvoiceId,
-      });
-      const next = `/bookkeeping${query}`;
-      if (`${locationRef.pathname}${locationRef.search}` === next) return;
-      if (push && historyRef.pushState) historyRef.pushState(historyRef.state, "", next);
-      else historyRef.replaceState(historyRef.state, "", next);
-    }
+    // item. User navigation pushes a history entry so browser Back returns
+    // to the same transaction list; filter keystrokes replace in place.
+    const router = createBookkeepingRouter({
+      locationRef,
+      historyRef,
+      getRoute: () => ({ lens, defaultLens, filters, tx: selectedId, view, invoice: selectedInvoiceId }),
+      setRoute: (route) => {
+        if (route.lens) lens = route.lens;
+        else if (defaultLens) lens = defaultLens;
+        filters = route.filters;
+        view = route.view;
+        selectedInvoiceId = route.invoice;
+        selectedId = route.tx;
+      },
+      render: () => {
+        navigation.refresh();
+        renderView();
+        renderFilterOptions();
+        renderLedger();
+      },
+      findEntry: (id) => entries.find((entry) => entry.id === id) || null,
+      openEntry: (entry) => {
+        markSelectedLedgerRow(ledger, selectedId);
+        transactionModal.render(entry);
+      },
+      closeEntry: () => {
+        selectedId = "";
+        markSelectedLedgerRow(ledger, selectedId);
+        if (transactionDialog.open) transactionDialog.close();
+      },
+      openDraft: (invoiceId) => openMountedInvoice(invoiceId),
+    });
+    const syncUrl = router.sync;
 
     const hasEvidence = (id) =>
       bankOnlyEntries.some((entry) => entry.id === id)
@@ -371,12 +392,6 @@ export function createBookkeepingSurface(context) {
     function selectedEntry() {
       return entries.find((entry) => entry.id === selectedId) || null;
     }
-    function markSelectedRow() {
-      ledger.querySelectorAll("[data-tx]").forEach((row) => {
-        if (row.dataset.tx === selectedId) row.setAttribute("aria-selected", "true");
-        else row.removeAttribute("aria-selected");
-      });
-    }
     function openTransaction(id, { push = true } = {}) {
       if (!id) return;
       if (id === selectedId && transactionDialog.open) return;
@@ -389,7 +404,7 @@ export function createBookkeepingSurface(context) {
       const entry = entries.find((e) => e.id === id);
       if (!entry) return;
       selectedId = id;
-      markSelectedRow();
+      markSelectedLedgerRow(ledger, selectedId);
       syncUrl({ push });
       transactionModal.render(entry);
     }
@@ -724,37 +739,6 @@ export function createBookkeepingSurface(context) {
       // with the same list context.
       syncUrl({ push: true });
     });
-
-    // Browser Back/Forward restores the route (list context + open item)
-    // without reloading the surface.
-    if (typeof globalThis.addEventListener === "function") {
-      globalThis.addEventListener("popstate", () => {
-        const route = readBookkeepingRoute(locationRef?.search || "");
-        // Tuition keeps its own history entries.
-        if (route.view === "tuition") return;
-        if (route.lens) lens = route.lens;
-        else if (defaultLens) lens = defaultLens;
-        filters = route.filters;
-        view = route.view;
-        selectedInvoiceId = route.invoice;
-        selectedId = route.tx;
-        navigation.refresh();
-        renderView();
-        renderFilterOptions();
-        renderLedger();
-        const entry = selectedId ? entries.find((e) => e.id === selectedId) : null;
-        if (entry) {
-          markSelectedRow();
-          transactionModal.render(entry);
-        } else {
-          selectedId = "";
-          markSelectedRow();
-          if (transactionDialog.open) transactionDialog.close();
-        }
-        syncUrl();
-        if (view === "invoices" && selectedInvoiceId) void openMountedInvoice(selectedInvoiceId);
-      });
-    }
 
     surface
       .querySelector("[data-bookkeeping-add]")

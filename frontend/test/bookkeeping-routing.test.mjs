@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  createBookkeepingRouter,
   ledgerClickAction,
+  markSelectedLedgerRow,
   readBookkeepingRoute,
   writeBookkeepingRoute,
 } from "../src/surfaces/finance/bookkeeping-ledger.js";
@@ -113,4 +115,88 @@ test("form controls, deal links and empty space keep their own behavior", () => 
 
   assert.equal(ledgerClickAction(node("td", {}, node("tbody", {}, node("table")))), null);
   assert.equal(ledgerClickAction(null), null);
+});
+
+test("the open row is highlighted in the rendered table", () => {
+  const seen = [];
+  const ledger = {
+    querySelectorAll: () => [{
+      dataset: { tx: "tx-1" },
+      setAttribute: (name, value) => seen.push(["tx-1", name, value]),
+      removeAttribute: (name) => seen.push(["tx-1", `no-${name}`]),
+    }, {
+      dataset: { tx: "tx-2" },
+      setAttribute: (name, value) => seen.push(["tx-2", name, value]),
+      removeAttribute: (name) => seen.push(["tx-2", `no-${name}`]),
+    }],
+  };
+  markSelectedLedgerRow(ledger, "tx-2");
+  assert.deepEqual(seen, [["tx-1", "no-aria-selected"], ["tx-2", "aria-selected", "true"]]);
+});
+
+test("opening an item pushes history; Back restores the list context", () => {
+  const pushes = [], replaces = [];
+  const locationRef = { pathname: "/bookkeeping", search: "" };
+  const historyRef = {
+    state: null,
+    pushState: (_state, _title, url) => { pushes.push(url); locationRef.search = url.slice("/bookkeeping".length); },
+    replaceState: (_state, _title, url) => { replaces.push(url); locationRef.search = url.slice("/bookkeeping".length); },
+  };
+  const listeners = new Map();
+  const originalAddEventListener = globalThis.addEventListener;
+  globalThis.addEventListener = (name, listener) => listeners.set(name, listener);
+  const entries = [{ id: "tx-1" }, { id: "tx-2" }];
+  let rendered = 0, opened = null, closed = 0, drafted = null;
+  const state = { lens: "2026-11", defaultLens: "2026-11", filters: { q: "", account: "", dir: "", category: "" },
+    tx: "", view: "", invoice: "" };
+  try {
+    const router = createBookkeepingRouter({
+      locationRef,
+      historyRef,
+      getRoute: () => ({ ...state }),
+      setRoute: (route) => {
+        state.lens = route.lens || state.defaultLens;
+        state.filters = route.filters;
+        state.view = route.view;
+        state.invoice = route.invoice;
+        state.tx = route.tx;
+      },
+      render: () => { rendered += 1; },
+      findEntry: (id) => entries.find((entry) => entry.id === id) || null,
+      openEntry: (entry) => { opened = entry.id; },
+      closeEntry: () => { closed += 1; state.tx = ""; },
+      openDraft: (invoiceId) => { drafted = invoiceId; },
+    });
+    // Opening a transaction pushes ?tx= next to the list context.
+    state.tx = "tx-1";
+    router.sync({ push: true });
+    assert.deepEqual(pushes, ["/bookkeeping?tx=tx-1"]);
+    assert.deepEqual(replaces, []);
+
+    // Browser Back drops ?tx= and closes the item on the same list.
+    locationRef.search = "";
+    listeners.get("popstate")();
+    assert.equal(state.tx, "");
+    assert.equal(state.view, "");
+    assert.equal(opened, null);
+    assert.equal(closed, 1);
+    assert.equal(rendered, 1);
+    // The URL already matches, so no redundant history write happens.
+    assert.deepEqual(replaces, []);
+
+    // Back to an invoice draft reopens that draft, not the full list.
+    locationRef.search = "?view=invoices&invoice=draft-9";
+    listeners.get("popstate")();
+    assert.equal(state.view, "invoices");
+    assert.equal(drafted, "draft-9");
+    assert.equal(rendered, 2);
+
+    // Filter keystrokes replace in place instead of pushing.
+    state.filters = { q: "veselka", account: "", dir: "", category: "" };
+    router.sync();
+    assert.deepEqual(pushes, ["/bookkeeping?tx=tx-1"]);
+    assert.ok(replaces.at(-1).includes("q=veselka"));
+  } finally {
+    globalThis.addEventListener = originalAddEventListener;
+  }
 });
