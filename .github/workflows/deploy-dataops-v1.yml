@@ -301,11 +301,14 @@ jobs:
             --logical-resource-id BackendFunction \
             --query "StackResourceDetail.PhysicalResourceId" \
             --output text)"
+          # --cli-binary-format exists only in AWS CLI v2 and the Contabo runner has
+          # v1. A fileb:// payload is sent as the file's raw bytes on both v1 and v2.
+          seed_payload="$RUNNER_TEMP/dataops-runtime-seeds-payload.json"
           seed_response="$RUNNER_TEMP/dataops-runtime-seeds.json"
+          printf '%s' '{"source":"dataops.deploy","detail-type":"Runtime Seed","detail":{"dataopsAction":"sync-runtime-seeds"}}' > "$seed_payload"
           seed_error="$(aws lambda invoke \
             --function-name "$backend_function" \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"source":"dataops.deploy","detail-type":"Runtime Seed","detail":{"dataopsAction":"sync-runtime-seeds"}}' \
+            --payload "fileb://$seed_payload" \
             --query FunctionError \
             --output text \
             "$seed_response")"
@@ -352,11 +355,13 @@ jobs:
             --logical-resource-id BackendFunction \
             --query "StackResourceDetail.PhysicalResourceId" \
             --output text)"
+          # fileb:// payloads: raw bytes on AWS CLI v1 and v2 (see the seed step).
+          dry_payload="$RUNNER_TEMP/dataops-calendar-holds-expire-dry-payload.json"
           dry_response="$RUNNER_TEMP/dataops-calendar-holds-expire-dry.json"
+          printf '%s' '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"calendar-holds-expire","dryRun":true}}' > "$dry_payload"
           dry_error="$(aws lambda invoke \
             --function-name "$backend_function" \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"calendar-holds-expire","dryRun":true}}' \
+            --payload "fileb://$dry_payload" \
             --query FunctionError \
             --output text \
             "$dry_response")"
@@ -383,11 +388,12 @@ jobs:
             note: .note
           }' "$dry_response"
 
+          live_payload="$RUNNER_TEMP/dataops-calendar-holds-expire-live-payload.json"
           live_response="$RUNNER_TEMP/dataops-calendar-holds-expire-live.json"
+          printf '%s' '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"calendar-holds-expire"}}' > "$live_payload"
           live_error="$(aws lambda invoke \
             --function-name "$backend_function" \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"calendar-holds-expire"}}' \
+            --payload "fileb://$live_payload" \
             --query FunctionError \
             --output text \
             "$live_response")"

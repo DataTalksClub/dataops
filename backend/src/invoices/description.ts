@@ -4,8 +4,8 @@
 // than a plausible-looking guess.
 
 const MAX_LENGTH = 120;
-const GENERIC = /^(?:business\s+expenses?|expenses?|invoices?|receipts?|payments?|purchases?|orders?|services?|subscriptions?|products?|items?|charges?|fees?|credit\s+notes?|refunds?|documents?|statements?|bills?|misc(?:ellaneous)?|other|n\/?a|none|unknown|sponsor\s+payment(?:\s+for\s+deal\s+\S+)?)\.?$/i;
-const GENERIC_WITH_NUMBER = /^(?:invoice|receipt|payment|order|credit\s+note|refund|bill)\s*(?:no\.?|number|#|nr\.?)?\s*[:#]?\s*[A-Z0-9][A-Z0-9\-/._]*$/i;
+const GENERIC = /^(?:business\s+expenses?|expenses?|invoices?|receipts?|payments?|purchases?|orders?|services?|subscriptions?|products?|items?|charges?|fees?|credit\s+notes?|refunds?|documents?|statements?|bills?|misc(?:ellaneous)?|other|n\/?a|none|unknown|sponsor\s+payment(?:\s+for\s+deal\s+\S+)?|rechnung(?:en)?|rechnungsnummern?|quittung(?:en)?|bestellung(?:en)?|gutschrift(?:en)?|zahlung(?:en)?|belege?|factures?|fattur[ae]|facturas?|reçus?|recibos?|ricevut[ae])\.?$/i;
+const GENERIC_WITH_NUMBER = /^(?:invoice|receipt|payment|order|credit\s+note|refund|bill|rechnung(?:s\s?nummer|snr\.?)?|quittung|bestellung|gutschrift|zahlung|beleg|facture|fattura|factura|reçu|recibo|ricevuta)\s*(?:no\.?|number|#|nr\.?)?\s*[:#]?\s*[A-Z0-9][A-Z0-9\-/._]*$/i;
 const GENERIC_FROM_VENDOR = /^(?:invoice|receipt|payment|order|statement|subscription|charge)s?\s+(?:from|for|to)\s+.{0,60}$/i;
 
 const norm = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
@@ -63,4 +63,31 @@ export function lineItemDescription(rawText: string): string | undefined {
   if (!name) return undefined;
   const period = body.slice(1, 3).map(line => line.replace(AMOUNT_TAIL, '').trim()).find(line => PERIOD.test(line));
   return period ? `${name}, ${period}` : name;
+}
+
+const OVERVIEW_HEADER = /^Service\s+Period\b/i;
+// A service row ends in an amount; its name ends at the first column break,
+// which is a wide gap or a space before a period or an amount.
+const OVERVIEW_ROW = /^(.+?)(?:\s{2,}|\s+(?=[€$£]\s*\d|\d{1,2}\/\d{1,2}\b|\d[\d.,]*[.,]\d{2}\b)).*\d[.,]\d{2}\b/;
+const OVERVIEW_STOP = /^(?:Total|Subtotal)\b/i;
+
+/**
+ * The services named one per row in the "Service / Period / Total" overview
+ * table of a Hetzner-style invoice. Undefined when the layout has no such
+ * table. Only rows that carry an amount count, so page footers between the
+ * rows are never read as a service.
+ */
+export function serviceOverviewDescription(rawText: string, context: DescriptionContext = {}): string | undefined {
+  const lines = rawText.replace(/\u0000/g, '-').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const header = lines.findIndex(line => OVERVIEW_HEADER.test(line));
+  if (header < 0) return undefined;
+  const names: string[] = [];
+  for (const line of lines.slice(header + 1)) {
+    if (OVERVIEW_STOP.test(line)) break;
+    const row = OVERVIEW_ROW.exec(line);
+    const name = row && cleanDescription(row[1], context);
+    if (name && !names.includes(name)) names.push(name);
+  }
+  if (!names.length) return undefined;
+  return names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
