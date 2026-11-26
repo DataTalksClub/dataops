@@ -185,7 +185,7 @@ export function validateAndNormalizeAllocations(
   );
   const parentCategory = String(transaction.category || "").trim();
   const parentCategoryCheck = validateExpenseCategoryAssignment({
-    category: parentCategory,
+    category: transaction.category,
     entryType: transaction.entryType,
     allowEmpty: true,
   });

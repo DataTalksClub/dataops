@@ -59,8 +59,8 @@ export function validateExpenseCategoryAssignment({
     return { ok: true, ...(trimmedIncome ? { category: trimmedIncome } : {}) };
   }
 
-  const trimmed = category == null ? "" : String(category).trim();
-  if (!trimmed) {
+  const value = category ?? "";
+  if (value === "") {
     if (allowEmpty) return { ok: true };
     return {
       ok: false,
@@ -68,12 +68,12 @@ export function validateExpenseCategoryAssignment({
     };
   }
 
-  if ((CANONICAL_EXPENSE_CATEGORIES as readonly string[]).includes(trimmed)) {
-    return { ok: true, category: trimmed };
+  if (typeof value === "string" && (CANONICAL_EXPENSE_CATEGORIES as readonly string[]).includes(value)) {
+    return { ok: true, category: value };
   }
 
   return {
     ok: false,
-    error: `Invalid expense category "${trimmed}". Allowed categories: ${CANONICAL_EXPENSE_CATEGORIES.join(", ")}`,
+    error: `Invalid expense category "${String(value)}". Allowed categories: ${CANONICAL_EXPENSE_CATEGORIES.join(", ")}`,
   };
 }

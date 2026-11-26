@@ -43,6 +43,40 @@ describe("expense category vocabulary", () => {
     }
   });
 
+  it("accepts only exact expense category strings or genuinely empty assignments", () => {
+    for (const category of [" AI Tools ", "   ", ["AI Tools"]]) {
+      assert.equal(validateExpenseCategoryAssignment({ category, entryType: "expense" }).ok, false);
+    }
+    for (const category of [undefined, null, ""]) {
+      assert.deepEqual(validateExpenseCategoryAssignment({ category, entryType: "expense" }), { ok: true });
+    }
+  });
+
+  it("rejects padding in allocation parents and children without changing income normalization", () => {
+    const documentsById = new Map([["synthetic-invoice", { id: "synthetic-invoice", status: "active", documentType: "invoice" }]]);
+    const allocation = { documentId: "synthetic-invoice", counterparty: "Synthetic Vendor", description: "Synthetic service", amount: "20.00" };
+    for (const category of [" AI Tools ", "   "]) {
+      assert.throws(() => validateAndNormalizeAllocations({
+        transaction: { amount: "20.00", currency: "EUR", entryType: "expense", category },
+        rawAllocations: [allocation], documentsById,
+      }), /Invalid expense category/);
+      assert.throws(() => validateAndNormalizeAllocations({
+        transaction: { amount: "20.00", currency: "EUR", entryType: "expense", category: "AI Tools" },
+        rawAllocations: [{ ...allocation, category }], documentsById,
+      }), /Invalid expense category/);
+    }
+    const [unassigned] = validateAndNormalizeAllocations({
+      transaction: { amount: "20.00", currency: "EUR", entryType: "expense", category: "AI Tools" },
+      rawAllocations: [{ ...allocation, category: "" }], documentsById,
+    });
+    assert.equal(Object.hasOwn(unassigned, "category"), false);
+    const [income] = validateAndNormalizeAllocations({
+      transaction: { amount: "20.00", currency: "EUR", entryType: "income", category: " Custom income " },
+      rawAllocations: [allocation], documentsById,
+    });
+    assert.equal(income.category, "Custom income");
+  });
+
   it("preserves income categories but rejects out-of-SOP special expense categories", () => {
     const income = validateExpenseCategoryAssignment({ category: "Sponsorship", entryType: "income" });
     assert.deepEqual(income, { ok: true, category: "Sponsorship" });
@@ -142,6 +176,35 @@ describe("bookkeeping expense category enforcement API", () => {
     assert.equal(stored.amountEur, undefined, "rejected updates must not mutate the row");
     const repaired = await invoke("PUT", `/api/bookkeeping/transactions/${legacy.id}`, { category: "Business Software" });
     assert.equal(repaired.statusCode, 200);
+  });
+
+  it("rejects padded and whitespace-only categories before transaction or invoice persistence", async () => {
+    for (const [index, category] of [" AI Tools ", "   "].entries()) {
+      const transaction = await invoke("POST", "/api/bookkeeping/transactions", {
+        transactionDate: "2026-10-09", counterparty: "Synthetic Vendor", description: "Synthetic spacing test",
+        amount: "12.00", currency: "EUR", entryType: "expense", category,
+      });
+      assert.equal(transaction.statusCode, 400, transaction.body);
+      const draftId = String(index + 3).repeat(64);
+      await putBookkeepingItem(client, "invoice", {
+        id: draftId, revision: 1, status: "pending",
+        fields: { counterparty: "Synthetic Vendor", description: "Synthetic spacing test", amount: "12.00", currency: "EUR" },
+        extraction: { method: "manual", evidence: [], issues: [], direction: "expense" },
+        source: { intakeItemIds: [], artifactId: "synthetic-artifact", checksum: "synthetic-checksum" },
+        destinations: { dropbox: { state: "pending", operationId: "synthetic-spacing-a" }, sheets: { state: "pending", operationId: "synthetic-spacing-b" } }, audit: [],
+      }, `invoice-draft#${draftId}`);
+      const invoice = await invoke("PUT", `/api/bookkeeping/invoices/${draftId}`, { revision: 1, fields: { category } });
+      assert.equal(invoice.statusCode, 400, invoice.body);
+      const stored = JSON.parse((await invoke("GET", `/api/bookkeeping/invoices/${draftId}`)).body);
+      assert.equal(stored.revision, 1);
+      assert.equal(stored.fields.category, undefined);
+    }
+    const unassigned = await invoke("POST", "/api/bookkeeping/transactions", {
+      transactionDate: "2026-10-09", counterparty: "Synthetic Vendor", description: "Synthetic unassigned expense",
+      amount: "12.00", currency: "EUR", entryType: "expense", category: "",
+    });
+    assert.equal(unassigned.statusCode, 201);
+    assert.equal(JSON.parse(unassigned.body).category, "");
   });
 
   it("rejects special categories rather than creating out-of-SOP expenses", async () => {
