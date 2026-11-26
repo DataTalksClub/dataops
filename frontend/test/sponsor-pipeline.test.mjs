@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
 import { pipelineControlsFromFilters, renderSponsorPipelineList, renderSponsorPipelineFilters } from "../src/surfaces/finance/sponsor-pipeline.js";
 import { escapeHtml } from "../src/core/html.js";
 
@@ -115,4 +116,12 @@ test("saved-view sorts map onto pipeline controls without changing the list endp
     { view: "overdue", stage: "", search: "", owner: "", sort: "next-action",
       nextActionFrom: "2026-10-01", nextActionBefore: "2026-10-17" },
   );
+});
+
+test("narrow CRM tabs keep the folded alerts bar full width instead of shrinking to its label", () => {
+  const css = readFileSync(new URL("../src/styles/responsive.css", import.meta.url), "utf8");
+  const rule = css.match(/\.sponsor-crm-surface > \.crm-alerts \{([^}]*)\}/);
+  assert.ok(rule, "responsive.css must style the direct .crm-alerts child of the CRM surface");
+  assert.match(rule[1], /flex:\s*1 1 100%/);
+  assert.match(rule[1], /min-width:\s*0/);
 });
