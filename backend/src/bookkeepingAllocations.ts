@@ -499,7 +499,7 @@ export function projectTransactionAllocations(
       category: allocation.category || transaction.category,
       subtype: allocation.subtype || transaction.subtype,
     };
-    for (const key of ["mandatoryKind", "ownerPayType", "kind", "taxType", "allocations"])
+    for (const key of ["mandatoryKind", "ownerPayType", "kind", "taxType", "reference", "allocations"])
       delete child[key];
     return child;
   });

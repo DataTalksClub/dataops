@@ -164,14 +164,13 @@ export function isReportExempt(entry) {
     || isOwnerWithdrawalReportExempt(entry);
 }
 
-// Keys of the payment itself: its classification markers and its saved
-// allocations. A child is classified on its own category and text, never on
-// what the payment carried.
-const PAYMENT_ONLY_KEYS = ["mandatoryKind", "ownerPayType", "kind", "taxType", "allocations"];
+// Keys of the payment itself: its classification markers, free-text reference,
+// and saved allocations. A child is classified on its own category and text,
+// never on what the payment carried; bank statementRef stays on the child.
+const PAYMENT_ONLY_KEYS = ["mandatoryKind", "ownerPayType", "kind", "taxType", "reference", "allocations"];
 
 // Mirror of the backend mandatory-payment text. A child inherits no mandatory
-// markers, so its own counterparty and description (and the payment's
-// reference) decide.
+// markers or parent reference, so its own counterparty and description decide.
 const MANDATORY_TEXT = [
   /techniker\s*krankenkasse|krankenkasse|\btk\b/i,
   /finanzamt|bundeskasse|steuerverwaltung/i,

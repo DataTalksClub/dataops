@@ -193,86 +193,77 @@ test("report rows expand one payment into invoice rows while keeping exempt owne
   assert.equal(reportRows[3].amount, "238.00");
 });
 
-test("report children are classified on their own category and text, never on the payment's markers", () => {
+test("report children are classified on their own category and text, never on the payment's markers or reference", () => {
   const payment = {
-    id: "synthetic-mixed-payment",
-    transactionDate: "2026-10-18",
-    paidDate: "2026-10-18",
-    counterparty: "Synthetic Card Settlement",
-    description: "Combined settlement",
-    amount: "240.00",
-    currency: "EUR",
-    entryType: "expense",
-    category: "Health Insurance",
-    subtype: "Insurance",
-    mandatoryKind: "tk_debit",
-    taxType: "health-insurance",
-    ownerPayType: "unknown",
-    vatAmount: "40.00",
-    vatCurrency: "EUR",
+    id: "synthetic-mixed-payment", transactionDate: "2026-10-18", paidDate: "2026-10-18",
+    counterparty: "Synthetic Card Settlement", description: "Combined settlement",
+    amount: "240.00", currency: "EUR", entryType: "expense", category: "Health Insurance",
+    subtype: "Insurance", mandatoryKind: "tk_debit", taxType: "health-insurance", ownerPayType: "unknown",
+    reference: "Finanzamt monthly statement", statementRef: "Synthetic Bank", vatAmount: "40.00", vatCurrency: "EUR",
     allocations: [
-      {
-        id: "alloc-software",
-        documentId: "synthetic-document-1",
-        invoiceNumber: "INV-1",
-        counterparty: "Synthetic Software GmbH",
-        description: "November seats",
-        amount: "200.00",
-        currency: "EUR",
-        category: "Software",
-      },
-      {
-        id: "alloc-tax",
-        documentId: "synthetic-document-2",
-        counterparty: "Finanzamt Example",
-        description: "USt prepayment",
-        amount: "40.00",
-        currency: "EUR",
-        vatAmount: "6.40",
-        vatCurrency: "EUR",
-      },
+      { id: "alloc-software", documentId: "synthetic-document-1", invoiceNumber: "INV-1", counterparty: "Synthetic Software GmbH", description: "Hosting", amount: "200.00", currency: "EUR", category: "Software" },
+      { id: "alloc-tax", documentId: "synthetic-document-2", counterparty: "Finanzamt Example", description: "USt prepayment", amount: "40.00", currency: "EUR", vatAmount: "6.40", vatCurrency: "EUR" },
       { id: "alloc-incomplete", documentId: "synthetic-document-3" },
     ],
   };
   const { included, excluded } = selectReportEntries([payment], isReportExempt);
 
-  // The incomplete allocation is not a row; the other two are classified one by one.
-  assert.deepEqual(included.map(({ counterparty, amount, category, sourceTransactionId }) =>
-    [counterparty, amount, category, sourceTransactionId]), [
+  assert.deepEqual(included.map((r) => [r.counterparty, r.amount, r.category, r.sourceTransactionId]), [
     ["Synthetic Software GmbH", "200.00", "Software", "synthetic-mixed-payment"],
   ]);
-  assert.deepEqual(excluded.map(({ counterparty, category, vatAmount }) =>
-    [counterparty, category, vatAmount]), [
+  assert.deepEqual(excluded.map((r) => [r.counterparty, r.category, r.vatAmount]), [
     ["Finanzamt Example", "Health Insurance", "6.40"],
   ]);
-  // The listed child keeps the payment's id, carries no parent-only markers,
-  // and has VAT only from its own allocation.
   const [child] = included;
   assert.equal(child.id, "synthetic-mixed-payment");
-  for (const marker of ["mandatoryKind", "taxType", "ownerPayType", "kind", "allocations"])
+  for (const marker of ["mandatoryKind", "taxType", "ownerPayType", "kind", "reference", "allocations"])
     assert.equal(marker in child, false, marker);
+  assert.equal(child.statementRef, "Synthetic Bank");
   assert.equal(child.vatAmount, undefined);
   assert.equal(child.subtype, "Insurance");
   assert.equal(child.allocationDocumentId, "synthetic-document-1");
 
+  // Parent reference "Finanzamt monthly statement" must not drop a Software/Hosting child,
+  // while an ordinary row with that reference stays exempt when the caller checks reference.
+  const refPayment = {
+    id: "mixed-ref", transactionDate: "2026-10-18", counterparty: "Card", description: "Combined",
+    amount: "50.00", currency: "EUR", entryType: "expense", category: "Taxes",
+    reference: "Finanzamt monthly statement", statementRef: "Synthetic Bank",
+    allocations: [
+      { id: "a1", documentId: "d1", counterparty: "Synthetic Host", description: "Hosting", amount: "20.00", currency: "EUR", category: "Software" },
+      { id: "a2", documentId: "d2", counterparty: "Finanzamt Example", description: "Tax portion", amount: "30.00", currency: "EUR", category: "Taxes" },
+    ],
+  };
+  const ordinaryWithRef = {
+    id: "ordinary-ref", transactionDate: "2026-10-18", counterparty: "Other", description: "Fee",
+    amount: "15.00", currency: "EUR", entryType: "expense", category: "Other", reference: "Finanzamt monthly statement",
+  };
+  const isExemptWithRef = (e) => isReportExempt(e) || /finanzamt/i.test(String(e?.reference || ""));
+  const refResult = selectReportEntries([refPayment, ordinaryWithRef], isExemptWithRef);
+  assert.deepEqual(refResult.included.map((r) => [r.counterparty, r.amount, r.statementRef]), [
+    ["Synthetic Host", "20.00", "Synthetic Bank"],
+  ]);
+  assert.equal(refResult.excluded.length, 2);
+
   // A payment whose saved allocations are all incomplete stays one ordinary row.
   const incomplete = { ...payment, allocations: [{ id: "alloc-incomplete", documentId: "synthetic-document-3" }] };
-  assert.deepEqual(selectReportEntries([incomplete], () => false), {
-    included: [incomplete],
-    excluded: [],
-  });
+  assert.deepEqual(selectReportEntries([incomplete], () => false), { included: [incomplete], excluded: [] });
   assert.deepEqual(selectReportEntries([incomplete], () => true), { included: [], excluded: [incomplete] });
 });
 
 // ---- package preview --------------------------------------------------------
 
 const statementDocuments = ["revolut", "finom"].map((accountId) => ({
-  id: `${accountId}-statement`,
-  documentType: "bank-statement",
-  accountId,
-  statementMonth: "2026-10",
-  status: "active",
+  id: `${accountId}-statement`, documentType: "bank-statement", accountId, statementMonth: "2026-10", status: "active",
 }));
+const doc = (id, overrides = {}) => ({ id, documentType: "invoice", status: "active", ...overrides });
+const alloc = (id, documentId, counterparty, description, amount, extra = {}) => ({
+  id, documentId, counterparty, description, amount, currency: "EUR", ...extra,
+});
+const tx = (id, counterparty, description, amount, category, extra = {}) => ({
+  id, transactionDate: "2026-10-18", paidDate: "2026-10-18", counterparty, description,
+  amount, currency: "EUR", entryType: "expense", category, ...extra,
+});
 
 function renderPreview({ entries, links = [], documents = [], reports = [] }) {
   const nodes = new Map([
@@ -283,15 +274,11 @@ function renderPreview({ entries, links = [], documents = [], reports = [] }) {
   createBookkeepingReports({
     api: async () => ({}),
     escapeHtml,
-    getAccounts: () => ["revolut", "finom"].map((accountId) => ({
-      id: accountId, displayName: accountId, kind: "business", active: true,
-    })),
+    getAccounts: () => ["revolut", "finom"].map((id) => ({ id, displayName: id, kind: "business", active: true })),
     getDocuments: () => [...statementDocuments, ...documents],
     getLens: () => "2026-10",
     getLinks: () => links,
     getReports: () => reports,
-    // The surface's rule for entries without allocations, including its
-    // finance-summary lookup: `tx-summary-tax` is mandatory only there.
     isReportExemptEntry: (entry) => isReportExempt(entry) || entry.id === "tx-summary-tax",
     lensEntries: () => entries,
     safeAction: async (action) => action(),
@@ -300,322 +287,110 @@ function renderPreview({ entries, links = [], documents = [], reports = [] }) {
   return { markup: nodes.get("[data-package-review]").innerHTML, button: nodes.get("[data-report]") };
 }
 
-// [transactions, linked documents, entries kept out] as the preview line counts them.
 function previewCounts(markup) {
   const preview = markup.match(/<p class="bookkeeping-package-preview">([\s\S]*?)<\/p>/)?.[1] || "";
-  return [...preview.matchAll(/<span class="dk-mono">(\d+)<\/span>/g)].map((match) => Number(match[1]));
+  return [...preview.matchAll(/<span class="dk-mono">(\d+)<\/span>/g)].map((m) => Number(m[1]));
 }
 
-function document(id, overrides = {}) {
-  return { id, documentType: "invoice", status: "active", ...overrides };
-}
-
-const mixedPayment = {
-  id: "synthetic-card-settlement",
-  transactionDate: "2026-10-18",
-  paidDate: "2026-10-18",
-  counterparty: "Synthetic Card Settlement",
-  description: "Combined settlement",
-  amount: "600.00",
-  currency: "EUR",
-  entryType: "expense",
-  category: "Tools",
+const mixedPayment = tx("synthetic-card-settlement", "Synthetic Card Settlement", "Combined settlement", "600.00", "Tools", {
   allocations: [
-    {
-      id: "alloc-compute",
-      documentId: "doc-compute",
-      counterparty: "Synthetic Compute GmbH",
-      description: "Dedicated cluster October",
-      amount: "500.00",
-      currency: "EUR",
-      category: "Infrastructure",
-    },
-    {
-      id: "alloc-mail",
-      documentId: "doc-mail",
-      counterparty: "Synthetic Mail B.V.",
-      description: "Transactional email usage",
-      amount: "40.00",
-      currency: "EUR",
-      category: "Tools",
-    },
-    {
-      id: "alloc-health",
-      documentId: "doc-health",
-      counterparty: "Synthetic Health Insurance",
-      description: "October premium",
-      amount: "60.00",
-      currency: "EUR",
-      category: "Health Insurance",
-    },
+    alloc("alloc-compute", "doc-compute", "Synthetic Compute GmbH", "Dedicated cluster October", "500.00", { category: "Infrastructure" }),
+    alloc("alloc-mail", "doc-mail", "Synthetic Mail B.V.", "Transactional email usage", "40.00", { category: "Tools" }),
+    alloc("alloc-health", "doc-health", "Synthetic Health Insurance", "October premium", "60.00", { category: "Health Insurance" }),
   ],
-};
-
+});
 const ordinaryEntries = [
-  {
-    id: "tx-consulting",
-    transactionDate: "2026-10-20",
-    paidDate: "2026-10-20",
-    counterparty: "Synthetic Tax Advisory GmbH",
-    description: "Monthly compliance consulting fee",
-    amount: "238.00",
-    currency: "EUR",
-    entryType: "expense",
-    category: "Compliance & Taxes",
-  },
-  {
-    id: "tx-owner",
-    transactionDate: "2026-10-21",
-    paidDate: "2026-10-21",
-    counterparty: "Owner Person",
-    description: "Owner withdrawal",
-    amount: "1200.00",
-    currency: "EUR",
-    entryType: "expense",
-    category: "Owner pay",
-    ownerPayType: "draw",
-  },
-  {
-    id: "tx-summary-tax",
-    transactionDate: "2026-10-22",
-    paidDate: "2026-10-22",
-    counterparty: "Synthetic Bank",
-    description: "Sweep transfer",
-    amount: "1500.00",
-    currency: "EUR",
-    entryType: "expense",
-    category: "Bank",
-  },
+  tx("tx-consulting", "Synthetic Tax Advisory GmbH", "Monthly compliance consulting fee", "238.00", "Compliance & Taxes"),
+  tx("tx-owner", "Owner Person", "Owner withdrawal", "1200.00", "Owner pay", { ownerPayType: "draw" }),
+  tx("tx-summary-tax", "Synthetic Bank", "Sweep transfer", "1500.00", "Bank"),
 ];
 
-test("package preview lists reportable allocation children where an ordinary entry is still one row", () => {
+test("package preview lists reportable children, active allocation docs, and ignores parent links", () => {
   const { markup, button } = renderPreview({
     entries: [mixedPayment, ...ordinaryEntries],
     links: [
       { transactionId: "tx-consulting", documentId: "doc-consulting", coverageType: "evidence" },
-      // Not attributable to any child of the allocated payment.
       { transactionId: "synthetic-card-settlement", documentId: "doc-payment-proof", coverageType: "evidence" },
     ],
-    documents: [
-      "doc-compute",
-      "doc-mail",
-      "doc-health",
-      "doc-consulting",
-      "doc-payment-proof",
-    ].map((id) => document(id)),
+    documents: ["doc-compute", "doc-mail", "doc-health", "doc-consulting", "doc-payment-proof"].map((id) => doc(id)),
   });
-
-  // Two reportable children plus consulting; the consulting link and the two
-  // children's allocation documents; the health child, the owner draw and the
-  // summary-only mandatory entry.
   assert.deepEqual(previewCounts(markup), [3, 3, 3]);
-  assert.match(markup, /3<\/span>&nbsp;transactions/);
   assert.doesNotMatch(markup, /without a EUR value/);
   assert.equal(button.disabled, false);
+
+  // Counts only active allocation documents (voided excluded) and no parent-level links.
+  const voidedCheck = renderPreview({
+    entries: [tx("synthetic-evidence-payment", "Card", "Settlement", "120.00", "Tools", {
+      allocations: [
+        alloc("a-void", "doc-voided", "Voided GmbH", "Voided", "100.00"),
+        alloc("a-live", "doc-live", "Live GmbH", "Live", "20.00"),
+      ],
+    })],
+    links: [
+      { transactionId: "synthetic-evidence-payment", documentId: "doc-parent-link", coverageType: "evidence" },
+      { transactionId: "synthetic-evidence-payment", documentId: "doc-live", coverageType: "evidence" },
+    ],
+    documents: [doc("doc-voided", { status: "voided" }), doc("doc-live"), doc("doc-parent-link")],
+  });
+  assert.deepEqual(previewCounts(voidedCheck.markup), [2, 1, 0]);
+  assert.equal(voidedCheck.button.disabled, false);
 });
 
-test("package preview lists the reportable child of a payment whose own markers are exempt", () => {
-  const { markup, button } = renderPreview({
-    entries: [
-      {
-        id: "synthetic-mandatory-payment",
-        transactionDate: "2026-10-18",
-        paidDate: "2026-10-18",
-        counterparty: "Synthetic Card Settlement",
-        description: "Split settlement",
-        amount: "160.00",
-        currency: "EUR",
-        entryType: "expense",
-        category: "Health Insurance",
-        mandatoryKind: "tk_debit",
-        allocations: [
-          {
-            id: "alloc-health",
-            documentId: "doc-health",
-            counterparty: "Synthetic Health Insurance",
-            description: "October premium",
-            amount: "60.00",
-            currency: "EUR",
-            category: "Health Insurance",
-          },
-          {
-            id: "alloc-software",
-            documentId: "doc-software",
-            counterparty: "Synthetic Software GmbH",
-            description: "November seats",
-            amount: "100.00",
-            currency: "EUR",
-            category: "Software",
-          },
-        ],
-      },
-    ],
-    documents: [document("doc-health"), document("doc-software")],
+test("package preview handles exempt parent markers/reference, all-exempt children, and ready fallback", () => {
+  const exemptParent = renderPreview({
+    entries: [tx("p-exempt", "Card", "Split", "160.00", "Health Insurance", {
+      mandatoryKind: "tk_debit", reference: "Finanzamt monthly statement",
+      allocations: [
+        alloc("a-h", "doc-health", "Health", "Premium", "60.00", { category: "Health Insurance" }),
+        alloc("a-s", "doc-software", "Software GmbH", "Hosting", "100.00", { category: "Software" }),
+      ],
+    })],
+    documents: [doc("doc-health"), doc("doc-software")],
   });
+  assert.deepEqual(previewCounts(exemptParent.markup), [1, 1, 1]);
+  assert.equal(exemptParent.button.disabled, false);
 
-  assert.equal(isReportExempt({ category: "Health Insurance", mandatoryKind: "tk_debit" }), true);
-  assert.deepEqual(previewCounts(markup), [1, 1, 1]);
-  assert.equal(button.disabled, false);
-});
-
-test("package preview keeps a payment out only when every child is kept out", () => {
-  const { markup, button } = renderPreview({
-    entries: [
-      {
-        id: "synthetic-tax-payment",
-        transactionDate: "2026-10-18",
-        paidDate: "2026-10-18",
-        counterparty: "Synthetic Card Settlement",
-        description: "Tax settlement",
-        amount: "90.00",
-        currency: "EUR",
-        entryType: "expense",
-        category: "Bank",
-        allocations: [
-          {
-            id: "alloc-vat",
-            documentId: "doc-vat",
-            counterparty: "Synthetic Card Settlement",
-            description: "USt prepayment",
-            amount: "50.00",
-            currency: "EUR",
-            category: "VAT",
-          },
-          {
-            id: "alloc-health",
-            documentId: "doc-health",
-            counterparty: "Techniker Krankenkasse Example",
-            description: "October premium",
-            amount: "40.00",
-            currency: "EUR",
-          },
-        ],
-      },
-    ],
-    documents: [document("doc-vat"), document("doc-health")],
+  const allExempt = renderPreview({
+    entries: [tx("p-all-exempt", "Card", "Tax settlement", "90.00", "Bank", {
+      allocations: [
+        alloc("a-v", "doc-vat", "Card", "USt prepayment", "50.00", { category: "VAT" }),
+        alloc("a-tk", "doc-tk", "Techniker Krankenkasse Example", "October premium", "40.00"),
+      ],
+    })],
+    documents: [doc("doc-vat"), doc("doc-tk")],
   });
+  assert.deepEqual(previewCounts(allExempt.markup), [0, 0, 2]);
+  assert.equal(allExempt.button.disabled, false);
 
-  assert.deepEqual(previewCounts(markup), [0, 0, 2]);
-  assert.equal(button.disabled, false);
+  const readyFallback = renderPreview({
+    entries: [mixedPayment, ...ordinaryEntries],
+    documents: ["doc-compute", "doc-mail", "doc-health"].map((id) => doc(id)),
+    reports: [{ id: "report-1", month: "2026-10", status: "ready", transactionIds: ["synthetic-card-settlement"] }],
+  });
+  assert.match(readyFallback.markup, /Package ready\./);
+  assert.match(readyFallback.markup, /<span class="dk-mono">3<\/span>&nbsp;transactions/);
 });
 
 test("package preview checks EUR values on reportable children, not on the payment", () => {
-  const usdPayment = {
-    id: "synthetic-usd-payment",
-    transactionDate: "2026-10-18",
-    paidDate: "2026-10-18",
-    counterparty: "Synthetic Card Settlement",
-    description: "USD settlement",
-    amount: "300.00",
-    currency: "USD",
-    amountEur: "250.00",
-    entryType: "expense",
-    category: "Tools",
+  const usdPayment = tx("synthetic-usd-payment", "Card", "USD settlement", "300.00", "Tools", {
+    currency: "USD", amountEur: "250.00",
     allocations: [
-      {
-        id: "alloc-converted",
-        documentId: "doc-converted",
-        counterparty: "Synthetic Compute GmbH",
-        description: "Cluster",
-        amount: "150.00",
-        currency: "USD",
-        amountEur: "125.00",
-      },
-      {
-        id: "alloc-unconverted",
-        documentId: "doc-unconverted",
-        counterparty: "Synthetic Mail B.V.",
-        description: "Email usage",
-        amount: "150.00",
-        currency: "USD",
-      },
+      alloc("a-conv", "doc-converted", "Compute GmbH", "Cluster", "150.00", { currency: "USD", amountEur: "125.00" }),
+      alloc("a-unconv", "doc-unconverted", "Mail B.V.", "Email", "150.00", { currency: "USD" }),
     ],
-  };
-
-  // The payment itself has an EUR value; its unconverted reportable child blocks the package.
-  const blocked = renderPreview({
-    entries: [usdPayment],
-    documents: [document("doc-converted"), document("doc-unconverted")],
   });
+  const blocked = renderPreview({ entries: [usdPayment], documents: [doc("doc-converted"), doc("doc-unconverted")] });
   assert.equal(blocked.button.disabled, true);
   assert.match(blocked.markup, /1 transaction without a EUR value/);
   assert.deepEqual(previewCounts(blocked.markup), [2, 2, 0]);
 
-  // An exempt child without an EUR value is kept out and does not block.
-  const exemptChild = {
-    ...usdPayment,
-    allocations: [
-      usdPayment.allocations[0],
-      { ...usdPayment.allocations[1], category: "Taxes" },
-    ],
-  };
   const allowed = renderPreview({
-    entries: [exemptChild],
-    documents: [document("doc-converted"), document("doc-unconverted")],
+    entries: [{ ...usdPayment, allocations: [usdPayment.allocations[0], { ...usdPayment.allocations[1], category: "Taxes" }] }],
+    documents: [doc("doc-converted"), doc("doc-unconverted")],
   });
   assert.equal(allowed.button.disabled, false);
   assert.doesNotMatch(allowed.markup, /without a EUR value/);
   assert.deepEqual(previewCounts(allowed.markup), [1, 1, 1]);
-});
-
-test("package preview counts only active allocation documents and no parent-level links of an allocated payment", () => {
-  const { markup, button } = renderPreview({
-    entries: [
-      {
-        id: "synthetic-evidence-payment",
-        transactionDate: "2026-10-18",
-        paidDate: "2026-10-18",
-        counterparty: "Synthetic Card Settlement",
-        description: "Evidence settlement",
-        amount: "120.00",
-        currency: "EUR",
-        entryType: "expense",
-        category: "Tools",
-        allocations: [
-          {
-            id: "alloc-voided",
-            documentId: "doc-voided",
-            counterparty: "Synthetic Voided GmbH",
-            description: "Voided invoice",
-            amount: "100.00",
-            currency: "EUR",
-          },
-          {
-            id: "alloc-live",
-            documentId: "doc-live",
-            counterparty: "Synthetic Live GmbH",
-            description: "Live invoice",
-            amount: "20.00",
-            currency: "EUR",
-          },
-        ],
-      },
-    ],
-    links: [
-      { transactionId: "synthetic-evidence-payment", documentId: "doc-parent-link", coverageType: "evidence" },
-      // The payment's id is shared with its children; its links stay theirs.
-      { transactionId: "synthetic-evidence-payment", documentId: "doc-live", coverageType: "evidence" },
-    ],
-    documents: [
-      document("doc-voided", { status: "voided" }),
-      document("doc-live"),
-      document("doc-parent-link"),
-    ],
-  });
-
-  assert.deepEqual(previewCounts(markup), [2, 1, 0]);
-  assert.equal(button.disabled, false);
-});
-
-test("a package ready without stored counts falls back to the reportable rows", () => {
-  const { markup } = renderPreview({
-    entries: [mixedPayment, ...ordinaryEntries],
-    documents: ["doc-compute", "doc-mail", "doc-health"].map((id) => document(id)),
-    reports: [{ id: "report-1", month: "2026-10", status: "ready", transactionIds: ["synthetic-card-settlement"] }],
-  });
-
-  assert.match(markup, /Package ready\./);
-  assert.match(markup, /<span class="dk-mono">3<\/span>&nbsp;transactions/);
 });
 
 
