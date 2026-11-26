@@ -1396,7 +1396,6 @@ body[data-workspace-view="sponsors"] .document-list {
   .crm-funnel-table .crm-phone-stage { display: block !important; }
 }
 
-.crm-funnel-scope { color: var(--dk-text-muted); font-size: var(--dk-text-sm); margin: 0; }
 
 .crm-owner-filter { display: grid; padding: 0; }
 
@@ -1450,6 +1449,18 @@ closes on every tab switch (see setView), so it never covers list content. */
    The list flows with the page scroll instead; the desktop inner scroller
    is untouched. The surface gap compacts so primary content starts within
    the first screen. The record detail keeps its own inner scroller. */
+/* The Pipeline list is part of the page, never a second scroll box: one
+   scrollbar at every width, so rows are not clipped behind nested scrolling. */
+.dk-main.page-shell:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
+#library-view:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
+#document-list:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
+.sponsor-crm-surface.is-pipeline:not(.has-booking-detail) {
+  flex: none;
+  min-height: auto;
+}
+.sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master { display: block; overflow: visible; }
+.sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master [data-crm-list-scroll] { overflow: visible; }
+.crm-funnel-table small { font-size: max(var(--dk-text-xs), 12px); }
 @media (max-width: 820px) {
   .dk-main.page-shell:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
   #library-view:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
