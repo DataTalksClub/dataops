@@ -350,15 +350,19 @@ export async function seriesSnapshots(
         (!from || periodRange(s.period).to >= from) &&
         (!to || periodRange(s.period).from <= to),
     );
-  const end = to || berlinToday();
+  const today = berlinToday();
+  const end = to || today;
   const start =
     from ||
     new Date(+new Date(end) - 365 * 86400000).toISOString().slice(0, 10);
   const values = new Map<string, number>();
-  // Complete empty weeks are known zeros, not missing observations.
-  for (let d = +new Date(start); d <= +new Date(end); d += 7 * 86400000)
-    values.set(isoWeek(new Date(d).toISOString()), 0);
-  values.set(isoWeek(end), 0);
+  // A complete site-wide week with no activity is a known zero. An unknown
+  // issue/card, or an issue without imported statistics, is not an observation.
+  if (series.metricKey === "academy_visits" || series.scope === "site") {
+    for (let d = +new Date(start); d <= +new Date(end); d += 7 * 86400000)
+      values.set(isoWeek(new Date(d).toISOString()), 0);
+    values.set(isoWeek(end), 0);
+  }
   if (series.metricKey === "academy_visits") {
     accumulateAcademyVisits(
       await scanAcademySignups({ prefix: "PV#" }),
@@ -368,6 +372,7 @@ export async function seriesSnapshots(
       values,
     );
   } else if (series.metricKey === "newsletter_clicks") {
+    const missingWeeks = new Set<string>();
     for (const issue of await listNewsletterIssues(c, start, end)) {
       if (
         series.scope !== "site" &&
@@ -375,15 +380,22 @@ export async function seriesSnapshots(
         series.scope !== `card:${issue.cardId}`
       )
         continue;
-      if (issue.stats?.clicks !== undefined)
-        values.set(
-          isoWeek(issue.publicationDate),
-          (values.get(isoWeek(issue.publicationDate)) || 0) +
-            issue.stats.clicks,
-        );
+      const week = isoWeek(issue.publicationDate);
+      const clicks = issue.stats?.clicks;
+      if (typeof clicks === "number" && Number.isFinite(clicks) && clicks >= 0)
+        values.set(week, (values.get(week) || 0) + clicks);
+      else missingWeeks.add(week);
     }
+    // A sum of only the measured issues would misrepresent the complete week.
+    for (const week of missingWeeks) values.delete(week);
   } else throw new MarketingError("Unknown derived metric");
   return [...values]
+    .filter(([period]) => {
+      const range = periodRange(period);
+      // Derived rows are final weekly totals: neither the current week nor a
+      // range cutting through a week provides a complete observation.
+      return range.from >= start && range.to <= end && range.to < today;
+    })
     .sort(([a], [b]) => a.localeCompare(b))
     .map(
       ([period, value]) =>

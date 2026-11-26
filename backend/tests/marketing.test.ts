@@ -25,6 +25,7 @@ import {
   goalProgress,
   validateGoal,
   periodRange,
+  isoWeek,
   type Snapshot,
   type Goal,
 } from "../src/marketing/model";
@@ -33,6 +34,7 @@ import {
   accumulateAcademyVisits,
 } from "../src/marketing/service";
 import { isScopedTokenRequestAllowed } from "../src/auth/tokenScopes";
+import { berlinToday } from "../src/calendar/ownerCalendarOverlay";
 
 const snapshot = {
   metricKey: "gsc_nonbrand_clicks",
@@ -579,9 +581,9 @@ describe("marketing contract", () => {
       buildNewsletterIssue(
         {
           kind: "weekly",
-          publicationDate: "2026-11-24",
+          publicationDate: "2020-11-24",
           title: "Synthetic newsletter",
-          stats: { clicks: 42, recordedAt: "2026-11-25" },
+          stats: { clicks: 42, recordedAt: "2020-11-25" },
           slots: [],
         } as any,
         "test-newsletter",
@@ -594,10 +596,49 @@ describe("marketing contract", () => {
         scope: "issue:test-newsletter",
         source: "dataops",
       },
-      "2026-11-23",
-      "2026-11-29",
+      "2020-11-23",
+      "2020-11-29",
     );
-    assert.equal(rows.find((s) => s.period === "2026-W48")?.value, 42);
+    assert.equal(rows.find((s) => s.period === "2020-W48")?.value, 42);
+  });
+  it("does not turn missing newsletter statistics or partial weeks into final observations", async () => {
+    const { createNewsletterIssue, buildNewsletterIssue } = await import(
+      "../src/db/newsletterIssues"
+    );
+    const make = async (id: string, date: string, clicks?: number) => {
+      await createNewsletterIssue(c, buildNewsletterIssue({
+        kind: "weekly",
+        publicationDate: date,
+        title: "Synthetic metric completeness test",
+        stats: clicks === undefined ? undefined : { clicks, recordedAt: date },
+        slots: [],
+      } as any, id));
+    };
+    const series = { metricKey: "newsletter_clicks", scope: "site", source: "dataops" };
+    await make("metrics-known-clicks", "2020-10-06", 12);
+    await make("metrics-unknown-clicks", "2020-10-07");
+    await make("metrics-zero-clicks", "2020-10-13", 0);
+    // One missing issue makes the site's whole weekly sum unknown, even when
+    // another issue has measured clicks. Explicit measured zero remains data.
+    const rows = await seriesSnapshots(c, series, "2020-10-05", "2020-10-18");
+    assert.deepEqual(rows.map((s) => [s.period, s.value]), [["2020-W42", 0]]);
+    assert.deepEqual(await seriesSnapshots(c, {
+      ...series, scope: "issue:metrics-unknown-clicks",
+    }, "2020-10-05", "2020-10-11"), []);
+    assert.deepEqual(await seriesSnapshots(c, {
+      ...series, scope: "issue:metrics-nonexistent",
+    }, "2020-10-05", "2020-10-11"), []);
+    assert.deepEqual(await seriesSnapshots(c, series, "2020-10-14", "2020-10-18"), []);
+    assert.deepEqual(await seriesSnapshots(c, series, "2020-10-12", "2020-10-16"), []);
+
+    const today = berlinToday();
+    await make("metrics-current-week", today, 9);
+    // Even explicitly requesting the entire current week cannot make its
+    // in-progress counters a final weekly measurement.
+    const currentWeek = periodRange(isoWeek(today));
+    assert.deepEqual(await seriesSnapshots(c, {
+      ...series, scope: "issue:metrics-current-week",
+    }, currentWeek.from, currentWeek.to), []);
   });
   it("imports canonical plans idempotently by stable step key and validates before mutating", async () => {
     const input = {
