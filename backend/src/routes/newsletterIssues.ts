@@ -78,12 +78,6 @@ import {
   filterSponsorStatsReports,
 } from '../newsletter/statsReport';
 import {
-  handleNewsletterFinalRenderRoute,
-  handleNewsletterImageUpload,
-  handleNewsletterMarkdownRoutes,
-  publicNewsletterIssueFields,
-} from '../newsletter/markdownPreview';
-import {
   MailchimpMetricsError,
   pullIssueMailchimpMetrics,
 } from '../newsletter/mailchimpMetrics';
@@ -91,11 +85,23 @@ import { GmailMessageRouteError, resolveGmailMessageRoute } from '../sponsorDocs
 import { applySponsorRoute, SponsorRouteError } from '../newsletter/sponsorRoute';
 import { ReportSendError, sendIssueReport } from '../newsletter/reportSend';
 import { json, parseJsonObjectEvent } from '../http';
-import { handleNewsletterBlockRoutes } from './newsletterBlocks';
+import { handleNewsletterDraftRoutes, handleNewsletterImageUpload } from './newsletterDraft';
+import { sponsorDocPortalBaseUrl } from './sponsorDocs';
 import { deleteBlockSet } from '../newsletter/blocksStore';
 import { releaseRemovedSponsorBlocks } from '../newsletter/sponsorBlocks';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/**
+ * The issue as the API returns it: the retired Markdown preview's access-code
+ * secrets stripped (archived fields such as `markdown` and `finalRender` stay
+ * readable), plus the staff page that shows the rendered email.
+ */
+function publicNewsletterIssueFields<T extends NewsletterIssue>(issue: T, event?: LambdaEvent) {
+  const { previewAccessCodeHash: _hash, previewAccessCodeCiphertext: _cipher, ...rest } = issue;
+  const base = event ? sponsorDocPortalBaseUrl(event) : 'https://ops.dtcdev.click';
+  return { ...rest, previewUrl: `${base}/newsletter-issues/${encodeURIComponent(issue.id)}/preview` };
+}
 const KINDS = new Set<NewsletterIssueKind>(['weekly', 'standalone']);
 export const ISSUE_STATUSES = ['planned', 'drafting', 'review', 'scheduled', 'sent', 'cancelled'];
 const STATUSES = new Set(ISSUE_STATUSES);
@@ -1185,34 +1191,14 @@ export async function handleNewsletterIssueRoutes(
     const body = parse(event) || {};
     return mailchimpMetricsRoute(decodeURIComponent(mailchimpMetrics[1]), body, event, client);
   }
-  const blocksRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/blocks(\/.*)?$/);
-  if (blocksRoute) {
-    return handleNewsletterBlockRoutes(decodeURIComponent(blocksRoute[1]), blocksRoute[2] || '', method, event, client);
+  const draftRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/draft(\/.*)?$/);
+  if (draftRoute) {
+    return handleNewsletterDraftRoutes(decodeURIComponent(draftRoute[1]), draftRoute[2] || '', method, event, client);
   }
   const imageRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/images\/?$/);
   if (imageRoute) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     return handleNewsletterImageUpload(decodeURIComponent(imageRoute[1]), event, client);
-  }
-  const rotateMdCode = path.match(/^\/api\/newsletter-issues\/([^/]+)\/markdown\/rotate-code\/?$/);
-  if (rotateMdCode) {
-    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
-    return handleNewsletterMarkdownRoutes(decodeURIComponent(rotateMdCode[1]), 'rotate-code', event, client);
-  }
-  const finalRenderRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/final-render\/?$/);
-  if (finalRenderRoute) {
-    if (method !== 'PUT') return json(405, { error: 'Method not allowed' });
-    return handleNewsletterFinalRenderRoute(decodeURIComponent(finalRenderRoute[1]), event, client);
-  }
-  const mdRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/(?:markdown|preview)\/?$/);
-  if (mdRoute) {
-    if (method !== 'GET' && method !== 'PUT') return json(405, { error: 'Method not allowed' });
-    return handleNewsletterMarkdownRoutes(
-      decodeURIComponent(mdRoute[1]),
-      method === 'GET' ? 'get' : 'put',
-      event,
-      client,
-    );
   }
   const syncTasks = path.match(/^\/api\/newsletter-issues\/([^/]+)\/sync-tasks$/);
   if (syncTasks) {

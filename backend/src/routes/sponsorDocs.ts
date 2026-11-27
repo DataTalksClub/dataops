@@ -58,7 +58,7 @@ import { projectCard } from '../identity/projections';
 import { recordRequestError } from '../requestErrorLog';
 import { createNotification } from '../db/notifications';
 import { newsletterSyncForDoc, summarizeSyncResults, syncSponsorDoc } from '../newsletter/sponsorBlocks';
-import { dataImageHost } from './newsletterBlocks';
+import { dataImageHost } from './newsletterDraft';
 import { FileStorageError } from '../storage';
 import { assertGuestPhotoBytes, assertHostedGuestPhoto, GuestPhotoError } from '../guestPhoto';
 import { savePublicImage } from '../publicImages';

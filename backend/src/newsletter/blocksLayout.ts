@@ -3,13 +3,15 @@
  * so the UI and the CLI get the same loud refusals):
  *
  *  - The main sponsor block (`sponsor`) is pinned as the first content block:
- *    it cannot be moved or deleted, and nothing can be placed above it (the
- *    intro stays on top as the header; nothing else may be moved above the
- *    sponsor, and blocks above it cannot be moved).
- *  - Secondary sponsor blocks (`sponsor_secondary`) can be reordered, but not
- *    deleted directly: they leave when their slot is removed from the sponsor doc.
- *  - Every sponsor block is content read-only: its content only comes from its
- *    sponsor document through the automatic sponsor-doc sync.
+ *    it cannot be moved, and nothing can be placed above it (the intro stays on
+ *    top as the header; blocks above it cannot be moved).
+ *  - A sponsor block whose slot has a sponsor document is content read-only and
+ *    cannot be deleted: its content only comes from that document, staged into
+ *    the draft on every doc save (./sponsorBlocks.ts). It leaves when the doc is
+ *    removed from the slot.
+ *  - A sponsor slot without a document (an own DataTalks.Club promo, or a
+ *    placement booked without a doc yet) takes a hand-made sponsor block that is
+ *    edited, and deleted, like any other block.
  */
 import type { IssueBlock } from './blocks';
 import { BlocksError } from './blocksErrors';
@@ -36,12 +38,18 @@ function sponsorRefusal(message: string, code: string, slot: SponsorSlotKind, ur
   return new BlocksError(message, 409, code, docHint(slot, urls));
 }
 
-/** Content edits of sponsor blocks come only from the sponsor doc. */
+/** True when the block's content comes from its slot's sponsor document. */
+export function docOwned(block: Pick<IssueBlock, 'type'>, urls: SponsorDocUrls): boolean {
+  const slot = sponsorSlotOf(block.type);
+  return Boolean(slot && urls[slot]);
+}
+
+/** Content edits of a doc-owned sponsor block come only from the sponsor doc. */
 export function assertEditable(block: IssueBlock, urls: SponsorDocUrls): void {
   const slot = sponsorSlotOf(block.type);
-  if (!slot) return;
+  if (!slot || !urls[slot]) return;
   throw sponsorRefusal(
-    `Block ${block.id} is the ${slot === 'primary' ? 'main' : 'secondary'} sponsor block: its content is read-only here and comes only from the sponsor document. Edit it in the sponsor doc; it syncs to this issue and to Relay on save.`,
+    `Block ${block.id} is the ${slot === 'primary' ? 'main' : 'secondary'} sponsor block: its content comes only from the slot's sponsor document. Edit it in the sponsor doc; every doc save stages it into this draft.`,
     'sponsor_block_readonly',
     slot,
     urls,
@@ -50,21 +58,29 @@ export function assertEditable(block: IssueBlock, urls: SponsorDocUrls): void {
 
 export function assertDeletable(block: IssueBlock, urls: SponsorDocUrls): void {
   const slot = sponsorSlotOf(block.type);
-  if (slot === 'primary') {
+  if (!slot || !urls[slot]) return;
+  throw sponsorRefusal(
+    `Block ${block.id} is the ${slot === 'primary' ? 'main' : 'secondary'} sponsor block of a slot with a sponsor document: it leaves the draft when the document is removed from the slot.`,
+    'sponsor_block_delete_refused',
+    slot,
+    urls,
+  );
+}
+
+/** A hand-made sponsor block is allowed only for a slot without a doc, once per slot. */
+export function assertSponsorAddable(type: string, ordered: IssueBlock[], urls: SponsorDocUrls): void {
+  const slot = sponsorSlotOf(type);
+  if (!slot) return;
+  if (urls[slot]) {
     throw sponsorRefusal(
-      `Block ${block.id} is the main sponsor block: it is pinned as the first content block and cannot be deleted.`,
-      'sponsor_block_pinned',
+      `The ${slot} slot has a sponsor document: its sponsor block comes from that document (save the doc to stage it).`,
+      'sponsor_block_doc_only',
       slot,
       urls,
     );
   }
-  if (slot === 'secondary') {
-    throw sponsorRefusal(
-      `Block ${block.id} is a secondary sponsor block: it cannot be deleted directly. Remove the slot from the sponsor doc and it leaves the issue on the next doc sync.`,
-      'sponsor_block_delete_refused',
-      slot,
-      urls,
-    );
+  if (ordered.some((block) => block.type === type)) {
+    throw new BlocksError(`The draft already has a ${slot} sponsor block; edit that one.`, 409, 'sponsor_block_exists');
   }
 }
 
@@ -110,7 +126,13 @@ export function moveWithin(ordered: IssueBlock[], blockId: string, toIndex: numb
 }
 
 /** Position for a new block: append when omitted; never above the pinned sponsor. */
-export function insertionIndex(ordered: IssueBlock[], position: unknown, urls: SponsorDocUrls): number {
+export function insertionIndex(ordered: IssueBlock[], position: unknown, urls: SponsorDocUrls, type = ''): number {
+  if (type === 'sponsor') {
+    // The main sponsor block goes first, right under the intro.
+    let index = 0;
+    while (index < ordered.length && ordered[index].type === 'intro') index += 1;
+    return index;
+  }
   if (position === undefined || position === null || position === '') return ordered.length;
   if (!Number.isInteger(position) || (position as number) < 0 || (position as number) > ordered.length) {
     throw new BlocksError(`Position ${String(position)} is outside 0..${ordered.length}.`, 400, 'position_invalid');

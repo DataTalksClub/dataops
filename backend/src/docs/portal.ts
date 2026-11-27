@@ -28,10 +28,7 @@ import { isAnonymousSponsorDocAsset, isAnonymousSponsorDocRequest } from '../rou
 import { isAnonymousPublicImageRequest } from '../routes/publicImages';
 import { isClientErrorReport } from '../routes/clientErrors';
 import { isAnonymousSponsorContractAsset } from '../routes/sponsorContracts';
-import {
-  isAnonymousNewsletterPreviewAsset,
-  isAnonymousNewsletterPreviewRequest,
-} from '../newsletter/markdownPreview';
+import { isAnonymousNewsletterViewRequest } from '../newsletter/webView';
 import { handleDocsRoutes, isDocsRoute } from './contentApi';
 import { DEPLOYED_FRONTEND_FILES } from './frontendAssets';
 import {
@@ -310,11 +307,11 @@ export async function handlePortal(event: LambdaEvent, client: DynamoDBDocumentC
   }
   const authorized = !authEnabled || Boolean(user);
   if (!authorized) {
-    if (isAnonymousDocumentReviewAsset(method, path) || isAnonymousSponsorDocAsset(method, path) || isAnonymousNewsletterPreviewAsset(method, path) || isAnonymousSponsorContractAsset(method, path)) {
+    if (isAnonymousDocumentReviewAsset(method, path) || isAnonymousSponsorDocAsset(method, path) || isAnonymousSponsorContractAsset(method, path)) {
       const fe = serveFrontend(event, method, path);
       if (fe) return { response: fe, authorized: false };
     }
-    if (isAnonymousDocumentReviewRequest(method, path) || isAnonymousSponsorDocRequest(method, path) || isAnonymousPublicImageRequest(method, path) || isClientErrorReport(method, path) || isAnonymousNewsletterPreviewRequest(method, path)) {
+    if (isAnonymousDocumentReviewRequest(method, path) || isAnonymousSponsorDocRequest(method, path) || isAnonymousPublicImageRequest(method, path) || isClientErrorReport(method, path) || isAnonymousNewsletterViewRequest(method, path)) {
       return { authorized: false };
     }
     // Existing non-browser bearer clients continue through the router's own

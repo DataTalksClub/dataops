@@ -24,7 +24,6 @@ import { getCrmRecord } from '../db/sponsorCrm';
 import { readRuntimeSecret } from '../secrets/reader';
 import { berlinDate } from '../sponsorFinance/core';
 import { SLOT_POSITIONS } from './issueCard';
-import { parseNewsletterIssueMarkdown } from './markdownPreview';
 
 export const DEFAULT_MAILCHIMP_SECRET_NAMES = [
   'dataops-v1.mailchimp-token',
@@ -396,6 +395,20 @@ export function matchClickDetailsForSlot(
   };
 }
 
+/** Frontmatter of an issue's archived `issue.md` (the retired Markdown package; read only for older issues). */
+function archivedFrontmatter(markdown: string): Record<string, string> {
+  const normalized = String(markdown || '').replace(/\r\n/g, '\n');
+  const frontmatter: Record<string, string> = {};
+  if (!normalized.startsWith('---\n')) return frontmatter;
+  const closing = normalized.indexOf('\n---\n', 4);
+  if (closing < 0) return frontmatter;
+  for (const line of normalized.slice(4, closing).split('\n')) {
+    const colon = line.indexOf(':');
+    if (colon > 0 && line.slice(0, colon).trim()) frontmatter[line.slice(0, colon).trim()] = line.slice(colon + 1).trim();
+  }
+  return frontmatter;
+}
+
 function candidateIssueUrls(issue: NewsletterIssue): string[] {
   const urls: string[] = [];
   if (issue.publicUrl) urls.push(issue.publicUrl);
@@ -403,9 +416,9 @@ function candidateIssueUrls(issue: NewsletterIssue): string[] {
     if (link.url) urls.push(link.url);
   }
   if (issue.markdown?.issue) {
-    const parsed = parseNewsletterIssueMarkdown(issue.markdown.issue);
+    const frontmatter = archivedFrontmatter(issue.markdown.issue);
     for (const key of ['archive_url', 'mailchimp_campaign', 'mailchimp_url', 'public_url']) {
-      if (parsed.frontmatter[key]) urls.push(parsed.frontmatter[key]);
+      if (frontmatter[key]) urls.push(frontmatter[key]);
     }
   }
   return urls;
