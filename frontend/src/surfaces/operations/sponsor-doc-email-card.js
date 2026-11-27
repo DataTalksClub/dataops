@@ -312,6 +312,10 @@ export function validateSponsorDocDraft(tDef, draftContent) {
       errors[field.key] = `${field.label} is required.`;
       continue;
     }
+    if (raw && field.maxChars && raw.length > field.maxChars) {
+      errors[field.key] = `${field.label} must be at most ${field.maxChars} characters.`;
+      continue;
+    }
     if (raw && field.format === "url") {
       try {
         const url = new URL(raw);
