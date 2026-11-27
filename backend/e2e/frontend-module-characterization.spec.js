@@ -296,6 +296,12 @@ test.describe("pre-refactor frontend module characterization", () => {
   test("all retained routes avoid page overflow and runtime errors at mobile width", async ({ browser }) => {
     const context = await ownedContext(browser, { width: 390, height: 844 });
     const page = await context.newPage();
+    // The overlays endpoint is fail-closed on the owner's calendar (503 without a
+    // broker), which this server does not have; this test is about layout and
+    // runtime errors, not calendar data.
+    await page.route("**/api/calendar-items/overlays*", (route) =>
+      route.fulfill({ json: { items: [], sources: {} } }),
+    );
     const errors = observeErrors(page);
     const routes = [
       "/",
