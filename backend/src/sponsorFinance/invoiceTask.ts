@@ -326,8 +326,10 @@ export async function sweepInvoiceTasks(
   const claimed = new Set<string>();
   let cursor: Record<string, unknown> | undefined;
   do {
+    // Eventually consistent: claims are written by earlier sweeps, not this
+    // one, and each sync re-reads its claim consistently before writing.
     const page: ScanCommandOutput = await client.send(new ScanCommand({
-      TableName: TABLE_SPONSOR_CRM, ConsistentRead: true,
+      TableName: TABLE_SPONSOR_CRM,
       FilterExpression: 'begins_with(PK, :prefix)',
       ExpressionAttributeValues: { ':prefix': 'SPONSOR_INVOICE_TASK#' },
       ...(cursor ? { ExclusiveStartKey: cursor } : {}),

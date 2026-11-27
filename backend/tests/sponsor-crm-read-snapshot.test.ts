@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import { describe, it } from 'node:test';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
-import { listCrmRecords, scanCrmPrefix, withCrmReadSnapshot } from '../src/db/sponsorCrm';
+import { listCrmRecords, listOrganizationDeals, scanCrmPrefix, withCrmReadSnapshot } from '../src/db/sponsorCrm';
 import { collectBoundedPages, StoragePaginationError } from '../src/db/boundedPagination';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
 import { route } from '../src/router';
@@ -26,6 +26,7 @@ const ITEMS = [
 /** A fake table: Scan applies the OR-of-begins_with filter the code sends. */
 function fakeClient() {
   const scans: string[][] = [];
+  const consistent: unknown[] = [];
   const client = {
     send: async (command: { constructor: { name: string }; input: Record<string, any> }) => {
       const name = command.constructor.name;
@@ -37,6 +38,7 @@ function fakeClient() {
         assert.equal(command.input.TableName, TABLE_SPONSOR_CRM);
         const prefixes = Object.values(command.input.ExpressionAttributeValues || {}) as string[];
         scans.push(prefixes);
+        consistent.push(command.input.ConsistentRead);
         return { Items: ITEMS.filter((item) => prefixes.some((prefix) => item.PK.startsWith(prefix))) };
       }
       if (name === 'GetCommand') return {};
@@ -45,7 +47,7 @@ function fakeClient() {
       throw new Error(`read-only test client got ${name}`);
     },
   };
-  return { client: client as unknown as DynamoDBDocumentClient, scans };
+  return { client: client as unknown as DynamoDBDocumentClient, scans, consistent };
 }
 
 describe('sponsor CRM read snapshot', () => {
@@ -79,6 +81,15 @@ describe('sponsor CRM read snapshot', () => {
     const history = await withCrmReadSnapshot(() => scanCrmPrefix(client, 'HISTORY#'));
     assert.equal(history.length, 1);
     assert.deepEqual(scans, [['HISTORY#']]);
+  });
+
+  it('lists with eventually consistent reads', async () => {
+    const { client, consistent } = fakeClient();
+    await listCrmRecords(client, 'deal');
+    await withCrmReadSnapshot(() => listCrmRecords(client, 'organization'));
+    await listOrganizationDeals(client, 'org-1');
+    assert.equal(consistent.length, 3);
+    assert.deepEqual(consistent, [undefined, undefined, undefined], 'list reads must not pay for strong consistency');
   });
 
   it('does not share a snapshot between requests', async () => {

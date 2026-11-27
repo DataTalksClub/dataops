@@ -78,6 +78,9 @@ export async function transactCrmDependencies(client: DynamoDBDocumentClient, it
   }
 }
 
+// Single-record reads stay strongly consistent: they feed version-checked
+// updates and replay checks right after a conditional write, and a GetItem is
+// one item, not a table, so the 2x costs next to nothing.
 export async function getCrmRecord(client: DynamoDBDocumentClient, kind: string, id: string) {
   const k = key(kind, id);
   return clean((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: k, SK: k }, ConsistentRead: true }))).Item as Record<string, unknown>);
@@ -106,14 +109,22 @@ export function withCrmReadSnapshot<T>(operation: () => Promise<T>): Promise<T> 
   return readSnapshot.run({}, operation);
 }
 
-function scanCrmTable(client: DynamoDBDocumentClient, prefixes: readonly string[], limits?: StoragePaginationLimits) {
+// List reads are eventually consistent: a strongly consistent read costs twice
+// the read units, and a list view tolerates a write that landed a moment ago
+// showing up on the next load. Writes never decide on a list read alone; they
+// are guarded by conditional expressions (version checks, domain/primary/
+// schedule locks, attribute_not_exists). Only reads that guard a destructive
+// operation ask for `consistent` (see hardDeleteCrmRecord).
+type ScanOptions = { limits?: StoragePaginationLimits; consistent?: boolean };
+
+function scanCrmTable(client: DynamoDBDocumentClient, prefixes: readonly string[], options: ScanOptions = {}) {
   const values = Object.fromEntries(prefixes.map((prefix, index) => [`:p${index}`, prefix]));
   return collectBoundedPages<Record<string, unknown>>({
-    limits,
+    limits: options.limits,
     loadPage: async (ExclusiveStartKey, abortSignal) => client.send(
       new ScanCommand({
         TableName: TABLE_SPONSOR_CRM,
-        ConsistentRead: true,
+        ...(options.consistent ? { ConsistentRead: true } : {}),
         FilterExpression: Object.keys(values).map((name) => `begins_with(PK, ${name})`).join(' OR '),
         ExpressionAttributeValues: values,
         ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
@@ -131,7 +142,7 @@ export async function scanCrmPrefix(
 ): Promise<Record<string, unknown>[]> {
   const snapshot = readSnapshot.getStore();
   if (!snapshot || limits || !SNAPSHOT_PREFIXES.some((covered) => prefix.startsWith(covered))) {
-    return scanCrmTable(client, [prefix], limits);
+    return scanCrmTable(client, [prefix], { limits });
   }
   snapshot.items ??= scanCrmTable(client, SNAPSHOT_PREFIXES);
   return (await snapshot.items).filter((item) => String(item.PK).startsWith(prefix));
@@ -159,7 +170,6 @@ export async function listOrganizationDeals(client: DynamoDBDocumentClient, orga
     loadPage: (ExclusiveStartKey, abortSignal) => client.send(
       new ScanCommand({
         TableName: TABLE_SPONSOR_CRM,
-        ConsistentRead: true,
         FilterExpression: 'begins_with(PK, :deal) AND organizationId = :organizationId',
         ExpressionAttributeValues: { ':deal': 'DEAL#', ':organizationId': organizationId },
         ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
@@ -267,11 +277,14 @@ export async function hardDeleteCrmRecord(
     throw deleteConflict('Record was changed; reload and retry');
   }
   // Include archived rows: archiving never removes a relationship. Fully
-  // paginate consistent reads and fail closed if a storage bound is exceeded.
+  // paginate and fail closed if a storage bound is exceeded. This guard stays
+  // strongly consistent: a reference written a moment ago (a new deal, a note,
+  // a touch) must block the delete, and an eventually consistent read could
+  // miss it and drop the record out from under it.
   const rows = await scanCrmTable(client, [
     'ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#',
     'HISTORY#', 'NOTE#', 'MESSAGE#', 'MESSAGE_TARGET#', 'DOMAIN#', 'PRIMARY#',
-  ]);
+  ], { consistent: true });
   const isKind = (row: Record<string, unknown>, prefix: string) => String(row.PK).startsWith(`${prefix}#`);
   if (kind === 'organization') {
     if (rows.some(row => isKind(row, 'DEAL') && row.organizationId === id)) {
