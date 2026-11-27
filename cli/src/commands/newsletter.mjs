@@ -1,12 +1,24 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { UsageError } from "../errors.mjs";
 import { berlinToday, enc, fields, integer, isoDate, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { planNewsletterSync, readNewsletterCsv, sheetIssues } from "../newsletterSheet.mjs";
 import { rewriteVerificationUri } from "./auth.mjs";
-import { relaySync, relaySyncHelp } from "./newsletterRelay.mjs";
-import { blockCommand, blockEdit, blockTypes, blocks, blocksHelp, blocksSync, revisions, sponsorSync } from "./newsletterBlocks.mjs";
+import {
+  approve,
+  blockCommand,
+  blockTypes,
+  cancelSchedule,
+  delivery,
+  draft,
+  draftHelp,
+  render,
+  revisions,
+  schedule,
+  sponsorSync,
+  testSend,
+} from "./newsletterDraft.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
 import { multipart } from "./tasks.mjs";
 
@@ -14,10 +26,10 @@ export const summary = "Plan newsletter issues, their sponsor slots, and their C
 
 export const help = `dataops newsletter - newsletter issues (the web Planning > Newsletter view)
 
-Build and review current issues in Relay. Read the owning Task and its live
-SOP for the workflow. For weekly assembly, open
+Build, review and approve each issue's email in DataOps; Relay only sends the
+approved email. Read the owning Task and its live SOP for the workflow. For weekly assembly, open
   dataops kb show sop.newsletter.assemble-the-weekly-newsletter-in-dataops
-DataOps tracks the issue, sponsor slots, source links and delivery evidence.
+DataOps owns the issue, its email, sponsor slots, links and delivery evidence.
 
 An issue is one email. A weekly issue has an issue number and two sponsor
 slots, primary and secondary; a stand-alone issue has one. A slot is booked
@@ -68,26 +80,19 @@ Usage
   dataops newsletter doc diff <doc-id> [--rev N]
   dataops newsletter doc export <doc-id>
   dataops newsletter doc delete <doc-id> --yes
-  dataops newsletter final-render <issue-id> [--html-file <path>] [--web-view-url <url>]
-      [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]
-                                  Attach Relay's rendered email HTML or web-view URL to
-                                  the issue's Final render preview tab
-  dataops newsletter relay-sync <issue-id|issue-number> [--slot primary|secondary]
-      [--relay-key <key>] [--doc <doc-id|url>] [--block-id <id>] [--dry-run]
-                                  Fill the Relay issue's sponsor block from the slot's
-                                  sponsor document (title, kicker, body, bullets, closing,
-                                  image, CTA): one per-block write, updating the existing
-                                  block. Details: dataops newsletter relay-sync --help
-  dataops newsletter blocks <issue> [--show] [--import <relay-issue-key> [--target production|dev]]
-  dataops newsletter block-edit <issue> <block-id> --field <name> --value <text>
-  dataops newsletter blocks-sync <issue> [--dry-run]
+  dataops newsletter draft <issue> [--create] [--subject <text>] [--preview <text>] [--show]
   dataops newsletter block list|show|add|edit|move|delete <issue> ...   (block-types <issue> lists the types)
-  dataops newsletter sponsor-sync <issue> --slot primary|secondary [--dry-run] [--force]
+  dataops newsletter render <issue> [--out email.html] [--text]
+  dataops newsletter sponsor-sync <issue> --slot primary|secondary [--dry-run]
   dataops newsletter revisions <issue> [--block <id>] [--diff] [--rev N]
-                                  Every content block of the issue (intro, sponsor, events,
-                                  recording, article...), editable here and on the issue page;
-                                  per-edit revisions with diffs; two-way Relay sync that refuses
-                                  on conflicts. Details: dataops newsletter blocks --help
+  dataops newsletter approve <issue> --version N --hash <payload-sha256>        (owner)
+  dataops newsletter test-send <issue> --to <email>                             (owner)
+  dataops newsletter schedule <issue> --at <ISO> --version N --hash <sha> --yes (owner)
+  dataops newsletter cancel-schedule <issue> --yes | delivery <issue> [--refresh]
+                                  The issue's email, built block by block in DataOps and
+                                  rendered here; the owner approves the exact rendered
+                                  revision and only that payload goes to Relay.
+                                  Details: dataops newsletter draft --help
   dataops newsletter image upload <issue-id> <path>
                                   Upload an image (PNG, JPEG, GIF, or WebP) to durable
                                   public hosting for the issue and print its https:// URL
@@ -290,27 +295,8 @@ export async function show(args, io) {
   if (issue.card) io.print(`card: ${issue.card.id} ${issue.card.title} (${issue.card.openTaskCount}/${issue.card.taskCount} open)`);
   else if (issue.cardDueDate) io.print(`card: none yet; the daily run creates it on ${issue.cardDueDate}`);
   for (const link of issue.links || []) io.print(`link: ${link.name} ${link.url}`);
-  if (issue.markdown) {
-    const present = ["issue", "sources", "brief"].filter((k) => issue.markdown[k]);
-    if (present.length) {
-      io.print(`markdown: ${present.join(", ")}${issue.markdown.updatedAt ? ` (updated ${issue.markdown.updatedAt})` : ""}`);
-    }
-  }
-  if (issue.previewShareUrl || issue.previewUrl) {
-    io.print(`preview link: ${rewriteVerificationUri(issue.previewShareUrl || issue.previewUrl, apiFor(args).base)}`);
-  }
-  const finalRender = issue.finalRender;
-  if (finalRender && typeof finalRender === "object") {
-    io.print("final render:");
-    if (finalRender.webViewUrl) io.print(`  web view: ${finalRender.webViewUrl}`);
-    if (finalRender.relayIssueKey) io.print(`  relay key: ${finalRender.relayIssueKey}`);
-    if (finalRender.subject) io.print(`  subject: ${finalRender.subject}`);
-    if (finalRender.previewText) io.print(`  preview: ${finalRender.previewText}`);
-    io.print(`  html snapshot: ${finalRender.html ? `${finalRender.html.length} chars` : "none"}`);
-    if (finalRender.updatedAt) {
-      io.print(`  updated: ${finalRender.updatedAt}${finalRender.updatedByName ? ` by ${finalRender.updatedByName}` : ""}`);
-    }
-  }
+  if (issue.previewUrl) io.print(`email: ${rewriteVerificationUri(issue.previewUrl, apiFor(args).base)}`);
+  if (issue.markdown || issue.finalRender) io.print("archived: this issue keeps a retired Markdown package / Relay final render (read only)");
   return issue;
 }
 
@@ -878,194 +864,6 @@ export async function cardLeadDays(args, io) {
 
 export const doc = domainDocCommand("newsletter");
 
-const MARKDOWN_KINDS = ["issue", "sources", "brief"];
-
-export const newsletterMarkdownHelp = `dataops newsletter markdown - maintain historical newsletter packages
-
-Newsletter Markdown packages (issue.md, sources.md, brief.md) live directly on the
-newsletter issue in DataOps and are never committed to Git.
-
-Usage
-  dataops newsletter markdown set <issue-id> [issue|sources|brief] --file <path>
-  dataops newsletter markdown set <issue-id> [--issue-file <path>] [--sources-file <path>] [--brief-file <path>]
-  dataops newsletter markdown show <issue-id> [issue|sources|brief]
-  dataops newsletter markdown preview <issue-id>
-  dataops newsletter markdown rotate-code <issue-id>
-  dataops newsletter final-render <issue-id> [--html-file <path>] [--web-view-url <url>]
-      [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]
-                                  Attach Relay's rendered email HTML or web-view URL to
-                                  the issue's Final render preview tab
-  dataops newsletter image upload <issue-id> <path>
-                                  Upload an image (PNG, JPEG, GIF, or WebP) to durable
-                                  public hosting for the issue and print its https:// URL
-`;
-
-function normalizeMarkdownPayloadUrls(payload, baseUrl) {
-  if (!payload || !baseUrl) return payload;
-  const next = { ...payload };
-  if (next.previewUrl) next.previewUrl = rewriteVerificationUri(next.previewUrl, baseUrl);
-  if (next.shareUrl) next.shareUrl = rewriteVerificationUri(next.shareUrl, baseUrl);
-  return next;
-}
-
-function readMarkdownFileArg(filePath, flagName) {
-  try {
-    return readFileSync(String(filePath), "utf-8");
-  } catch (err) {
-    throw new UsageError(`Could not read ${flagName} "${filePath}": ${err.message}`);
-  }
-}
-
-function inferKindFromPath(filePath) {
-  const base = basename(String(filePath || "")).toLowerCase();
-  if (base === "issue.md") return "issue";
-  if (base === "sources.md") return "sources";
-  if (base === "brief.md") return "brief";
-  return null;
-}
-
-async function markdownSet(args, io) {
-  const usage =
-    "dataops newsletter markdown set <issue-id> [issue|sources|brief] (--file <path> | --issue-file <path> [--sources-file <path>] [--brief-file <path>])";
-  const id = positional(args, 0, usage);
-  const posKind = args._?.[1] !== undefined ? String(args._[1]).trim() : optionalString(args, "kind");
-  if (posKind !== undefined && !MARKDOWN_KINDS.includes(posKind)) {
-    throw new UsageError(`Markdown kind must be one of: ${MARKDOWN_KINDS.join(", ")}.`);
-  }
-
-  const body = {};
-  for (const kind of MARKDOWN_KINDS) {
-    const fileFlag = optionalString(args, `${kind}File`);
-    const contentFlag = optionalString(args, kind);
-    if (fileFlag !== undefined) {
-      body[kind] = readMarkdownFileArg(fileFlag, `--${kind}-file`);
-    } else if (contentFlag !== undefined) {
-      body[kind] = contentFlag;
-    }
-  }
-
-  const singleFile = optionalString(args, "file");
-  const singleContent = optionalString(args, "content");
-  if (singleFile !== undefined || singleContent !== undefined) {
-    const targetKind = posKind || (singleFile ? inferKindFromPath(singleFile) : null) || "issue";
-    if (!MARKDOWN_KINDS.includes(targetKind)) {
-      throw new UsageError(`Specify which markdown kind to set: ${MARKDOWN_KINDS.join(", ")}.`);
-    }
-    body[targetKind] = singleFile !== undefined
-      ? readMarkdownFileArg(singleFile, "--file")
-      : singleContent;
-  }
-
-  if (Object.keys(body).length === 0) {
-    throw new UsageError(`Provide --file <path> or --issue-file / --sources-file / --brief-file. Usage: ${usage}`);
-  }
-
-  const api = apiFor(args);
-  const rawResult = await api.put(`/api/newsletter-issues/${enc(id)}/markdown`, body);
-  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
-  if (args.json) return result;
-
-  const updatedKinds = Object.keys(body).join(", ");
-  io.print(`Stored Newsletter Markdown (${updatedKinds}) on ${result.label} (${result.publicationDate}).`);
-  io.print(`Preview link: ${result.previewUrl}`);
-  if (result.shareUrl) io.print(`Shareable preview link (with code): ${result.shareUrl}`);
-  if (result.accessCode) io.print(`Access code: ${result.accessCode}`);
-  return result;
-}
-
-async function markdownShow(args, io) {
-  const usage = "dataops newsletter markdown show <issue-id> [issue|sources|brief]";
-  const id = positional(args, 0, usage);
-  const kind = args._?.[1] !== undefined ? String(args._[1]).trim() : optionalString(args, "kind");
-  if (kind !== undefined && !MARKDOWN_KINDS.includes(kind)) {
-    throw new UsageError(`Markdown kind must be one of: ${MARKDOWN_KINDS.join(", ")}.`);
-  }
-
-  const api = apiFor(args);
-  const rawResult = await api.get(`/api/newsletter-issues/${enc(id)}/markdown`);
-  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
-  if (args.json) return result;
-
-  if (kind) {
-    io.print(result.markdown?.[kind] || "");
-    return result;
-  }
-
-  fields(io, [
-    ["issueId", result.issueId],
-    ["cardId", result.cardId],
-    ["label", result.label],
-    ["publicationDate", result.publicationDate],
-    ["status", result.status],
-    ["previewUrl", result.previewUrl],
-    ["shareUrl", result.shareUrl],
-    ["accessCode", result.accessCode],
-    ["updatedAt", result.markdown?.updatedAt || "never"],
-    ["updatedBy", result.markdown?.updatedByName || result.markdown?.updatedBy || "never"],
-  ]);
-  for (const k of MARKDOWN_KINDS) {
-    const content = result.markdown?.[k] || "";
-    io.print(`\n--- ${k}.md (${content.length} chars) ---`);
-    io.print(content || "(empty)");
-  }
-  return result;
-}
-
-async function markdownPreview(args, io) {
-  const usage = "dataops newsletter markdown preview <issue-id>";
-  const id = positional(args, 0, usage);
-  const api = apiFor(args);
-  const rawResult = await api.get(`/api/newsletter-issues/${enc(id)}/markdown`);
-  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
-  if (args.json) return result;
-  io.print(`${result.label} (${result.publicationDate})`);
-  io.print(`Preview link: ${result.previewUrl}`);
-  if (result.shareUrl) io.print(`Shareable preview link (with code): ${result.shareUrl}`);
-  if (result.accessCode) io.print(`Access code: ${result.accessCode}`);
-  return result;
-}
-
-async function markdownRotateCode(args, io) {
-  const usage = "dataops newsletter markdown rotate-code <issue-id>";
-  const id = positional(args, 0, usage);
-  const api = apiFor(args);
-  const rawResult = await api.post(`/api/newsletter-issues/${enc(id)}/markdown/rotate-code`, {});
-  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
-  if (args.json) return result;
-  io.print(`Rotated preview access code for ${result.label} (${result.publicationDate}).`);
-  io.print(`Shareable preview link (with code): ${result.shareUrl}`);
-  io.print(`Access code: ${result.accessCode}`);
-  return result;
-}
-
-const markdownSubcommands = {
-  set: markdownSet,
-  show: markdownShow,
-  preview: markdownPreview,
-  link: markdownPreview,
-  "rotate-code": markdownRotateCode,
-};
-
-export async function markdown(args, io) {
-  const [action, ...rest] = args._ || [];
-  if (!action || action === "help") {
-    if (!action) {
-      throw new UsageError(
-        "Missing markdown action. Usage: dataops newsletter markdown <set|show|preview|rotate-code> <issue-id> ...",
-      );
-    }
-    io.print(newsletterMarkdownHelp);
-    return undefined;
-  }
-  const fn = markdownSubcommands[action];
-  if (!fn) {
-    throw new UsageError(
-      `Unknown subcommand: dataops newsletter markdown ${action}. One of: ${Object.keys(markdownSubcommands).join(", ")}.`,
-    );
-  }
-  return fn({ ...args, _: rest }, io);
-}
-
 export const newsletterImageHelp = `dataops newsletter image - upload durable public images for a newsletter issue
 
 Usage
@@ -1073,11 +871,11 @@ Usage
 
 Uploads a PNG, JPEG, GIF, or WebP image (up to 4 MiB) to durable public
 hosting (/api/public-images) and prints its public https:// URL for use
-in issue.md and the HTML preview.
+in a block's image field.
 `;
 
 export { newsletterImageHelp as imageHelp };
-export { relaySyncHelp, blocksHelp };
+export { draftHelp };
 
 async function imageUpload(args, io) {
   const usage = "dataops newsletter image upload <issue-id> <path>";
@@ -1136,45 +934,6 @@ export async function image(args, io) {
   return fn({ ...args, _: rest }, io);
 }
 
-export async function finalRender(args, io) {
-  const usage =
-    "dataops newsletter final-render <issue-id> [--html-file <path>] [--web-view-url <url>] [--relay-key <key>] [--subject <text>] [--preview <text>] [--clear]";
-  const id = positional(args, 0, usage);
-  const api = apiFor(args);
-
-  const body = {};
-  if (args.clear) {
-    body.clear = true;
-  } else {
-    const htmlFile = optionalString(args, "htmlFile") ?? optionalString(args, "file");
-    if (htmlFile) {
-      if (!existsSync(htmlFile)) throw new UsageError(`File not found: ${htmlFile}`);
-      body.html = readFileSync(htmlFile, "utf8");
-    }
-    const webViewUrl = optionalString(args, "webViewUrl");
-    if (webViewUrl !== undefined) body.webViewUrl = webViewUrl;
-    const relayIssueKey = optionalString(args, "relayKey") ?? optionalString(args, "relayIssueKey");
-    if (relayIssueKey !== undefined) body.relayIssueKey = relayIssueKey;
-    const subject = optionalString(args, "subject");
-    if (subject !== undefined) body.subject = subject;
-    const previewText = optionalString(args, "preview");
-    if (previewText !== undefined) body.previewText = previewText;
-    if (Object.keys(body).length === 0) {
-      throw new UsageError(`Provide at least one flag. Usage: ${usage}`);
-    }
-  }
-
-  const rawResult = await api.put(`/api/newsletter-issues/${enc(id)}/final-render`, body);
-  const result = normalizeMarkdownPayloadUrls(rawResult, api.base);
-  if (!args.json) {
-    if (result.shareUrl) io.print(`shareUrl: ${result.shareUrl}`);
-    else if (result.previewUrl) io.print(`previewUrl: ${result.previewUrl}`);
-    if (result.rendered?.finalWebViewUrl) io.print(`webViewUrl: ${result.rendered.finalWebViewUrl}`);
-    io.print(`finalHtml: ${result.rendered?.finalHtml ? `${result.rendered.finalHtml.length} chars` : "none"}`);
-  }
-  return result;
-}
-
 export const commands = {
   list,
   show,
@@ -1182,16 +941,17 @@ export const commands = {
   update,
   doc,
   image,
-  markdown,
-  "final-render": finalRender,
-  "relay-sync": relaySync,
-  blocks,
-  "block-edit": blockEdit,
-  "blocks-sync": blocksSync,
+  draft,
   block: blockCommand,
   "block-types": blockTypes,
+  render,
   "sponsor-sync": sponsorSync,
   revisions,
+  approve,
+  "test-send": testSend,
+  schedule,
+  "cancel-schedule": cancelSchedule,
+  delivery,
   metrics,
   "pull-mailchimp": pullMailchimp,
   report,

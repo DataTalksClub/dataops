@@ -306,12 +306,8 @@ export async function run(argv, io = console) {
       print(sponsorDocs.newsletterDocHelp);
       return EXIT.ok;
     }
-    if (commandName === "newsletter" && ["blocks", "block", "block-edit", "block-types", "blocks-sync", "sponsor-sync", "revisions"].includes(rest[0])) {
-      print(newsletter.blocksHelp);
-      return EXIT.ok;
-    }
-    if (commandName === "newsletter" && rest[0] === "relay-sync") {
-      print(newsletter.relaySyncHelp);
+    if (commandName === "newsletter" && ["draft", "block", "block-types", "render", "sponsor-sync", "revisions", "approve", "test-send", "schedule", "cancel-schedule", "delivery"].includes(rest[0])) {
+      print(newsletter.draftHelp);
       return EXIT.ok;
     }
     if (commandName === "newsletter" && rest[0] === "image") {
