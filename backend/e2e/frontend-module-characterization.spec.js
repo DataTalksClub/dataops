@@ -221,6 +221,11 @@ test.describe("pre-refactor frontend module characterization", () => {
   test("retained top-level surfaces keep canonical route, title, marker, and primary interaction", async ({ browser }) => {
     const context = await ownedContext(browser, { width: 1440, height: 900 });
     const page = await context.newPage();
+    // Overlays are fail-closed on the owner's calendar (503 without a broker); see
+    // the mobile-width sweep below.
+    await page.route("**/api/calendar-items/overlays*", (route) =>
+      route.fulfill({ json: { items: [], sources: {} } }),
+    );
     const errors = observeErrors(page);
     const routes = [
       ["/tasks", "Work Queue", ".ops-work-queue"],
