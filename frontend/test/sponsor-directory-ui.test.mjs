@@ -584,3 +584,10 @@ test("the CRM tab bar does not clip the More dropdown that overlays the page", a
   const css = readFileSync(new URL("../src/styles/finance.css", import.meta.url), "utf8");
   assert.match(css, /\.crm-views\s*\{\s*overflow:\s*visible;\s*\}/);
 });
+
+test("the record overview grid cannot be widened past the viewport by long text", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../src/styles/finance.css", import.meta.url), "utf8");
+  const rule = /\[data-record-panel="overview"\] \.crm-record-overview \{([^}]*)\}/.exec(css)[1];
+  assert.match(rule, /grid-template-columns:\s*minmax\(0, 1fr\)/);
+});
