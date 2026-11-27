@@ -6,6 +6,9 @@ export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 export const OPAQUE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 export const IDEMPOTENCY = /^[A-Za-z0-9_-]{16,128}$/;
 export const PAYMENT_LINK_LIMIT = 20;
+/** The deal's invoice action Task (see invoiceTask.ts); here so payment follow-ups can recognise it without an import cycle. */
+export const INVOICE_TASK_SOURCE = 'sponsor-invoice';
+export const INVOICE_TASK_TAG = 'invoice-action';
 /** The maximal payment-link transaction: 2 condition checks per existing ledger payment, plus the base 12 and the Finom follow-through Task action. */
 export const MAX_PAYMENT_LINK_TRANSACTION_ACTIONS = 2 * (PAYMENT_LINK_LIMIT - 1) + 13;
 

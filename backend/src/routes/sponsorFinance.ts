@@ -1,6 +1,7 @@
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
 import { createPaymentFollowUpTask, withPaymentFollowUpTasks } from '../sponsorFinance/paymentFollowUp';
+import { syncDealInvoiceTaskAfterWrite } from '../sponsorFinance/invoiceTask';
 import {
   classifyFinance,
   clearProposalClassification,
@@ -170,11 +171,16 @@ export async function handleSponsorFinanceRoutes(
   try {
     const write = method !== 'GET';
     const actor = await financeActor(client, actorId, write || action.startsWith('candidates/'));
-    const project = async () => withPaymentFollowUpTasks(
-      client,
-      await projectFinance(client, dealId, actor.role, await dealProjectionContext(client, dealId)),
-      await getFinanceState(client, dealId),
-    );
+    // Every write branch re-projects after its mutation commits; that is where the
+    // deal's invoice action catches up with the new finance state.
+    const project = async () => {
+      if (write) await syncDealInvoiceTaskAfterWrite(client, dealId, actor.id);
+      return withPaymentFollowUpTasks(
+        client,
+        await projectFinance(client, dealId, actor.role, await dealProjectionContext(client, dealId)),
+        await getFinanceState(client, dealId),
+      );
+    };
     if (method === 'GET' && !action) return json(200, await project());
     if (method === 'GET' && action === 'history') return json(200, { items: await listFinanceHistory(client, dealId) });
     if (method === 'GET' && (action === 'candidates/invoices' || action === 'candidates/payments')) {

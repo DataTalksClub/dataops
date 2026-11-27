@@ -12,14 +12,20 @@ import { deliveredOn } from './context';
 import { chaseDates } from './chase';
 import { ensurePaymentFollowUpTask, paymentTasksByDeal, type OverdueInvoice } from './overdueTasks';
 import { loadAssignmentPolicy } from '../db/workspaceSettings';
+import { sweepInvoiceTasks } from './invoiceTask';
 
 type Condition = { dealId: string; rule: string; basisDate: string; version: number };
 
 export async function evaluateSponsorFinanceAlerts(
   client: DynamoDBDocumentClient,
   today = berlinDate(),
-): Promise<{ created: number; resolved: number; paymentTasksCreated: number; paymentTasksReopened: number }> {
-  if (!financeEnabled()) return { created: 0, resolved: 0, paymentTasksCreated: 0, paymentTasksReopened: 0 };
+): Promise<{
+  created: number; resolved: number; paymentTasksCreated: number; paymentTasksReopened: number;
+  invoiceTasksCreated: number; invoiceTasksAdopted: number; invoiceTasksResolved: number; invoiceTaskFailures: number;
+}> {
+  if (!financeEnabled()) {
+    return { created: 0, resolved: 0, paymentTasksCreated: 0, paymentTasksReopened: 0, invoiceTasksCreated: 0, invoiceTasksAdopted: 0, invoiceTasksResolved: 0, invoiceTaskFailures: 0 };
+  }
   const deals: Record<string, unknown>[] = [];
   let cursor: Record<string, unknown> | undefined;
   do {
@@ -223,5 +229,6 @@ export async function evaluateSponsorFinanceAlerts(
     if (outcome === 'created') paymentTasksCreated++;
     if (outcome === 'reopened') paymentTasksReopened++;
   }
-  return { created, resolved, paymentTasksCreated, paymentTasksReopened };
+  const invoiceTasks = await sweepInvoiceTasks(client, { deals, deliverables, chased, today });
+  return { created, resolved, paymentTasksCreated, paymentTasksReopened, ...invoiceTasks };
 }

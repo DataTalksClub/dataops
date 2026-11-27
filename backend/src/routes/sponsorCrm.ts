@@ -53,6 +53,7 @@ import {
 import { splitVatId } from '../vies/format';
 import { lastViesCheck } from '../vies/service';
 import { json, parseJsonObjectEvent as parse } from '../http';
+import { syncDealInvoiceTaskAfterWrite } from '../sponsorFinance/invoiceTask';
 import { recordRequestError } from '../requestErrorLog';
 import { resolveInteractiveActor } from '../identity/actor';
 
@@ -751,7 +752,11 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
       if (!organization || organization.archivedAt) return json(422, { error: 'Cannot unarchive when organization is archived' });
     }
     if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, { archivedAt: null, active: true }, user, 'unarchived'));
-    if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, { archivedAt: null, active: true }, user)));
+    if (kind === 'deal') {
+      const restored = await updateDealAtomic(client, existing, { archivedAt: null, active: true }, user);
+      await syncDealInvoiceTaskAfterWrite(client, existing.id, user);
+      return json(200, publicDeal(restored));
+    }
     return json(200, await updateOrganizationAtomic(client, existing, { archivedAt: null, active: true }, user, 'unarchived'));
   }
 
@@ -899,6 +904,7 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
         if (deliverableError) return json(400, { error: deliverableError });
         await createDeliverableAtomic(client, { ...deliverableBody, dealId: created.item.id, organizationId: created.item.organizationId, sourceType: 'portal' }, user);
       }
+      if (kind === 'deal') await syncDealInvoiceTaskAfterWrite(client, String(created.item.id), user);
       return json(created.duplicate ? 200 : 201, kind === 'deal' ? publicDeal(created.item) : created.item);
     } catch (error) {
       recordRequestError(error);
@@ -938,7 +944,11 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     }
     if (Array.isArray(body.tags)) body.tags = body.tags.map((t) => String(t).trim());
     try {
-      if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, body, user)));
+      if (kind === 'deal') {
+        const updated = await updateDealAtomic(client, existing, body, user);
+        await syncDealInvoiceTaskAfterWrite(client, existing.id, user);
+        return json(200, publicDeal(updated));
+      }
       if (kind === 'deliverable') return json(200, await updateDeliverableAtomic(client, existing, body, user));
       if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, body, user));
       return json(200, await updateOrganizationAtomic(client, existing, body, user));
@@ -984,7 +994,11 @@ export async function handleSponsorCrmRoutes(path: string, method: string, event
     const existing = await getCrmRecord(client, kind, id);
     if (!existing) return json(404, { error: 'Not found' });
     if (kind === 'contact') return json(200, await updateContactAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false, primary: false }, user));
-    if (kind === 'deal') return json(200, publicDeal(await updateDealAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false }, user)));
+    if (kind === 'deal') {
+      const archived = await updateDealAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false }, user);
+      await syncDealInvoiceTaskAfterWrite(client, existing.id, user);
+      return json(200, publicDeal(archived));
+    }
     return json(200, await updateOrganizationAtomic(client, existing, { archivedAt: new Date().toISOString(), active: false }, user, 'archived'));
   }
   return json(405, { error: 'Method not allowed' });

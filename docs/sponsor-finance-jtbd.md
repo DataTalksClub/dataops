@@ -46,6 +46,21 @@ private links. The real ledger lives outside this repository.
   links the ledger row.
 - No new table or index. Everything lives in the sponsor CRM table under
   the existing `SPONSOR_FINANCE*` key families.
+- The invoice is work in the main queue from the moment the deal is
+  agreed. An agreed deal that needs an invoice (classified `required`,
+  or not classified yet but with a deal value) gets exactly one open
+  cardless Task, tagged `invoice-action`, due today so it is in Active.
+  It names the billing prerequisites (terms recorded, who the billing
+  details are waiting on, VAT ID) apart from payment, refreshes them on
+  every deal or finance write, and closes itself once the invoice is
+  sent. An issued-but-unsent invoice keeps it open; deals that need no
+  invoice, or whose invoice was already issued, never get one. A
+  hand-made open Task asking to issue/send the invoice is adopted
+  instead of duplicated. A `SPONSOR_INVOICE_TASK#<dealId>` claim row,
+  written in the same transaction, keeps it to one per deal across
+  retries, races and deliverables; the daily finance sweep retries
+  confirmations from the last 14 days. The automation never issues,
+  sends or emails an invoice.
 
 ## Alerts
 
