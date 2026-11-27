@@ -110,3 +110,9 @@ test("the open draft's row is marked, and unmarked while no draft is open", () =
   markOpenInvoiceRow(list, undefined);
   assert.deepEqual(marks(), [undefined, undefined]);
 });
+
+test("the draft header carries the description under the counterparty, escaped", () => {
+  const markup = invoiceDetailMarkup({ ...draft, fields: { ...draft.fields, description: "Refund <Veselka>" } }, escape);
+  assert.ok(markup.includes('<p class="invoice-review-what">Refund &lt;Veselka&gt;</p>'), markup);
+  assert.ok(!invoiceDetailMarkup(draft, escape).includes("invoice-review-what"));
+});

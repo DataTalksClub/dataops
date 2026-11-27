@@ -1,4 +1,5 @@
-import { after, afterEach, before, describe, it } from "node:test";
+import { withOwnerAvailability, installOwnerAvailabilityFixture } from './helpers/owner-availability';
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert";
 import fs from "fs/promises";
 import path from "path";
@@ -28,7 +29,7 @@ import { createTemplate } from "../src/db/templates";
 import { createPodcastEpisode } from "../src/db/podcastEpisodes";
 import { deleteCardCascade } from "../src/db/cardDeletion";
 import { saveCalendarOverlaySettings } from "../src/db/calendar";
-import { setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
+import { setOwnerCalendarProviderClientsForTests as setOwnerCalendarClients } from "../src/calendar/ownerCalendarOverlay";
 const invoke = (
   method: string,
   pathName: string,
@@ -50,11 +51,13 @@ const parse = (r: any) => JSON.parse(r.body);
 describe("operations calendar", () => {
   let client: DynamoDBDocumentClient;
   before(async () => {
+    installOwnerAvailabilityFixture();
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);
   });
   after(stopLocal);
+  beforeEach(installOwnerAvailabilityFixture);
   afterEach(() => {
     process.env.SKIP_AUTH = "true";
   });
@@ -442,3 +445,5 @@ describe("operations calendar", () => {
     assert.equal(preserved.callBufferAfterMinutes, 10);
   });
 });
+
+function setOwnerCalendarProviderClientsForTests(value: Parameters<typeof setOwnerCalendarClients>[0]) { setOwnerCalendarClients({ ...value, ...(value.fetch ? { fetch: withOwnerAvailability(value.fetch) } : {}) }); }

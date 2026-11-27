@@ -1,3 +1,4 @@
+import { OwnerAvailabilityError } from './calendar/assertOwnerAvailable';
 import { handleTuitionRoutes } from './routes/tuition';
 import { handleAcademyPageviewsRoutes } from './routes/academyPageviews';
 import { timingSafeEqual } from 'crypto';
@@ -591,6 +592,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
     // Anything else — 404
     return jsonResponse(404, { error: 'Not found' });
   } catch (err: unknown) {
+    if (err instanceof OwnerAvailabilityError) return jsonResponse(err.statusCode, { error: err.message, code: 'owner_calendar_unavailable_or_conflict' });
     if (err instanceof TaskVersionConflictError) {
       const currentTask = await getTaskConsistent(client, err.taskId);
       if (!currentTask) {

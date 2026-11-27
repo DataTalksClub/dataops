@@ -347,7 +347,22 @@ dataops cards invitation CARD_ID --send         # first invitation only, after s
 dataops cards invitation CARD_ID --send-calendar --dry-run # plan only: event, attendees
 dataops cards invitation CARD_ID --send-calendar  # [Proposed] calendar invite ONLY, after skip
 dataops cards invitation CARD_ID --retry-pre-send # guarded, proven safe recovery
+dataops cards invitation CARD_ID --retry-pre-send --date D [--time HH:MM] # failed before any event: retry on a new slot
 ```
+
+Moving a guest event: `dataops cards time CARD_ID --at "YYYY-MM-DD HH:MM"` on a Card
+that owns an event reschedules that event, the Card anchor date and the intake
+job together, so `--retry-pre-send` never replays the superseded slot. Never
+delete invites or events to realign them.
+
+Assigning a day is confirm-first: `dataops cards create ... --guest-email E --date D`
+prints what that day holds and refuses until you pass `--confirm-day`; a day with
+no free window is refused unless `--allow-busy-day`. To find the nearest free day
+programmatically, call `dataops calendar next-free-day --type podcast --window midday --json`
+(or `GET /api/calendar-items/next-free-day`). To check a day without
+creating anything, use `dataops calendar day D --json` (`slots.midday.available`,
+`slots.evening.available`, `slots.blockers`, `timeline`), which lists only items
+that actually cover that date.
 
 `--send` sends both email and the proposed calendar invite, only for a previously
 skipped first invitation. When first contact already happened in an existing

@@ -37,6 +37,13 @@ test('conflicting invitation actions fail before requests', async () => {
   assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--send', '--preview'], captureIo()), 2);
   assert.equal(calls.length, 0);
 });
+test('retry-pre-send can re-point a failed invitation at a new date without an event', async () => {
+  const calls = fakePortal({ 'POST /api/cards/synthetic-card/guest-intake/retry': { invitation: { status: 'queued' } } });
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--retry-pre-send', '--date', '2026-11-25', '--time', '12:30'], captureIo()), 0);
+  assert.deepEqual(calls.at(-1).body, { date: '2026-11-25', time: '12:30' });
+  assert.equal(await run(['cards', 'invitation', 'synthetic-card', '--retry-pre-send', '--time', '12:30'], captureIo()), 2);
+  assert.equal(calls.length, 1);
+});
 test('--send-calendar posts only to the calendar-only route; --dry-run is a plan and email is never sent', async () => {
   const plan = { dryRun: true, sent: false, emailSent: false, alreadyNotified: false, cardId: 'synthetic-card', invitationId: 'job', holdId: 'hold_synthetic-card', eventId: 'evt', calendar: 'orin@datatalks.club', startIso: '2030-01-01T18:00:00.000Z', guests: ['guest@example.test'], requiredAttendees: ['internal@example.invalid'], attendees: ['guest@example.test', 'internal@example.invalid'] };
   const calls = fakePortal({ 'POST /api/cards/synthetic-card/guest-intake/send-calendar': ({ body }) => ({ ...plan, dryRun: body.dryRun === true, sent: body.dryRun !== true }) });

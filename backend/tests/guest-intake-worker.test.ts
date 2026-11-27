@@ -1,3 +1,4 @@
+import { withOwnerAvailability } from './helpers/owner-availability';
 import { rescheduleEvent, approveEvent } from '../src/events/service';
 import { configureTaskChecklistStore } from '../src/taskChecklist';
 import { createTaskChecklistFixture } from './helpers/task-checklist-fixture';
@@ -10,12 +11,12 @@ import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { createTemplate, getTemplate } from '../src/db/templates';
 import { getCardConsistent, parkCard, resumeCard } from '../src/db/cards';
 import { getTaskConsistent, updateTask, listTasksByCardConsistent } from '../src/db/tasks';
-import { getGuestIntakeJob } from '../src/events/guestIntakeStore';
+import { getGuestIntakeJob, saveGuestIntakeJob } from '../src/events/guestIntakeStore';
 import { processGuestIntake, pollGuestIntakeAcceptances } from '../src/events/guestIntakeWorker';
 import { getEventRecord } from '../src/events/store';
 import { getSponsorDocWithAuthMaterial, updateSponsorDoc, decryptSponsorDocAccessCode } from '../src/db/sponsorDocs';
 import { setCalendarHoldGoogleDepsForTests } from '../src/db/calendarHolds';
-import { setOwnerCalendarProviderClientsForTests } from '../src/calendar/ownerCalendarOverlay';
+import { setOwnerCalendarProviderClientsForTests as setOwnerCalendarClients } from '../src/calendar/ownerCalendarOverlay';
 import { saveCalendarOverlaySettings } from '../src/db/calendar';
 import { setSponsorDocEmailDepsForTests } from '../src/sponsorDocs/emailDelivery';
 import { TABLE_USERS, TABLE_ARTIFACTS, TABLE_CARDS } from '../src/db/tableNames';
@@ -55,7 +56,7 @@ async function card(type: 'podcast'|'webinar'|'workshop', extra: Record<string, 
     { refId: 'obtain-speaker-email', description: 'Obtain guest email', offsetDays: 0, requiredLinkName: 'Guest email', proofRequirement: { type: 'url', required: true } },
     { refId: 'create-proposed-calendar-invite', description: 'Create proposed invite', offsetDays: 0, dependsOn: ['obtain-speaker-email'], proofRequirement: { type: 'comment', required: true } },
   ] : [] });
-  const body = { templateId: template.id, guestEmail: 'synthetic-guest@example.test', creationKey: crypto.randomUUID(), ...extra };
+  const body = { agreedFrom: '2026-11-25', agreedTo: '2031-12-31', templateId: template.id, guestEmail: 'synthetic-guest@example.test', creationKey: crypto.randomUUID(), ...extra };
   const result = await invoke('POST', '/api/cards', body);
   assert.equal(result.statusCode, 201, result.body);
   return { card: JSON.parse(result.body).card, body };
@@ -182,6 +183,54 @@ test('a skipped invitation preview is read-only; explicit first-send reuses its 
   assert.equal((await invoke('POST', `/api/cards/${created.card.id}/guest-intake/send`, {})).statusCode, 409);
 });
 
+test('cards time on a guest-intake Card moves the event, the Card anchor and the intake job together', async () => {
+  const created = await card('webinar', { skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  const event = (await getEventRecord(db, job.holdId!))!;
+  const moved = new Date(Date.parse(event.startIso) + 7 * 86400000);
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(moved).map(p => [p.type, p.value]));
+  const res = await invoke('POST', `/api/cards/${created.card.id}/time`, { at: `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}` });
+  assert.equal(res.statusCode, 200, res.body);
+  const after = (await getEventRecord(db, event.id))!;
+  assert.equal(after.date, `${parts.year}-${parts.month}-${parts.day}`);
+  const card2 = (await invoke('GET', `/api/cards/${created.card.id}`)).body;
+  assert.equal(JSON.parse(card2).card.anchorDate, after.date);
+  const updated = (await getGuestIntakeJob(db, job.id))!;
+  assert.equal(updated.requestedDate, after.date); assert.equal(updated.requestedTime, `${parts.hour}:${parts.minute}`);
+});
+test('cards time normalizes a cross-date timezone move before an initial invitation retry', async () => {
+  const created = await card('webinar', { skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  const event = (await getEventRecord(db, job.holdId!))!;
+  const beforeMails = mails;
+  // The caller's Friday is still Thursday's normal midday window in Berlin.
+  const res = await invoke('POST', `/api/cards/${created.card.id}/time`, {
+    at: '2030-12-06 01:30', tz: 'Pacific/Kiritimati',
+  });
+  assert.equal(res.statusCode, 200, res.body);
+  const moved = (await getEventRecord(db, event.id))!;
+  assert.equal(moved.date, '2030-12-05');
+  assert.equal(moved.time, '12:30');
+  assert.equal(moved.timeZone, 'Europe/Berlin');
+  assert.equal(moved.startIso, '2030-12-05T11:30:00.000Z');
+  const updated = (await getGuestIntakeJob(db, job.id))!;
+  assert.equal((await getCardConsistent(db, created.card.id))!.anchorDate, moved.date);
+  assert.equal(updated.requestedDate, moved.date);
+  assert.equal(updated.requestedTime, moved.time);
+  assert.equal(updated.timeZone, moved.timeZone);
+  assert.equal(updated.startIso, moved.startIso);
+  assert.equal(mails, beforeMails, 'rescheduling never sends the first-contact email');
+  const queued = await invoke('POST', `/api/cards/${created.card.id}/guest-intake/send`, {});
+  assert.equal(queued.statusCode, 202, queued.body);
+  await processGuestIntake(db, job.id);
+  const sent = (await getGuestIntakeJob(db, job.id))!;
+  assert.equal(sent.status, 'sent');
+  assert.equal(sent.holdId, event.id);
+  assert.equal(sent.startIso, moved.startIso);
+  assert.equal(mails, beforeMails + 1);
+});
 test('acceptance racing Gmail receipt bookkeeping leaves no waiting follow-up', async () => {
   const created = await card('webinar');
   onMailSend = async () => { await approveEvent(db, created.card.id, { actor: 'synthetic-guest-accept', operationKey: 'accept-during-mail-send' }); };
@@ -340,7 +389,7 @@ test('first-contact Card with event hold dates Template Tasks from proposed anch
     templateId: template.id,
     guestEmail: 'synthetic-guest@example.test',
     creationKey: crypto.randomUUID(),
-    endDate: '2035-06-01',
+    endDate: '2035-06-01', agreedFrom: '2026-11-25', agreedTo: '2027-12-31',
   });
   assert.equal(createdRes.statusCode, 201, createdRes.body);
   const createdCard = JSON.parse(createdRes.body).card;
@@ -390,4 +439,71 @@ test('first-contact Card with event hold dates Template Tasks from proposed anch
   const eventAfter = (await getEventRecord(db, cardAfter.eventTime!.eventKey))!;
   assert.equal(eventAfter.version, eventBefore.version);
   assert.deepEqual(eventAfter.googleEventIds, eventBefore.googleEventIds);
+});
+
+function setOwnerCalendarProviderClientsForTests(value: Parameters<typeof setOwnerCalendarClients>[0]) { setOwnerCalendarClients({ ...value, ...(value.fetch ? { fetch: withOwnerAvailability(value.fetch) } : {}) }); }
+
+test('January agreement bounds automatic selection and rejects an earlier November request without writes', async () => {
+  const created = await card('podcast', { agreedFrom: '2031-01-01', agreedTo: '2031-01-31', skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  assert.ok(job.selectedDate! >= '2031-01-01' && job.selectedDate! <= '2031-01-31');
+  const earlier = await card('podcast', { agreedFrom: '2031-01-01', agreedTo: '2031-01-31', skipEmail: true });
+  const queued = (await getGuestIntakeJob(db, earlier.card.guestIntake.jobId))!;
+  queued.requestedDate = '2030-11-26';
+  await saveGuestIntakeJob(db, queued);
+  const before = google.calls.length, beforeMails = mails;
+  await assert.rejects(processGuestIntake(db, queued.id), /outside the guest agreement/);
+  assert.equal(google.calls.length, before); assert.equal(mails, beforeMails);
+});
+
+test('completed invitation never replays a stale November job after its Card moves to January', async () => {
+  const created = await card('podcast', { skipEmail: true });
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  job.requestedDate = '2030-11-26';
+  await saveGuestIntakeJob(db, job);
+  const task = (await getTaskConsistent(db, job.taskId))!;
+  await updateTask(db, task.id, { currentTask: task, expectedVersion: task.version, patch: { status: 'done' } });
+  const before = google.calls.length, beforeMails = mails;
+  await processGuestIntake(db, job.id);
+  assert.equal(google.calls.length, before); assert.equal(mails, beforeMails);
+  assert.equal((await getGuestIntakeJob(db, job.id))!.status, job.status);
+  const retry = await invoke('POST', `/api/cards/${job.cardId}/guest-intake/retry`, {});
+  assert.equal(retry.statusCode, 409, retry.body);
+  assert.match(JSON.parse(retry.body).error, /completed/);
+});
+
+test('explicit anchorDate on a free Wednesday succeeds even when podcast policy defaults weekdays to Mon/Tue', async () => {
+  // 2030-12-04 is a Wednesday; podcast guestIntake.weekdays is [1, 2] for auto-pick only.
+  const created = await card('podcast', { anchorDate: '2030-12-04', skipEmail: true });
+  await processGuestIntake(db, created.card.guestIntake.jobId);
+  const job = (await getGuestIntakeJob(db, created.card.guestIntake.jobId))!;
+  assert.equal(job.status, 'skipped');
+  assert.equal(job.selectedDate, '2030-12-04');
+  const event = (await getEventRecord(db, job.holdId!))!;
+  assert.equal(event.date, '2030-12-04');
+});
+
+test('GET /api/calendar-items/next-free-day honors all-day summit blockers and returns the nearest free day', async () => {
+  ownerEvents = [
+    { id: 'evt-summit', summary: 'AI Coding Summit Berlin', transparency: 'transparent', start: { date: '2030-12-02' }, end: { date: '2030-12-03' } },
+  ];
+  try {
+    const res = await handler({
+      httpMethod: 'GET',
+      path: '/api/calendar-items/next-free-day',
+      headers: { 'x-user-id': 'synthetic-actor' },
+      body: null,
+      queryStringParameters: { type: 'podcast', window: 'midday', from: '2030-12-02', to: '2030-12-06' },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    const body = JSON.parse(res.body);
+    assert.equal(body.found, true);
+    assert.equal(body.date, '2030-12-03');
+    assert.equal(body.window, 'midday');
+    assert.equal(body.time, '12:30');
+    assert.equal(body.durationMinutes, 60);
+  } finally {
+    ownerEvents = [];
+  }
 });

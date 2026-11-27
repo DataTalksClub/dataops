@@ -1,3 +1,5 @@
+import { installOwnerAvailabilityFixture, withOwnerAvailability } from './helpers/owner-availability';
+installOwnerAvailabilityFixture();
 import { rescheduleEvent } from '../src/events/service';
 import { configureTaskChecklistStore } from '../src/taskChecklist';
 import { createTaskChecklistFixture } from './helpers/task-checklist-fixture';
@@ -36,7 +38,7 @@ before(async () => {
   db = await getClient(await startLocal()); await createTables(db);
   await saveCalendarOverlaySettings(db, { connectionId: 'synthetic-google' }, 'synthetic-actor');
   setCalendarHoldGoogleDepsForTests({ credential: 'synthetic', connectionId: 'synthetic-google', fetchImpl: google.fetchImpl });
-  setOwnerCalendarProviderClientsForTests({ readSecret: async () => 'synthetic', fetch: async (url) => new Response(JSON.stringify(String(url).endsWith('/api/agent/token') ? { access_token: 'synthetic' } : { items: ownerEvents }), { status: 200 }) });
+  setOwnerCalendarProviderClientsForTests({ readSecret: async () => 'synthetic', fetch: withOwnerAvailability(async (url) => new Response(JSON.stringify(String(url).endsWith('/api/agent/token') ? { access_token: 'synthetic' } : { items: ownerEvents }), { status: 200 }) ) });
   setSponsorDocEmailDepsForTests({ credential: 'synthetic', fetchImpl: async (url, init) => {
     if (String(url).endsWith('/messages/send')) { mails++; if (onMailSend) { const callback = onMailSend; onMailSend = undefined; await callback(); } if (failMail) throw new Error('synthetic ambiguous timeout'); sentMimes.push(Buffer.from(JSON.parse(String(init?.body)).raw, 'base64url').toString('utf8')); return new Response(JSON.stringify({ id: `synthetic-mail-${mails}` }), { status: 200 }); }
     if (String(url).includes('userinfo')) return new Response(JSON.stringify({ email: 'orin@datatalks.club' }), { status: 200 });
@@ -54,7 +56,7 @@ async function card(type: 'podcast'|'webinar'|'workshop', extra: Record<string, 
     { refId: 'obtain-speaker-email', description: 'Obtain guest email', offsetDays: 0, requiredLinkName: 'Guest email', proofRequirement: { type: 'url', required: true } },
     { refId: 'create-proposed-calendar-invite', description: 'Create proposed invite', offsetDays: 0, dependsOn: ['obtain-speaker-email'], proofRequirement: { type: 'comment', required: true } },
   ] : [] });
-  const body = { templateId: template.id, guestEmail: 'synthetic-guest@example.test', creationKey: crypto.randomUUID(), ...extra };
+  const body = { agreedFrom: '2026-11-25', agreedTo: '2031-12-31', templateId: template.id, guestEmail: 'synthetic-guest@example.test', creationKey: crypto.randomUUID(), ...extra };
   const result = await invoke('POST', '/api/cards', body);
   assert.equal(result.statusCode, 201, result.body);
   return { card: JSON.parse(result.body).card, body };

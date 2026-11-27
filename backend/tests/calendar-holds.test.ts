@@ -1,3 +1,4 @@
+import { installOwnerAvailabilityFixture } from './helpers/owner-availability';
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
@@ -44,6 +45,7 @@ const parse = (r: any) => JSON.parse(r.body);
 describe("calendar holds (web parity + tentative proposal + 7d TTL)", () => {
   let client: DynamoDBDocumentClient;
   before(async () => {
+    installOwnerAvailabilityFixture();
     const port = await startLocal();
     client = await getClient(port);
     await createTables(client);

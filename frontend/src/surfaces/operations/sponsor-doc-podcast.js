@@ -210,6 +210,8 @@ function buildGuestSnapshot({ el, doc, draftContent, guestZone }) {
   snapshot.dataset.podcastHostSnapshot = "";
 
   const guestName = String(draftContent?.guestName || doc?.sponsorName || "").trim();
+  const guestRole = String(draftContent?.guestRole || "").trim();
+  const guestCompany = String(draftContent?.guestCompany || "").trim();
   const photoUrl = String(draftContent?.photoUrl || "").trim();
   if (VALID_PHOTO_RE.test(photoUrl)) {
     const img = el("img", "podcast-host-snapshot__photo");
@@ -224,6 +226,10 @@ function buildGuestSnapshot({ el, doc, draftContent, guestZone }) {
   const body = el("div", "podcast-host-snapshot__body");
   if (guestName) {
     body.append(el("h3", "podcast-host-snapshot__name", guestName));
+  }
+  const roleLine = [guestRole, guestCompany].filter(Boolean).join(" · ");
+  if (roleLine) {
+    body.append(el("p", "podcast-host-snapshot__role", roleLine));
   }
 
   const zone = guestZone || guestEventTimeZone(
@@ -258,7 +264,7 @@ function buildGuestSnapshot({ el, doc, draftContent, guestZone }) {
     body.append(linksWrap);
   }
 
-  if (!guestName && !recordingTime && !bio && links.length === 0) {
+  if (!guestName && !guestRole && !guestCompany && !recordingTime && !bio && links.length === 0) {
     body.append(el("p", "dk-hint", "Guest profile details have not been filled in yet."));
   }
 

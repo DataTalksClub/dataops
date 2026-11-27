@@ -161,6 +161,7 @@ export function invoiceDetailMarkup(record, escapeHtml) {
     .join("");
   return `<header>
     <h4>${e(record.fields?.counterparty || "Invoice review")}</h4>
+    ${record.fields?.description ? `<p class="invoice-review-what">${e(record.fields.description)}</p>` : ""}
     <p>${e(record.status)} · Revision ${e(record.revision)} · Publication ${e(record.publicationStatus)}</p>
     </header>
     ${record.verification ? `<p>Fields verified by ${e(record.verification.actor)} · Revision ${e(record.verification.revision)} · ${e(record.verification.at)}</p>` : ""}
@@ -399,12 +400,16 @@ export async function mountInvoiceReview(host, context, options = {}) {
     host.closest("[data-secondary]")?.scrollIntoView({ block: "start" });
   }
   async function openRecord(id) {
+    let opened = false;
     await safe(async () => {
       show(await api(`/${encodeURIComponent(id)}`));
+      opened = true;
       reveal();
     });
+    return opened;
   }
   function openRow(row) {
+    delete host.dataset.invoiceFocus;
     const id = row?.dataset?.reviewInvoice;
     if (id) openRecord(id);
   }
@@ -419,12 +424,20 @@ export async function mountInvoiceReview(host, context, options = {}) {
       openRow(row);
     }
   });
+  // A draft opened from the ledger (or a deep link) is the whole screen: the
+  // queue heading, readiness and unrelated list stay out of the way. A draft
+  // that cannot be loaded falls back to the queue so the user is not left
+  // with an empty screen. Picking a row inside the queue keeps the queue.
   async function openInvoice(id) {
-    if (id) await openRecord(id);
+    if (!id) return;
+    const opened = await openRecord(id);
+    if (opened) host.dataset.invoiceFocus = "draft";
+    else delete host.dataset.invoiceFocus;
   }
   // The forwarded-invoice list stands alone: no draft stays open from an
   // earlier visit.
   function closeInvoice() {
+    delete host.dataset.invoiceFocus;
     selected = undefined;
     detail.hidden = true;
     markOpenInvoiceRow(list, selected);

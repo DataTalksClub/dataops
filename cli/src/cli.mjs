@@ -119,6 +119,7 @@ export const FAMILIES = {
       list: calendar.list,
       day: calendar.day,
       slots: calendar.slots,
+      "next-free-day": calendar.nextFreeDay,
       propose: calendar.propose,
       "confirm-hold": calendar.confirmHold,
       "link-hold": calendar.linkHold,
@@ -336,6 +337,10 @@ export async function run(argv, io = console) {
   try {
     const result = await handler(args, output);
     if (args.json) print(JSON.stringify(result ?? null, null, 2));
+    else if (result?.titleQuality) {
+      for (const issue of result.titleQuality.issues || []) print(`Title check: ${issue.message}`);
+      if (result.titleQuality.reviewRequired) print('Review the topic and title copies with dataops event title-check <card|hold|episode>; approve-title records the completed review.');
+    }
     return EXIT.ok;
   } catch (error) {
     if (wantsJson) {

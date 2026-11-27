@@ -6,6 +6,7 @@ export interface GuestIntakeJob {
   id: string; cardId: string; taskId: string; actorId: string; type: string;
   creationKey: string; fingerprint: string; status: GuestIntakeStatus;
   guestEmail?: string; guestName?: string; topic?: string; skipEmail: boolean;
+  agreedFrom?: string; agreedTo?: string;
   requestedDate?: string; requestedTime?: string; timeZone?: string; guestTimezone?: string; requestedWindow?: string; policy?: GuestIntakePolicy;
   holdId?: string; docId?: string; selectedDate?: string; selectedTime?: string; selectedWindow?: string;
   messageId?: string; sentAt?: string; startIso?: string; error?: string; lastReportedError?: string; retryable?: boolean; leaseUntil?: number;

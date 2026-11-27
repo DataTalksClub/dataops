@@ -1,3 +1,4 @@
+import { validateGuestAgreement } from './guestAgreement';
 import { loadAssignmentPolicy } from '../db/workspaceSettings';
 import { createHash } from 'node:crypto';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -30,6 +31,7 @@ export async function prepareGuestIntake(db: DynamoDBDocumentClient, actorId: st
   if (body.time !== undefined && (typeof body.time !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(body.time))) throw new Error('time must be HH:MM');
   if (body.time && !body.anchorDate) throw new Error('An explicit time requires anchorDate');
   if (body.window !== undefined && (typeof body.window !== 'string' || !Object.hasOwn(template.eventPolicy?.windows || (template.base?.eventPolicy as import('./policy').EventPolicy | undefined)?.windows || {}, body.window))) throw new Error('window must name a configured event window');
+  if (body.agreedFrom !== undefined || body.agreedTo !== undefined) validateGuestAgreement(body as import('./guestAgreement').GuestAgreement, body.anchorDate as string | undefined);
   const fingerprint = hash(JSON.stringify(canonical({ ...body, templateId: template.id, guestEmail: guest.email, guestName: guest.name })));
   const creationKey = typeof body.creationKey === 'string' && body.creationKey.trim() ? body.creationKey.trim() : `auto:${fingerprint}`;
   if (creationKey.length > 200) throw new Error('creationKey is too long');
@@ -45,6 +47,8 @@ export async function prepareGuestIntake(db: DynamoDBDocumentClient, actorId: st
     status: guest.email ? 'queued' : 'contact-pending', guestEmail: guest.email, guestName: guest.name,
     topic: typeof body.topic === 'string' && body.topic.trim() ? body.topic.trim() : undefined,
     skipEmail: body.skipEmail === true,
+    agreedFrom: typeof body.agreedFrom === 'string' ? body.agreedFrom : undefined,
+    agreedTo: typeof body.agreedTo === 'string' ? body.agreedTo : undefined,
     requestedDate: typeof body.anchorDate === 'string' ? body.anchorDate : undefined,
     requestedTime: typeof body.time === 'string' ? body.time : undefined,
     timeZone: typeof body.timeZone === 'string' ? body.timeZone : 'Europe/Berlin',

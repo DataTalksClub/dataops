@@ -1,3 +1,5 @@
+import { installOwnerAvailabilityFixture } from './helpers/owner-availability';
+installOwnerAvailabilityFixture();
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';

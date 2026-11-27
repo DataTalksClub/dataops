@@ -42,14 +42,31 @@ export function formatIssueDate(value, { weekday }) {
   return parsed ? ISSUE_DATE[weekday].format(parsed) : String(value);
 }
 
+const EDITED_BERLIN = new Intl.DateTimeFormat("en-GB", {
+  timeZone: "Europe/Berlin",
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+  timeZoneName: "short",
+});
+
 // "2027-01-18 09:30": an ISO timestamp cut to the minute, as stored (UTC).
 export function formatUtcMinute(value) {
   return String(value).slice(0, 16).replace("T", " ");
 }
 
-// "2027-01-18 09:30 UTC" for an edit/send timestamp; empty when there is none.
+// "18 Jan 2027, 10:30 CET (Europe/Berlin)" for an edit/send timestamp; empty when there is none.
 export function formatEditedTimestamp(value) {
-  return value ? `${formatUtcMinute(value)} UTC` : "";
+  if (!value) return "";
+  const raw = String(value);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime()) || raw.length <= 10) {
+    return `${formatUtcMinute(raw)} UTC`;
+  }
+  return `${EDITED_BERLIN.format(parsed)} (Europe/Berlin)`;
 }
 
 function parseUtcDay(value) {

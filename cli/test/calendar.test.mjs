@@ -181,6 +181,18 @@ describe("Calendar CLI commands", () => {
     assert.match(text, /MLOps live demonstration/);
   });
 
+  test("calendar day ignores an adjacent day's all-day blocker returned by the padded range", async () => {
+    const io = captureIo();
+    globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).includes("/overlays")
+      ? { items: [{ provider: "owner-calendar", label: "AI Coding Summit Berlin", startDate: "2026-12-04", endDate: "2026-12-04", slot: "all-day" }] }
+      : { items: [], holidays: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    const code = await run(["calendar", "day", "2026-12-03", "--json"], io);
+    assert.equal(code, 0);
+    const payload = JSON.parse(io.text());
+    assert.deepEqual(payload.slots.blockers, []);
+    assert.equal(payload.slots.midday.available, true);
+  });
+
   test("calendar day --json returns structured slot availability payload", async () => {
     const io = captureIo();
 
@@ -859,4 +871,33 @@ test("link-hold previews a verified association and requires reviewed versions o
   assert.equal(requests.length,1);
   assert.equal(await run(['calendar','link-hold','hold-example','--card','card-example','--apply','--expected-card-version','3','--expected-hold-version','4','--expected-episode-version','2'],captureIo()),0);
   assert.deepEqual(requests[1].body,{cardId:'card-example',expectedCardVersion:3,expectedHoldVersion:4,expectedEpisodeVersion:2,apply:true});
+});
+
+test("calendar day marks weekends as unavailable", async () => {
+  const io = captureIo();
+  globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).includes("/overlays")
+    ? { items: [] }
+    : { items: [], holidays: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+  const code = await run(["calendar", "day", "2026-12-06", "--json"], io);
+  assert.equal(code, 0);
+  const payload = JSON.parse(io.text());
+  assert.equal(payload.slots.midday.available, false);
+  assert.equal(payload.slots.evening.available, false);
+  assert.ok(payload.slots.midday.conflicts.includes("Weekend"));
+});
+
+test("calendar next-free-day queries /api/calendar-items/next-free-day with type and window", async () => {
+  const io = captureIo();
+  const requests = [];
+  globalThis.fetch = async (url) => {
+    requests.push(String(url));
+    return Response.json({ found: true, date: "2026-12-04", window: "midday", time: "12:30", durationMinutes: 60 });
+  };
+  const code = await run(["calendar", "next-free-day", "--type", "podcast", "--window", "midday", "--from", "2026-12-03", "--to", "2026-12-10", "--json"], io);
+  assert.equal(code, 0);
+  assert.match(requests[0], /\/api\/calendar-items\/next-free-day\?/);
+  assert.match(requests[0], /window=midday/);
+  assert.match(requests[0], /type=podcast/);
+  assert.match(requests[0], /duration=60/);
+  assert.equal(JSON.parse(io.text()).date, "2026-12-04");
 });

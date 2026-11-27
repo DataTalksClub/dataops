@@ -54,7 +54,7 @@ function walk(node, out = []) {
 }
 const byClass = (node, name) => walk(node).filter((el) => el.classList?.contains?.(name));
 
-function renderSurface() {
+function renderSurface({ templates = [TEMPLATE], state = { workSnapshot: { cards: [] } } } = {}) {
   const surface = createTemplatesSurface({
     countLabel: (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`,
     getAllDocuments: () => [],
@@ -65,11 +65,11 @@ function renderSurface() {
     renderHonestState: (title) => { const el = new FakeElement("div"); el.textContent = title; return el; },
     renderEntityLoadState: () => {},
     renderTasksSurface: () => {},
-    request: async () => ({ templates: [TEMPLATE] }),
+    request: async () => ({ templates }),
     refreshOperationsWorkSnapshot: async () => {},
     resolveDocReference,
     setWorkspaceEntityState: () => {},
-    state: { workSnapshot: { cards: [] } },
+    state,
     workApiUrl: (path) => path,
   });
   return surface;
@@ -130,6 +130,45 @@ describe("templates surface Steps", () => {
     const remindLinks = walk(byClass(remind, "runtime-template-step-detail")[0])
       .filter((el) => el.tagName?.toLowerCase() === "a");
     assert.deepEqual(remindLinks.map((a) => a.href), ["/03-programs/templates/remind-guest.md"]);
+  });
+
+  test("Definition details stays open through a late work snapshot, and an explicit close stays closed", async () => {
+    const state = { workSnapshot: { cards: [] } };
+    const surface = renderSurface({ state });
+    await surface.refreshRuntimeTemplates();
+    surface.setRuntimeTemplateRoute({ tasksSection: "templates", params: new URLSearchParams("templateId=tpl-1") }, { templateId: "tpl-1" });
+    const renderDetails = () => {
+      const section = surface.renderTemplatesSurface();
+      root.replaceChildren(section);
+      return byClass(section, "runtime-template-provenance")[0];
+    };
+    const initial = renderDetails();
+    assert.equal(Boolean(initial.open), false);
+    initial.open = true;
+
+    // The parent rebuilds Templates when its delayed Card/Task snapshot arrives.
+    // Rebuild immediately: preservation must not depend on a queued toggle event.
+    state.workSnapshot.cards = [{ id: "late-card", templateId: "tpl-1", status: "active", createdAt: "2026-11-25T12:00:00Z" }];
+    const refreshed = renderDetails();
+    assert.notEqual(refreshed, initial);
+    assert.equal(refreshed.open, true);
+    refreshed.open = false;
+    assert.equal(renderDetails().open, false);
+  });
+
+  test("Definition details remembers each template independently across route changes", async () => {
+    const surface = renderSurface({ templates: [TEMPLATE, { ...TEMPLATE, id: "tpl-2", name: "Another workshop" }] });
+    await surface.refreshRuntimeTemplates();
+    const select = (id) => {
+      surface.setRuntimeTemplateRoute({ tasksSection: "templates", params: new URLSearchParams(`templateId=${id}`) }, { templateId: id });
+      const section = surface.renderTemplatesSurface();
+      root.replaceChildren(section);
+      return byClass(section, "runtime-template-provenance")[0];
+    };
+    select("tpl-1").open = true;
+    assert.equal(select("tpl-2").open, false);
+    assert.equal(select("tpl-1").open, true);
+    assert.equal(select("tpl-2").open, false);
   });
 
   test("the Templates list scroll is restored after the rebuilt list is attached", async () => {

@@ -1,3 +1,4 @@
+import { checkTitle } from '../events/titleQuality';
 /**
  * /api/podcast-episodes: the podcast episode register.
  *
@@ -412,6 +413,7 @@ const presented = async (client: DynamoDBDocumentClient, episode: PodcastEpisode
     ...episode,
     releaseAssignmentStatus: effectiveReleaseAssignment(episode),
     release: releaseWarnings(episode, readiness.scheduledLocalDate),
+    titleQuality: checkTitle(episode.title, episode.guests.map(guest => guest.name)),
     ...(authority
       ? {
           recordingDate: authority.date,

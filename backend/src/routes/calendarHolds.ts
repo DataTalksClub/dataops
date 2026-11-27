@@ -1,3 +1,4 @@
+import { checkTitle } from '../events/titleQuality';
 import { linkConfirmedHold, HoldLinkError } from '../calendar/linkConfirmedHold';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -35,6 +36,7 @@ import { CardVersionConflictError, getCardConsistent } from '../db/cards';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { CardInviteConflictError, CardInviteInputError, resolvePodcastCardInviteTitle, syncCardInvite } from '../calendar/cardInvite';
 import { recordAutomationRun } from '../automations/runs';
+import { getEventRecord } from '../events/store';
 import {
   EventConflictError,
   EventInputError,
@@ -111,7 +113,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(201, { hold: stored });
+  return json(201, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 function rangeQuery(event: LambdaEvent): { from?: string; to?: string } | null {
@@ -268,7 +270,7 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(200, { hold: stored });
+  return json(200, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 async function releaseRoute(
@@ -298,7 +300,7 @@ async function releaseRoute(
       : { googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(200, { hold: stored });
+  return json(200, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 async function moveRoute(
@@ -334,6 +336,7 @@ async function moveRoute(
         actor: actor(event),
       });
       return json(200, {
+        titleQuality: checkTitle(result.event.renderValues.topic || result.event.renderValues.title),
         hold: toCalendarHoldView(result),
         event: result.event,
         card: result.card,
@@ -396,7 +399,7 @@ async function moveRoute(
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(200, { hold: stored });
+  return json(200, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 async function expireRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
@@ -491,8 +494,15 @@ async function verifyInviteRoute(id: string, event: LambdaEvent, client: DynamoD
   const deps = await calendarInviteDeps({}, client);
   const card = hold.cardId ? await getCardConsistent(client, hold.cardId) : null;
   const guestTitle = card ? await resolvePodcastCardInviteTitle(client, card) : undefined;
+  // An event-lifecycle invite carries every guest on its event record; a plain hold (no
+  // lifecycle authority on the shared row) has one guestRef.
+  const record = await getEventRecord(client, hold.id).catch((error: unknown) => {
+    if (error instanceof EventConflictError) return null;
+    throw error;
+  });
+  const guests = record?.guestEmails?.length ? record.guestEmails : hold.guestRef ? [hold.guestRef] : [];
   const expected = buildGuestInvite({
-    eventKey: hold.id, title: hold.title, guestTitle, documentUrl: hold.documentUrl, guests: hold.guestRef ? [hold.guestRef] : [],
+    eventKey: hold.id, title: hold.title, guestTitle, documentUrl: hold.documentUrl, guests,
     startIso: hold.startIso, endIso: hold.endIso,
   }, deps.calendarIds);
   const problems = await validateGuestInviteReadback(expected, hold.googleEventIds || {}, deps);

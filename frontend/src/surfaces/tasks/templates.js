@@ -35,6 +35,9 @@ export function createTemplatesSurface(context) {
     editorOpen: false,
   };
 
+  const definitionDetailsOpen = new Map();
+  let renderedDefinitionDetails = null;
+
   // Selecting a Template re-renders the whole surface (route change plus a
   // fresh fetch), which recreates the list element. The list controller owns
   // the scroll offset, filter text, and collapsed groups across rerenders.
@@ -157,6 +160,13 @@ export function createTemplatesSurface(context) {
   }
 
   function renderTemplatesSurface() {
+    // A late work snapshot rebuilds this pane. Read the native disclosure state
+    // before replacing it, including changes whose toggle event is still queued.
+    if (renderedDefinitionDetails) {
+      const { templateId, element } = renderedDefinitionDetails;
+      definitionDetailsOpen.set(templateId, element.open);
+      renderedDefinitionDetails = null;
+    }
     return renderRuntimeTemplateInspector();
   }
 
@@ -354,6 +364,8 @@ export function createTemplatesSurface(context) {
 
     const definitionSection = document.createElement("details");
     definitionSection.className = "runtime-template-block runtime-template-provenance";
+    definitionSection.open = definitionDetailsOpen.get(selected.id) === true;
+    renderedDefinitionDetails = { templateId: selected.id, element: definitionSection };
     const definitionSummary = document.createElement("summary");
     definitionSummary.textContent = "Definition details";
     const provenanceNote = document.createElement("p");

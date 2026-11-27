@@ -1,3 +1,4 @@
+import { installOwnerAvailabilityFixture } from './helpers/owner-availability';
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -65,6 +66,7 @@ async function podcastCard(title = 'Podcast conversation with Julien Khaleghy') 
 
 describe('shared podcast guest-invite builder (Hub intake 0d56721e)', () => {
   before(async () => {
+    installOwnerAvailabilityFixture();
     checklist = createTaskChecklistFixture();
     configureTaskChecklistStore(checklist.store);
     const port = await startLocal();
@@ -226,5 +228,35 @@ describe('shared podcast guest-invite builder (Hub intake 0d56721e)', () => {
     assert.equal(bad.ok, false);
     assert.ok(bad.problems.some((p: string) => /title is/.test(p)));
     assert.equal(google.calls.filter(c => c.method !== 'GET' && c.url.pathname.includes('/events')).length, writesBefore, 'no Google writes');
+  });
+
+  it('a non-canonical --title (placeholder or topic) never becomes the podcast invite title; verify-invite checks every event guest', async () => {
+    google = holdGoogleProvider();
+    setCalendarHoldGoogleDepsForTests({ ...deps() });
+    const SECOND = 'dev+invite-second@dtcdev.click';
+    const card = await podcastCard();
+    // The SerpApi repro: propose with the placeholder card title, two guests, approve.
+    await proposeEvent(client, card.id, {
+      date: '2026-12-15', time: '18:00', title: 'Podcast conversation with Julien Khaleghy', guestEmails: [GUEST, SECOND], deps: deps(), actor: 'test-operator',
+    });
+    const approved = await approveEvent(client, card.id, { deps: deps(), actor: 'test-operator' });
+    assert.equal(liveInvite(approved.event.googleEventIds).summary, 'Julien Khaleghy at DataTalks.Club Podcast');
+    // A later `event update --title <topic>` stays canonical and silent.
+    const writesBefore = google.calls.filter(c => c.method === 'PATCH' && c.url.searchParams.get('sendUpdates') === 'all').length;
+    const updated = await updateEvent(client, card.id, { title: 'Giving AI Agents Reliable Access to the Web', deps: deps(), actor: 'test-operator' });
+    const live = liveInvite(updated.event.googleEventIds);
+    assert.equal(live.summary, 'Julien Khaleghy at DataTalks.Club Podcast');
+    assert.equal(live.personal.summary, live.summary);
+    assert.deepEqual(live.attendees, [GUEST, SECOND, OWNER_PERSONAL_CALENDAR, OWNER_WORK_EMAIL].sort());
+    assert.equal(google.calls.filter(c => c.method === 'PATCH' && c.url.searchParams.get('sendUpdates') === 'all').length, writesBefore, 'update emails no guest');
+    // A canonical --title still overrides (stale guest spelling fix, #457).
+    const fixed = await updateEvent(client, card.id, { title: 'Julien Khaleghy-Fixed at DataTalks.Club Podcast', deps: deps(), actor: 'test-operator' });
+    assert.equal(liveInvite(fixed.event.googleEventIds).summary, 'Julien Khaleghy-Fixed at DataTalks.Club Podcast');
+    // verify-invite on the approved event's own row expects both guests, not only the hold guestRef.
+    await updateEvent(client, card.id, { deps: deps(), actor: 'test-operator' });
+    const holdId = (await getCardConsistent(client, card.id))!.eventTime?.eventKey || `hold_${card.id}`;
+    const verify = JSON.parse((await handler({ httpMethod: 'GET', path: `/api/calendar-holds/${holdId}/verify-invite`, body: null, headers: { 'x-user-id': 'test-operator' }, queryStringParameters: {} })).body);
+    assert.equal(verify.ok, true, JSON.stringify(verify.problems));
+    assert.ok(verify.expected.attendees.includes(SECOND));
   });
 });
