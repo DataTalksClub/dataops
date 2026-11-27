@@ -31,6 +31,7 @@ import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
 import { renderNewsletterSyncNote } from "./sponsor-doc-newsletter-sync.js";
 import { isImageOnlyVisualField, mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
+import { mountSponsorXThreadEditor } from "./sponsor-doc-x-thread.js";
 import {
   appendSponsorDocBulletsField,
   parseSponsorBulletItems,
@@ -725,6 +726,20 @@ export function createSponsorDocPage({
               });
             }
             appendErrorIfAny();
+            appendFieldNode(fieldDef.key, fieldWrap);
+            continue;
+          }
+
+          if (fieldDef.key === "twitterPost") {
+            // One editable card per tweet; the stored value stays the separator-joined thread.
+            top.append(label);
+            fieldWrap.append(top);
+            const binding = mountSponsorXThreadEditor({
+              el, fieldWrap, fieldDef, inputId, draftContent, busy, onChange: () => updateLivePreview(),
+            });
+            socialFieldControls.set(fieldDef.key, binding);
+            appendErrorIfAny();
+            if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
             appendFieldNode(fieldDef.key, fieldWrap);
             continue;
           }

@@ -448,7 +448,13 @@ test("auto-generates LinkedIn post and single X post (<= 280 chars) or numbered 
 
   const combinedTweets = previewTweets.map((node) => node.textContent).join("\n");
   assert.ok(combinedTweets.includes(ctaUrlInput.value), "X thread includes CTA link");
-  assert.ok(twitterInput.value.includes(ctaUrlInput.value), "X textarea includes CTA link");
+  // The editor shows one card per tweet (no "---" separators), matching the preview thread.
+  const tweetCards = h.root.querySelectorAll("[data-sponsor-x-tweet]");
+  assert.equal(tweetCards.length, previewTweets.length, "one editable card per tweet");
+  assert.equal(twitterInput.dataset.sponsorXTweet, "1", "the field's label points at the first tweet card");
+  assert.ok(tweetCards.map((node) => node.value).join("\n").includes(ctaUrlInput.value), "X tweet cards include CTA link");
+  assert.ok(tweetCards.every((node) => !node.value.includes("---")), "no thread separator is shown");
+  assert.match(h.root.querySelector('[data-sponsor-x-tweet-count="1"]').textContent, /^\d+ \/ 280$/);
 
   // 3. Direct helper verification for very long unbroken sentences
   const directSocial = generateSponsorSocialPosts(
@@ -470,5 +476,48 @@ test("auto-generates LinkedIn post and single X post (<= 280 chars) or numbered 
   assert.ok(directSocial.xPosts.at(-1).includes("https://example.com/benchmark"));
   assert.ok(directSocial.linkedinPost.includes("https://example.com/benchmark"));
 
+  h.controller.destroy();
+});
+
+test("X thread cards add, edit, reorder and remove tweets and store the separator-joined thread", async () => {
+  const { mountSponsorXThreadEditor, X_THREAD_SEPARATOR } = await import("../src/surfaces/operations/sponsor-doc-x-thread.js");
+  const h = setupPageHarness();
+  await h.controller.start();
+  const el = (tag, className, text) => {
+    const node = globalThis.document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const fieldWrap = el("div");
+  const draftContent = { twitterPost: `First tweet${X_THREAD_SEPARATOR}Second tweet` };
+  let changes = 0;
+  const binding = mountSponsorXThreadEditor({
+    el, fieldWrap, fieldDef: { key: "twitterPost" }, inputId: "x", draftContent, busy: false, onChange: () => { changes += 1; },
+  });
+  const tweets = () => fieldWrap.querySelectorAll("[data-sponsor-x-tweet]").map((node) => node.value);
+  assert.deepEqual(tweets(), ["First tweet", "Second tweet"]);
+
+  await fieldWrap.querySelector("[data-sponsor-x-add]").click();
+  const third = fieldWrap.querySelector('[data-sponsor-x-tweet="3"]');
+  third.value = "Third tweet";
+  await third.dispatch("input");
+  assert.equal(draftContent.twitterPost, ["First tweet", "Second tweet", "Third tweet"].join(X_THREAD_SEPARATOR));
+
+  await fieldWrap.querySelector('[data-sponsor-x-control="up-3"]').click();
+  assert.deepEqual(tweets(), ["First tweet", "Third tweet", "Second tweet"]);
+  await fieldWrap.querySelector('[data-sponsor-x-control="remove-1"]').click();
+  assert.deepEqual(tweets(), ["Third tweet", "Second tweet"]);
+  assert.equal(draftContent.twitterPost, `Third tweet${X_THREAD_SEPARATOR}Second tweet`);
+  assert.ok(changes >= 4);
+
+  const long = fieldWrap.querySelector('[data-sponsor-x-tweet="1"]');
+  long.value = "x".repeat(281);
+  await long.dispatch("input");
+  assert.equal(fieldWrap.querySelector('[data-sponsor-x-tweet-count="1"]').textContent, "281 / 280");
+  assert.equal(long.getAttribute("aria-invalid"), "true");
+
+  binding.control.value = "Regenerated single tweet";
+  assert.deepEqual(tweets(), ["Regenerated single tweet"]);
   h.controller.destroy();
 });
