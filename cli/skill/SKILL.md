@@ -289,8 +289,13 @@ approved email. Start the draft with `dataops newsletter draft <issue> --create`
 (nothing is imported), add and edit blocks with `dataops newsletter block add|edit|move`,
 and check the result with `dataops newsletter render <issue> --out email.html`.
 The owner approves the exact rendered revision (`dataops newsletter approve`,
-owner only); only then does the frozen email go to Relay for a test send or a
-scheduled send. Never send or schedule an issue yourself.
+owner only); only then does the frozen email go to Relay, first as a test to
+the owner's own mailbox (`test-send`), which the owner confirms with
+`test-receipt` once it arrived and looks right; only then can it be scheduled.
+Editing a scheduled issue (a block, the subject, its sponsor document) cancels
+the Relay schedule first and sends it back to review; if Relay cannot confirm
+the cancel, the edit fails and nothing changes. Never test, confirm, send or
+schedule an issue yourself.
 
 For sponsored slots, edit the slot's sponsor document: every save stages its
 sponsor block into the DataOps draft (nothing goes to Relay). A slot without an
