@@ -78,12 +78,6 @@ import {
   filterSponsorStatsReports,
 } from '../newsletter/statsReport';
 import {
-  handleNewsletterFinalRenderRoute,
-  handleNewsletterImageUpload,
-  handleNewsletterMarkdownRoutes,
-  publicNewsletterIssueFields,
-} from '../newsletter/markdownPreview';
-import {
   MailchimpMetricsError,
   pullIssueMailchimpMetrics,
 } from '../newsletter/mailchimpMetrics';
@@ -91,11 +85,33 @@ import { GmailMessageRouteError, resolveGmailMessageRoute } from '../sponsorDocs
 import { applySponsorRoute, SponsorRouteError } from '../newsletter/sponsorRoute';
 import { ReportSendError, sendIssueReport } from '../newsletter/reportSend';
 import { json, parseJsonObjectEvent } from '../http';
-import { handleNewsletterBlockRoutes } from './newsletterBlocks';
-import { deleteBlockSet } from '../newsletter/blocksStore';
+import { handleNewsletterDraftRoutes, handleNewsletterImageUpload } from './newsletterDraft';
+import { sponsorDocPortalBaseUrl } from './sponsorDocs';
+import { deleteBlockSet, getBlockSet } from '../newsletter/blocksStore';
 import { releaseRemovedSponsorBlocks } from '../newsletter/sponsorBlocks';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** Refuse to delete or cancel an issue whose approved email Relay holds for sending. */
+async function relayHoldsEmail(client: DynamoDBDocumentClient, issueId: string): Promise<LambdaResponse | null> {
+  const delivery = (await getBlockSet(client, issueId))?.delivery;
+  if (!delivery || (delivery.state !== 'scheduling' && delivery.state !== 'scheduled')) return null;
+  return json(409, {
+    error: `The issue's approved email is ${delivery.state} in Relay (campaign ${delivery.campaignKey}). Cancel the schedule on the issue's email page first.`,
+    code: 'newsletter_scheduled_in_relay',
+  });
+}
+
+/**
+ * The issue as the API returns it: the retired Markdown preview's access-code
+ * secrets stripped (archived fields such as `markdown` and `finalRender` stay
+ * readable), plus the staff page that shows the rendered email.
+ */
+function publicNewsletterIssueFields<T extends NewsletterIssue>(issue: T, event?: LambdaEvent) {
+  const { previewAccessCodeHash: _hash, previewAccessCodeCiphertext: _cipher, ...rest } = issue;
+  const base = event ? sponsorDocPortalBaseUrl(event) : 'https://ops.dtcdev.click';
+  return { ...rest, previewUrl: `${base}/newsletter-issues/${encodeURIComponent(issue.id)}/preview` };
+}
 const KINDS = new Set<NewsletterIssueKind>(['weekly', 'standalone']);
 export const ISSUE_STATUSES = ['planned', 'drafting', 'review', 'scheduled', 'sent', 'cancelled'];
 const STATUSES = new Set(ISSUE_STATUSES);
@@ -709,6 +725,8 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   const cancelling = existing.status !== 'cancelled' && merged.status === 'cancelled';
   const reinstating = existing.status === 'cancelled' && merged.status !== 'cancelled';
   if (cancelling) {
+    const held = await relayHoldsEmail(client, existing.id);
+    if (held) return held;
     const next = nextNewsletterIssue(existing, { ...changes, cardId: undefined });
     const failure = existing.cardId
       ? await deleteWithCard(client, actor, existing, replaceIssueWrite(existing, next), body.confirmCardDeletion === true)
@@ -760,6 +778,8 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
   if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
   if (!resolved.ok) return resolved.response;
+  const held = await relayHoldsEmail(client, existing.id);
+  if (held) return held;
   if (existing.cardId) {
     const failure = await deleteWithCard(
       client,
@@ -1185,34 +1205,14 @@ export async function handleNewsletterIssueRoutes(
     const body = parse(event) || {};
     return mailchimpMetricsRoute(decodeURIComponent(mailchimpMetrics[1]), body, event, client);
   }
-  const blocksRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/blocks(\/.*)?$/);
-  if (blocksRoute) {
-    return handleNewsletterBlockRoutes(decodeURIComponent(blocksRoute[1]), blocksRoute[2] || '', method, event, client);
+  const draftRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/draft(\/.*)?$/);
+  if (draftRoute) {
+    return handleNewsletterDraftRoutes(decodeURIComponent(draftRoute[1]), draftRoute[2] || '', method, event, client);
   }
   const imageRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/images\/?$/);
   if (imageRoute) {
     if (method !== 'POST') return json(405, { error: 'Method not allowed' });
     return handleNewsletterImageUpload(decodeURIComponent(imageRoute[1]), event, client);
-  }
-  const rotateMdCode = path.match(/^\/api\/newsletter-issues\/([^/]+)\/markdown\/rotate-code\/?$/);
-  if (rotateMdCode) {
-    if (method !== 'POST') return json(405, { error: 'Method not allowed' });
-    return handleNewsletterMarkdownRoutes(decodeURIComponent(rotateMdCode[1]), 'rotate-code', event, client);
-  }
-  const finalRenderRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/final-render\/?$/);
-  if (finalRenderRoute) {
-    if (method !== 'PUT') return json(405, { error: 'Method not allowed' });
-    return handleNewsletterFinalRenderRoute(decodeURIComponent(finalRenderRoute[1]), event, client);
-  }
-  const mdRoute = path.match(/^\/api\/newsletter-issues\/([^/]+)\/(?:markdown|preview)\/?$/);
-  if (mdRoute) {
-    if (method !== 'GET' && method !== 'PUT') return json(405, { error: 'Method not allowed' });
-    return handleNewsletterMarkdownRoutes(
-      decodeURIComponent(mdRoute[1]),
-      method === 'GET' ? 'get' : 'put',
-      event,
-      client,
-    );
   }
   const syncTasks = path.match(/^\/api\/newsletter-issues\/([^/]+)\/sync-tasks$/);
   if (syncTasks) {

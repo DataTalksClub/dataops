@@ -706,15 +706,16 @@ describe("agent guide", () => {
     assert.match(io.text(), /leave it for another agent/);
   });
 
-  test("guides active newsletter production through Relay", async () => {
+  test("guides newsletter production in DataOps, with Relay as transport only", async () => {
     for (const argv of [["agent-guide"], ["newsletter", "--help"]]) {
       const io = captureIo();
       assert.equal(await run(argv, io), 0);
       const output = io.text();
-      assert.match(output, /Build and review.*in Relay/);
+      assert.match(output, /Build, review and approve each issue's email in DataOps; Relay only sends/);
       assert.match(output, /dataops kb show sop\.newsletter\.assemble-the-weekly-newsletter-in-dataops/);
-      assert.match(output, /dataops newsletter final-render/);
-      assert.doesNotMatch(output, /mailchimp|newsletter markdown|(?:issue|sources|brief)\.md/i);
+      assert.match(output, /dataops newsletter draft/);
+      assert.match(output, /dataops newsletter approve/);
+      assert.doesNotMatch(output, /final-render|relay-sync|blocks-sync|--import|mailchimp|newsletter markdown|(?:issue|sources|brief)\.md/i);
     }
   });
 

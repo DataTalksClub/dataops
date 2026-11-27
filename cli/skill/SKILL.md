@@ -284,16 +284,20 @@ brief is available before confirm.
 For current newsletter production, read the issue's Task and its live SOP.
 For weekly assembly, open
 `dataops kb show sop.newsletter.assemble-the-weekly-newsletter-in-dataops`.
-Build and review the issue in Relay, then attach its rendered email with
-`dataops newsletter final-render <issue-id> --relay-key <key> --web-view-url <url>`.
-Record the source links and delivery evidence on the DataOps issue and Task.
+Build, review and approve each issue's email in DataOps; Relay only sends the
+approved email. Start the draft with `dataops newsletter draft <issue> --create`
+(nothing is imported), add and edit blocks with `dataops newsletter block add|edit|move`,
+and check the result with `dataops newsletter render <issue> --out email.html`.
+The owner approves the exact rendered revision (`dataops newsletter approve`,
+owner only); only then does the frozen email go to Relay for a test send or a
+scheduled send. Never send or schedule an issue yourself.
 
-For sponsored slots, edit the slot's sponsor document and follow the live
-SOP for sponsor block synchronization. Preview the mapping of that document
-to the existing Relay block with
-`dataops newsletter relay-sync <issue-id|issue-number> --slot primary|secondary --dry-run`.
+For sponsored slots, edit the slot's sponsor document: every save stages its
+sponsor block into the DataOps draft (nothing goes to Relay). A slot without an
+external sponsor takes a hand-made sponsor block
+(`dataops newsletter block add <issue> --type sponsor`).
 `dataops newsletter image upload <issue-id> <path>` returns a durable public
-image URL for the sponsor document or Relay issue.
+image URL for a block or the sponsor document.
 
 For a podcast episode: `dataops podcast list --status booked` (or `--season N`),
 `dataops podcast create --guests "Name[:slug]" --title "..." --recording-date YYYY-MM-DD`,

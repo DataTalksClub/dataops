@@ -1,17 +1,17 @@
 /**
- * Automatic sync of a sponsor document into its newsletter issue.
+ * Stage a sponsor document into its newsletter issue's draft (DataOps only).
  *
- * On every sponsor-doc save, the issue's sponsor block for that slot (and the
- * Relay copy of it) is rebuilt from the doc: title, intro -> body, bullets,
- * closing, ctaText/ctaUrl, graphics -> image_url/image_link. When the doc owns
- * the primary slot, subjectLine/previewText also become the Relay issue's
- * subject (with the " | DataTalks.Club Weekly" suffix) and preview text.
+ * On every sponsor-doc save, the draft's sponsor block for that slot is rebuilt
+ * from the doc: title, intro -> body, bullets, closing, ctaText/ctaUrl,
+ * graphics -> image_url/image_link. When the doc owns the primary slot,
+ * subjectLine/previewText also become the draft's subject (with the
+ * " | DataTalks.Club Weekly" suffix) and preview text.
  *
- * Sponsor blocks are content read-only in the issue editor, so this is the only
- * writer of their content. It never overwrites silently: if the Relay block (or
- * subject) was edited in Relay since the last sync and differs from the doc, the
- * sync fails loudly (unless `force`), and every failure is recorded on the
- * issue, returned to the doc page and raised as a notification.
+ * Staging is local: it writes the DataOps draft and nothing else. It never
+ * calls Relay, creates no invoice, deal or outreach. Like any content change it
+ * withdraws the owner's approval, so the email Relay later receives is always
+ * one the owner approved after the last doc change. Every failure is recorded
+ * on the draft, returned to the doc page and raised as a notification.
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -27,9 +27,8 @@ import {
 } from './blocks';
 import { BlocksError } from './blocksErrors';
 import { byPosition, renumber, type SponsorSlotKind } from './blocksLayout';
-import { RelayError, relayClient } from './blocksRelay';
-import { appendBlockRevisions, getBlockSet, putBlockSet, BlockSetVersionConflict } from './blocksStore';
-import { syncBlocks, type BlockActor } from './blocksSync';
+import { BlockSetVersionConflict, getBlockSet, putBlockSet } from './blocksStore';
+import { commitContent, type BlockActor, type NewRevision } from './blocksEdit';
 import { listNewsletterIssues, type NewsletterIssue } from '../db/newsletterIssues';
 import { createNotification } from '../db/notifications';
 import type { SponsorDoc } from '../db/sponsorDocs';
@@ -48,7 +47,7 @@ export function normalizeBullets(raw: unknown): string {
     .join('\n');
 }
 
-/** Relay block data for a sponsor doc's content; empty fields are omitted. */
+/** Draft block data for a sponsor doc's content; empty fields are omitted. */
 export function sponsorBlockData(doc: Pick<SponsorDoc, 'template' | 'content'>): BlockData {
   const content = (doc.content || {}) as Record<string, string>;
   const standalone = doc.template === 'newsletter-standalone';
@@ -153,30 +152,31 @@ async function recordStatus(
   }
 }
 
-/** Sync one slot of one issue from its sponsor doc. Throws only for unexpected bugs; expected failures are reported in the result. */
+/** Stage one slot of one issue from its sponsor doc. Throws only for unexpected bugs; expected failures are reported in the result. */
 export async function syncSponsorSlot(
   client: DynamoDBDocumentClient,
   issue: Pick<NewsletterIssue, 'id' | 'publicationDate'> & { issueNumber?: number },
   slot: SponsorSlotKind,
   doc: SponsorDoc,
   actor: BlockActor,
-  options: { dryRun?: boolean; force?: boolean } = {},
+  options: { dryRun?: boolean } = {},
   deps: SponsorSyncDeps = {},
 ): Promise<SponsorSyncResult> {
   const at = new Date().toISOString();
   const base = { issueId: issue.id, slot, at };
+  const label = issue.issueNumber ? `#${issue.issueNumber}` : issue.id;
   const fail = async (message: string): Promise<SponsorSyncResult> => {
     if (!options.dryRun) {
       await recordStatus(client, issue.id, slot, { at, ok: false, error: message, docId: doc.id }).catch(() => undefined);
-      console.error(JSON.stringify({ event: 'newsletter_sponsor_sync_failed', level: 'ERROR', issueId: issue.id, slot, docId: doc.id, message }));
+      console.error(JSON.stringify({ event: 'newsletter_sponsor_stage_failed', level: 'ERROR', issueId: issue.id, slot, docId: doc.id, message }));
       try {
         await createNotification(client, {
           type: 'newsletter-sponsor-sync-failed',
-          message: `Sponsor doc "${doc.title || doc.id}" did not sync to newsletter issue ${issue.issueNumber ? `#${issue.issueNumber}` : issue.id} (${slot} slot): ${message}`,
+          message: `Sponsor doc "${doc.title || doc.id}" was not staged into newsletter issue ${label} (${slot} slot): ${message}`,
           metadata: { docId: doc.id, issueId: issue.id, slot },
         });
       } catch (notifyError) {
-        console.error('Failed to persist newsletter sponsor sync alert notification:', notifyError);
+        console.error('Failed to persist newsletter sponsor staging alert notification:', notifyError);
       }
     }
     return { ...base, status: 'failed', message };
@@ -185,20 +185,17 @@ export async function syncSponsorSlot(
 
   const set = await getBlockSet(client, issue.id);
   if (!set) {
-    return skip(
-      `Issue ${issue.issueNumber ? `#${issue.issueNumber}` : issue.id} has no content blocks in DataOps yet, so nothing was synced. ` +
-        'Import them once: dataops newsletter blocks <issue> --import <relay-issue-key>.',
-    );
+    return skip(`Issue ${label} has no draft in DataOps yet, so nothing was staged. Start the draft on the issue page; the doc is staged on its next save.`);
   }
   const type = BLOCK_TYPE[slot];
   let data = sponsorBlockData(doc);
   const existing = set.blocks.filter((block) => block.type === type);
-  if (existing.length > 1) return fail(`Issue has ${existing.length} "${type}" blocks (${existing.map((b) => b.id).join(', ')}); expected one.`);
+  if (existing.length > 1) return fail(`The draft has ${existing.length} "${type}" blocks (${existing.map((b) => b.id).join(', ')}); expected one.`);
   const current = existing[0];
   if (current?.data.meta) data = { ...data, meta: current.data.meta };
   const missing = missingRequired(type, data);
   if (missing.length) {
-    return skip(`The sponsor doc is not complete enough to publish yet (missing: ${missing.join(', ')}); the issue block was not changed.`);
+    return skip(`The sponsor doc is not complete enough to stage yet (missing: ${missing.join(', ')}); the draft was not changed.`);
   }
   try {
     if (/^data:/i.test(data.image_url || '')) {
@@ -213,117 +210,59 @@ export async function syncSponsorSlot(
     return fail(`Preparing the sponsor block failed: ${(error as Error).message}`);
   }
 
+  const wanted = slot === 'primary' ? sponsorSubject(doc) : null;
+  const subjectChanges = wanted && (wanted.subject !== set.subject || (wanted.previewText && wanted.previewText !== set.previewText))
+    ? { subject: wanted.subject, previewText: wanted.previewText || set.previewText }
+    : null;
+  const blockChanged = !current || blockHash(type, current.data) !== blockHash(type, data);
   const changes: string[] = [];
-  let blockId = current?.id || '';
   if (options.dryRun) {
-    changes.push(current ? (blockHash(type, current.data) === blockHash(type, data) ? 'block unchanged' : 'block would be updated') : 'block would be added');
-  } else {
-    const now = new Date().toISOString();
-    const ordered = byPosition(set.blocks);
-    let next: IssueBlockSet;
-    if (!current) {
-      const index = sponsorInsertIndex(ordered, slot);
-      blockId = newBlockId();
-      const block: IssueBlock = {
-        id: blockId, relayBlockId: null, position: index, type, data, version: 1, updatedAt: now,
-        updatedBy: actor.id, updatedByName: actor.name, base: { hash: '', relayUpdatedAt: '', syncedAt: '' },
-      };
-      ordered.splice(index, 0, block);
-      next = { ...set, blocks: renumber(ordered), orderDirty: true, version: set.version + 1, updatedAt: now };
-      await putBlockSet(client, next, set.version);
-      await appendBlockRevisions(client, issue.id, [{
-        blockId, relayBlockId: null, blockType: type, origin: 'sponsor-doc', createdAt: now, actorUserId: actor.id,
-        actorName: actor.name, detail: `created from sponsor doc ${doc.id}`, before: null, after: data,
-      }]);
-      changes.push('block added');
-    } else if (blockHash(type, current.data) !== blockHash(type, data)) {
-      const updated = { ...current, data, version: current.version + 1, updatedAt: now, updatedBy: actor.id, updatedByName: actor.name };
-      next = { ...set, blocks: set.blocks.map((block) => (block.id === current.id ? updated : block)), version: set.version + 1, updatedAt: now };
-      await putBlockSet(client, next, set.version);
-      await appendBlockRevisions(client, issue.id, [{
-        blockId, relayBlockId: current.relayBlockId, blockType: type, origin: 'sponsor-doc', createdAt: now,
-        actorUserId: actor.id, actorName: actor.name, detail: `updated from sponsor doc ${doc.id}`, before: current.data, after: data,
-      }]);
-      changes.push('block updated');
-    }
+    if (blockChanged) changes.push(current ? 'block would be updated' : 'block would be added');
+    if (subjectChanges) changes.push('subject/preview would be updated');
+    return { ...base, status: 'ok', message: changes.join('; ') || 'already staged', dryRun: true, changes, block: current?.id };
   }
 
-  try {
-    if (options.force && current?.relayBlockId && !options.dryRun) {
-      // Explicit overwrite: take Relay's current copy as the base so the push replaces it.
-      const relay = await relayClient(set.relay.target);
-      const live = await relay.getBlock(set.relay.issueKey, current.relayBlockId);
-      const fresh = (await getBlockSet(client, issue.id)) as IssueBlockSet;
-      const blocks = fresh.blocks.map((block) => (block.id === blockId
-        ? { ...block, base: { hash: blockHash(live.type, live.data), relayUpdatedAt: live.updated_at, syncedAt: at } }
-        : block));
-      await putBlockSet(client, { ...fresh, blocks, version: fresh.version + 1 }, fresh.version);
+  let blockId = current?.id || '';
+  if (blockChanged || subjectChanges) {
+    const now = new Date().toISOString();
+    const revisions: NewRevision[] = [];
+    let blocks = set.blocks;
+    if (!current) {
+      const ordered = byPosition(set.blocks);
+      const index = sponsorInsertIndex(ordered, slot);
+      blockId = newBlockId();
+      const block: IssueBlock = { id: blockId, position: index, type, data, version: 1, updatedAt: now, updatedBy: actor.id, updatedByName: actor.name };
+      ordered.splice(index, 0, block);
+      blocks = renumber(ordered);
+      revisions.push({ blockId, blockType: type, origin: 'sponsor-doc', createdAt: now, actorUserId: actor.id, actorName: actor.name, detail: `created from sponsor doc ${doc.id}`, before: null, after: data });
+      changes.push('block added');
+    } else if (blockChanged) {
+      const updated = { ...current, data, version: current.version + 1, updatedAt: now, updatedBy: actor.id, updatedByName: actor.name };
+      blocks = set.blocks.map((block) => (block.id === current.id ? updated : block));
+      revisions.push({ blockId, blockType: type, origin: 'sponsor-doc', createdAt: now, actorUserId: actor.id, actorName: actor.name, detail: `updated from sponsor doc ${doc.id}`, before: current.data, after: data });
+      changes.push('block updated');
     }
-    const result = await syncBlocks(client, issue.id, { dryRun: Boolean(options.dryRun), only: [blockId], pullIsConflict: true }, actor);
-    if (result.pushed.length || result.created.length) changes.push('Relay block written');
-    if (slot === 'primary') {
-      const wanted = sponsorSubject(doc);
-      if (wanted) changes.push(...(await syncSubject(client, issue.id, set, wanted, options)));
+    if (subjectChanges) {
+      revisions.push({
+        blockId: '', blockType: 'details', origin: 'sponsor-doc', createdAt: now, actorUserId: actor.id, actorName: actor.name,
+        detail: `subject/preview from sponsor doc ${doc.id}`,
+        before: { subject: set.subject, previewText: set.previewText }, after: subjectChanges,
+      });
+      changes.push('subject/preview updated');
     }
-  } catch (error) {
-    if (error instanceof BlocksError || error instanceof RelayError || error instanceof BlockSetVersionConflict) {
-      return fail(`${error.message}${error instanceof BlocksError && error.code === 'blocks_sync_conflict' ? ' To overwrite Relay with the doc anyway: dataops newsletter sponsor-sync <issue> --slot ' + slot + ' --force.' : ''}`);
+    try {
+      await commitContent(client, set, { blocks, ...(subjectChanges || {}) }, revisions, actor, now);
+    } catch (error) {
+      if (error instanceof BlocksError || error instanceof BlockSetVersionConflict) return fail(error.message);
+      return fail((error as Error).message || 'Unexpected staging error');
     }
-    return fail((error as Error).message || 'Unexpected sync error');
   }
-  const message = changes.length ? changes.join('; ') : 'already in sync with the sponsor doc';
-  if (!options.dryRun) await recordStatus(client, issue.id, slot, { at, ok: true, docId: doc.id, summary: message });
+  const message = changes.length ? `staged in the DataOps draft: ${changes.join('; ')}` : 'already staged in the DataOps draft';
+  await recordStatus(client, issue.id, slot, { at, ok: true, docId: doc.id, summary: message });
   return { ...base, status: 'ok', message, block: blockId, dryRun: options.dryRun, changes };
 }
 
-/** Subject / preview text from the primary doc, three-way against what DataOps last saw in Relay. */
-async function syncSubject(
-  client: DynamoDBDocumentClient,
-  issueId: string,
-  set: IssueBlockSet,
-  wanted: { subject: string; previewText: string },
-  options: { dryRun?: boolean; force?: boolean },
-): Promise<string[]> {
-  const relay = await relayClient(set.relay.target);
-  const live = await relay.getIssue(set.relay.issueKey);
-  const lastKnown = set.relayIssue;
-  const fields: { subject?: string; preview_text?: string } = {};
-  const edited = (now: string, known: string, target: string) => now !== known && now !== target;
-  if (live.subject !== wanted.subject) {
-    if (edited(live.subject || '', lastKnown.subject, wanted.subject) && !options.force) {
-      throw new BlocksError(
-        `Relay subject "${live.subject}" was changed in Relay since the last sync and differs from the sponsor doc ("${wanted.subject}"). Nothing was overwritten.`,
-        409, 'blocks_sync_conflict',
-      );
-    }
-    fields.subject = wanted.subject;
-  }
-  if ((live.preview_text || '') !== wanted.previewText && wanted.previewText) {
-    if (edited(live.preview_text || '', lastKnown.previewText, wanted.previewText) && !options.force) {
-      throw new BlocksError(
-        `Relay preview text was changed in Relay since the last sync and differs from the sponsor doc. Nothing was overwritten.`,
-        409, 'blocks_sync_conflict',
-      );
-    }
-    fields.preview_text = wanted.previewText;
-  }
-  if (!Object.keys(fields).length) return [];
-  const status = live.campaign?.status;
-  if (status && status !== 'draft') {
-    throw new BlocksError(`Relay issue ${set.relay.issueKey} has a ${status} campaign; its subject is no longer edited.`, 409, 'blocks_campaign_locked');
-  }
-  if (options.dryRun) return ['subject/preview would be updated'];
-  const saved = await relay.putIssueFields(set.relay.issueKey, fields);
-  const fresh = (await getBlockSet(client, issueId)) as IssueBlockSet;
-  await putBlockSet(
-    client,
-    { ...fresh, relayIssue: { ...fresh.relayIssue, subject: saved.subject || '', previewText: saved.preview_text || '' }, version: fresh.version + 1 },
-    fresh.version,
-  );
-  return ['Relay subject/preview updated'];
-}
-
-/** Sync a saved sponsor doc into every slot of every issue that links it. Never throws; the doc save must not fail because of it. */
+/** Stage a saved sponsor doc into every slot of every issue that links it. Never throws; the doc save must not fail because of it. */
 export async function syncSponsorDoc(
   client: DynamoDBDocumentClient,
   doc: SponsorDoc,
@@ -336,11 +275,11 @@ export async function syncSponsorDoc(
     for (const { issue, slot } of linked) results.push(await syncSponsorSlot(client, issue, slot, doc, actor, {}, deps));
     return results;
   } catch (error) {
-    console.error(JSON.stringify({ event: 'newsletter_sponsor_sync_crashed', level: 'ERROR', docId: doc.id, message: (error as Error).message }));
+    console.error(JSON.stringify({ event: 'newsletter_sponsor_stage_crashed', level: 'ERROR', docId: doc.id, message: (error as Error).message }));
     try {
       await createNotification(client, {
         type: 'newsletter-sponsor-sync-failed',
-        message: `Sponsor doc "${doc.title || doc.id}" could not be synced to the newsletter: ${(error as Error).message}`,
+        message: `Sponsor doc "${doc.title || doc.id}" could not be staged into the newsletter draft: ${(error as Error).message}`,
         metadata: { docId: doc.id },
       });
     } catch { /* already logged above */ }
@@ -349,9 +288,10 @@ export async function syncSponsorDoc(
 }
 
 /**
- * A secondary sponsor block cannot be deleted by hand; it leaves the issue (and
- * Relay) when its slot's sponsor document is removed from the issue. The main
- * block is pinned and stays. Never throws: failures are recorded and alerted.
+ * A doc-owned secondary sponsor block leaves the draft when its slot's sponsor
+ * document is removed from the issue (local only). The main block stays: it
+ * becomes a hand-made block the editor can change or delete. Never throws:
+ * failures are recorded and alerted.
  */
 export async function releaseRemovedSponsorBlocks(
   client: DynamoDBDocumentClient,
@@ -365,27 +305,10 @@ export async function releaseRemovedSponsorBlocks(
     const set = await getBlockSet(client, before.id);
     const block = set?.blocks.find((item) => item.type === 'sponsor_secondary');
     if (!set || !block) return null;
-    const now = at;
-    const deleted = [...(set.deleted || [])];
-    if (block.relayBlockId !== null) {
-      deleted.push({
-        id: block.id, relayBlockId: block.relayBlockId, type: block.type, data: block.data,
-        baseHash: block.base.hash || blockHash(block.type, block.data), deletedAt: now, deletedByName: actor.name,
-      });
-    }
-    const next: IssueBlockSet = {
-      ...set,
-      blocks: renumber(byPosition(set.blocks).filter((item) => item.id !== block.id)),
-      deleted,
-      version: set.version + 1,
-      updatedAt: now,
-    };
-    await putBlockSet(client, next, set.version);
-    await appendBlockRevisions(client, before.id, [{
-      blockId: block.id, relayBlockId: block.relayBlockId, blockType: block.type, origin: 'delete', createdAt: now,
+    await commitContent(client, set, { blocks: renumber(byPosition(set.blocks).filter((item) => item.id !== block.id)) }, [{
+      blockId: block.id, blockType: block.type, origin: 'delete', createdAt: at,
       actorUserId: actor.id, actorName: actor.name, detail: 'secondary slot removed from the issue; block removed', before: block.data, after: null,
-    }]);
-    if (block.relayBlockId !== null) await syncBlocks(client, before.id, { dryRun: false, only: [block.id] }, actor);
+    }], actor, at);
     return { status: 'ok', message: 'secondary sponsor block removed with its slot', issueId: before.id, slot: 'secondary', at, block: block.id };
   } catch (error) {
     const message = (error as Error).message;

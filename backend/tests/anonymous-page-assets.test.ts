@@ -4,7 +4,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 
 import { isAnonymousDocumentReviewAsset } from '../src/documents/reviews';
-import { isAnonymousNewsletterPreviewAsset } from '../src/newsletter/markdownPreview';
 import { isAnonymousSponsorContractAsset } from '../src/routes/sponsorContracts';
 import { isAnonymousSponsorDocAsset } from '../src/routes/sponsorDocs';
 
@@ -28,7 +27,6 @@ function importGraph(entry: string): Set<string> {
 const PAGES: Array<[string, (method: string, path: string) => boolean]> = [
   ['src/sponsor-doc-page.js', isAnonymousSponsorDocAsset],
   ['src/contract-sign-page.js', isAnonymousSponsorContractAsset],
-  ['src/newsletter-preview-page.js', isAnonymousNewsletterPreviewAsset],
   ['src/document-review-page.js', isAnonymousDocumentReviewAsset],
 ];
 

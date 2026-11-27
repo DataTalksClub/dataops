@@ -78,7 +78,7 @@ import { handleDocumentRoutes } from './routes/documents';
 import { handleInboxRoutes } from './routes/inbox';
 import { ADHOC_QUEUE_POST_PATH, handleAdhocQueueRoutes } from './routes/adhocQueue';
 import { handleDocumentReviewRoutes, isAnonymousDocumentReviewRequest } from './documents/reviews';
-import { isAnonymousNewsletterPreviewRequest } from './newsletter/markdownPreview';
+import { handleNewsletterView, isAnonymousNewsletterViewRequest } from './newsletter/webView';
 import { jsonResponse } from './http';
 import type { LambdaEvent, LambdaResponse } from './types';
 import { recordRequestError } from './requestErrorLog';
@@ -96,7 +96,7 @@ function isAuthExempt(method: string, path: string): boolean {
   if (isAnonymousSponsorDocRequest(method, path)) return true;
   if (isClientErrorReport(method, path)) return true;
   if (isAnonymousSponsorContractRequest(method, path)) return true;
-  if (isAnonymousNewsletterPreviewRequest(method, path)) return true;
+  if (isAnonymousNewsletterViewRequest(method, path)) return true;
   if (isAnonymousPublicImageRequest(method, path)) return true;
   if (AUTH_EXEMPT_PATHS.has(path)) return true;
   if (method === 'POST' && path === '/api/v1/intake/email-documents') return true;
@@ -400,6 +400,7 @@ async function routeRequest(event: LambdaEvent, client: DynamoDBDocumentClient):
     if (reqPath.startsWith('/api/sponsor-crm')) {
       return await handleSponsorRoute(reqPath, method, event, client);
     }
+    if (isAnonymousNewsletterViewRequest(method, reqPath)) return await handleNewsletterView(reqPath, client);
     if (reqPath.startsWith('/api/newsletter-issues')) return await handleNewsletterIssueRoutes(reqPath,method,event,client);
     if (reqPath === '/api/podcast-episodes' || reqPath.startsWith('/api/podcast-episodes/')) return await handlePodcastEpisodeRoutes(reqPath, method, event, client);
     if (reqPath.startsWith('/api/podcast-first-contact')) return await handlePodcastFirstContactRoutes(reqPath, method, event, client);

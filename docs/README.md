@@ -45,6 +45,9 @@ Files that live here:
   runtime cards, tasks, reminders, proof, references, and migration-safe IDs.
 - `task-dependencies.md` - Task prerequisites: model, Template refs, enforcement
   rules, transaction guards, and limitations.
+- `newsletter-email.md` - newsletter emails built, rendered and approved in
+  DataOps and handed to Relay as a finished payload: flow, API contract,
+  Relay transport contract and guards, storage, and what was retired.
 - `three-event-formats.md` - the workshop/webinar/podcast format policy:
   canonical Templates, format-bound documents, the `sponsored` Card flag, and
   the read-only format audit.

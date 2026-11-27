@@ -1,103 +1,110 @@
-export type FakeBlock = { id: number; position: number; type: string; data: Record<string, string>; updated_by: string; updated_at: string };
+/**
+ * An in-memory Relay client campaign API (`/api/campaigns/<key>`): GET, PUT
+ * (draft upsert, refused once the campaign left draft), test-send, queue and
+ * cancel, with Relay's validation of client/audience scope. Every request is
+ * recorded so tests can prove which calls DataOps made, and when.
+ */
+export interface FakeCampaign {
+  external_key: string;
+  client: string;
+  audience: string;
+  status: string;
+  subject: string;
+  preview_text: string;
+  html_body: string;
+  text_body: string;
+  scheduled_at: string | null;
+  metadata: Record<string, unknown>;
+}
 
-/** An in-memory Relay newsletter API: GET issue, GET/PUT block. */
-export class FakeRelay {
-  issues = new Map<string, { key: string; subject: string; campaign: { status: string } | null; blocks: FakeBlock[] }>();
-  calls: string[] = [];
-  tick = 0;
-  /** Runs right before a block GET returns (to simulate a concurrent Relay edit). */
-  beforeBlockGet: ((block: FakeBlock) => void) | null = null;
-  apiKeySeen = '';
-
-  stamp() {
-    this.tick += 1;
-    return `2026-11-23T10:00:${String(this.tick).padStart(2, '0')}+00:00`;
-  }
-
-  seed(key: string, blocks: Omit<FakeBlock, 'updated_at' | 'updated_by'>[]) {
-    this.issues.set(key, {
-      key,
-      subject: `Subject ${key}`,
-      campaign: null,
-      blocks: blocks.map((block) => ({ ...block, updated_by: 'api:dtc-newsletter', updated_at: this.stamp() })),
-    });
-  }
-
-  editInRelay(key: string, id: number, data: Record<string, string>) {
-    const block = this.issues.get(key)!.blocks.find((item) => item.id === id)!;
-    block.data = data;
-    block.updated_by = 'alexey@datatalks.club';
-    block.updated_at = this.stamp();
-  }
-
-  nextId = 200;
-  typeKeys = ['intro', 'sponsor', 'sponsor_secondary', 'alexey_article', 'events_list', 'recording'];
-  issueEdits: { subject?: string; preview_text?: string }[] = [];
-
-  private renumber(issue: { blocks: FakeBlock[] }) {
-    issue.blocks.sort((a, b) => a.position - b.position);
-    issue.blocks.forEach((block, index) => { block.position = index; });
-  }
-
-  fetch = async (url: string | URL | Request, init?: RequestInit): Promise<Response> => {
-    const method = init?.method || 'GET';
-    const u = new URL(String(url));
-    this.calls.push(`${method} ${u.host}${u.pathname}`);
-    this.apiKeySeen = String((init?.headers as Record<string, string>)?.authorization || '');
-    const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
-    if (u.pathname === '/api/newsletter-block-types') return reply(200, { block_types: this.typeKeys.map((type) => ({ type })) });
-    const match = u.pathname.match(/^\/api\/newsletter-issues\/([^/]+)(\/blocks)?(?:\/(\d+))?$/);
-    const issue = match && this.issues.get(decodeURIComponent(match[1]));
-    if (!issue) return reply(404, { errors: { key: 'not_found' } });
-    const body = init?.body ? JSON.parse(String(init.body)) : {};
-    const payload = () => ({ ...issue, preview_text: this.previews.get(match![1]) || '', updated_at: this.stamp() });
-    if (!match![2]) {
-      if (method === 'PUT') {
-        this.issueEdits.push(body);
-        if (typeof body.subject === 'string') issue.subject = body.subject;
-        if (typeof body.preview_text === 'string') this.previews.set(match![1], body.preview_text);
-      }
-      this.renumber(issue);
-      return reply(200, { issue: payload() });
-    }
-    if (!match![3]) {
-      if (method !== 'POST') return reply(405, {});
-      const block: FakeBlock = {
-        id: ++this.nextId, position: typeof body.position === 'number' ? body.position - 0.5 : issue.blocks.length,
-        type: body.type, data: body.data || {}, updated_by: 'api:dtc-newsletter', updated_at: this.stamp(),
-      };
-      issue.blocks.push(block);
-      this.renumber(issue);
-      return reply(201, { block });
-    }
-    const block = issue.blocks.find((item) => item.id === Number(match![3]));
-    if (!block) return reply(404, { errors: { block_id: 'not_found' } });
-    if (method === 'GET') {
-      this.beforeBlockGet?.(block);
-      return reply(200, { block });
-    }
-    if (method === 'DELETE') {
-      issue.blocks = issue.blocks.filter((item) => item !== block);
-      this.renumber(issue);
-      return reply(200, { deleted: true });
-    }
-    if (body.type) block.type = body.type;
-    if (body.data) block.data = body.data;
-    if (body.data || body.type) {
-      block.updated_by = 'api:dtc-newsletter';
-      block.updated_at = this.stamp();
-    }
-    if (typeof body.position === 'number') {
-      block.position = body.position - 0.5;
-      this.renumber(issue);
-    }
-    return reply(200, { block });
-  };
-  previews = new Map<string, string>();
+export interface FakeCall {
+  method: string;
+  path: string;
+  body: Record<string, unknown> | null;
 }
 
 export const SECRETS: Record<string, string> = {
-  'relay-production.dtc-newsletter-api-key': 'prod-key-123',
-  'relay-dev.api-keys': JSON.stringify({ RELAY_API_KEY: 'dev-key-456', RELAY_WEBHOOK: 'x' }),
+  'relay-production.dtc-newsletter-api-key': 'prod-key-1',
+  'relay-dev.api-keys': JSON.stringify({ RELAY_API_KEY: 'dev-key-1' }),
 };
 
+const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+
+export class FakeRelay {
+  campaigns = new Map<string, FakeCampaign>();
+  calls: FakeCall[] = [];
+  testSends: { key: string; emails: string[] }[] = [];
+  apiKeySeen = '';
+  /** Make the next queue call succeed in Relay but answer with this HTTP status (a lost response). */
+  failNextQueueResponse = 0;
+  /** Delay (ms) before answering a queue call, to let concurrent requests interleave. */
+  queueDelayMs = 0;
+  /** Delay (ms) before answering a test send. */
+  testSendDelayMs = 0;
+  /** After the next queue call, every GET fails (Relay unreachable) until reset. */
+  failGetsAfterQueue = false;
+  getsFailing = false;
+
+  fetch = async (input: string | URL, init: RequestInit = {}): Promise<Response> => {
+    const url = new URL(String(input));
+    const method = (init.method || 'GET').toUpperCase();
+    const body = init.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
+    this.calls.push({ method, path: url.pathname, body });
+    this.apiKeySeen = String((init.headers as Record<string, string>)?.authorization || '');
+    const match = /^\/api\/campaigns\/([^/]+)(\/[a-z-]+)?$/.exec(url.pathname);
+    if (!match) return json(404, { error: 'not found' });
+    const key = decodeURIComponent(match[1]);
+    const action = match[2] || '';
+    const scope = method === 'GET' ? { client: url.searchParams.get('client'), audience: url.searchParams.get('audience') } : body || {};
+    if (scope.client !== 'dtc-newsletter') return json(403, { client: 'forbidden' });
+    if (!scope.audience) return json(400, { audience: 'required' });
+    const campaign = this.campaigns.get(key);
+    if (method === 'GET' && this.getsFailing) return new Response('unavailable', { status: 503 });
+    if (action === '' && method === 'GET') return campaign ? json(200, { campaign }) : json(404, { external_key: 'not_found' });
+    if (action === '' && method === 'PUT') {
+      if (campaign && campaign.status !== 'draft') return json(409, { status: 'not_editable' });
+      const saved: FakeCampaign = {
+        external_key: key,
+        client: String(body!.client),
+        audience: String(body!.audience),
+        status: 'draft',
+        subject: String(body!.subject || ''),
+        preview_text: String(body!.preview_text || ''),
+        html_body: String(body!.html_body || ''),
+        text_body: String(body!.text_body || ''),
+        scheduled_at: body!.scheduled_at ? new Date(String(body!.scheduled_at)).toISOString() : null,
+        metadata: (body!.metadata as Record<string, unknown>) || {},
+      };
+      this.campaigns.set(key, saved);
+      return json(campaign ? 200 : 201, { campaign: saved, created: !campaign });
+    }
+    if (!campaign) return json(404, { external_key: 'not_found' });
+    if (action === '/test-send' && method === 'POST') {
+      const emails = (body!.emails as string[]) || [];
+      if (this.testSendDelayMs) await new Promise((resolve) => setTimeout(resolve, this.testSendDelayMs));
+      this.testSends.push({ key, emails });
+      return json(200, { campaign, sent_count: emails.length, recipients: emails.map((email, i) => ({ email, message_id: `m-${i}` })), status: 'provider_accepted' });
+    }
+    if (action === '/queue' && method === 'POST') {
+      if (this.queueDelayMs) await new Promise((resolve) => setTimeout(resolve, this.queueDelayMs));
+      const already = campaign.status === 'scheduled';
+      if (campaign.status === 'draft') campaign.status = campaign.scheduled_at ? 'scheduled' : 'queued';
+      if (this.failGetsAfterQueue) {
+        this.failGetsAfterQueue = false;
+        this.getsFailing = true;
+      }
+      if (this.failNextQueueResponse) {
+        const status = this.failNextQueueResponse;
+        this.failNextQueueResponse = 0;
+        return new Response('upstream timeout', { status });
+      }
+      return json(200, { campaign, queued: !already, already_queued: already, scheduled: campaign.status === 'scheduled' });
+    }
+    if (action === '/cancel' && method === 'POST') {
+      const cancelled = campaign.status === 'draft' || campaign.status === 'scheduled';
+      if (cancelled) campaign.status = 'cancelled';
+      return json(200, { campaign, cancelled });
+    }
+    return json(405, { error: 'method' });
+  };
+}
