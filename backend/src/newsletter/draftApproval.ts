@@ -18,6 +18,8 @@ import { byPosition } from './blocksLayout';
 import { appendBlockRevisions, putBlockSet, putFrozenPayload, type FrozenPayload } from './blocksStore';
 import { assertUnlocked, requireBlockSet, type BlockActor } from './blocksEdit';
 import { renderIssueEmail, type RenderedEmail } from './emailRender';
+import { envelopeProblems, sponsorProblems, type IssueSlots } from './draftReadiness';
+import { getNewsletterIssue } from '../db/newsletterIssues';
 
 export const WEB_VIEW_PATH = '/api/newsletter-view/';
 
@@ -38,10 +40,15 @@ export interface DraftProblem {
 
 const FIELD_WORDS: Record<string, string> = { required: 'is required', invalid_url: 'is not a valid http(s) URL', too_long: 'is too long', unknown_field: 'is not a field of this block' };
 
-/** Everything that keeps the draft from being approved; empty when it is complete. */
-export function draftProblems(set: IssueBlockSet): DraftProblem[] {
+/**
+ * Everything that keeps the draft from being approved; empty when it is
+ * complete. `slots` (the issue's sponsor slots) adds the sponsor-document rules
+ * of ./draftReadiness.ts; approval always passes them.
+ */
+export function draftProblems(set: IssueBlockSet, slots?: IssueSlots): DraftProblem[] {
   const problems: DraftProblem[] = [];
   if (!set.subject.trim()) problems.push({ blockId: null, field: 'subject', message: 'The subject is empty.' });
+  problems.push(...envelopeProblems(set));
   const blocks = byPosition(set.blocks);
   if (!blocks.some((block) => block.type !== 'intro')) {
     problems.push({ blockId: null, field: 'blocks', message: 'The draft has no content blocks besides the intro.' });
@@ -57,6 +64,7 @@ export function draftProblems(set: IssueBlockSet): DraftProblem[] {
       }
     }
   }
+  if (slots) problems.push(...sponsorProblems(set, slots));
   return problems;
 }
 
@@ -75,8 +83,8 @@ export interface DraftRender extends RenderedEmail {
  * visible "Needs content" note before incomplete blocks (and changes the
  * hash); the approved and delivered payload is always the plain render.
  */
-export function renderDraft(set: IssueBlockSet, options: { editor?: boolean } = {}): DraftRender {
-  const problems = draftProblems(set);
+export function renderDraft(set: IssueBlockSet, options: { editor?: boolean; slots?: IssueSlots } = {}): DraftRender {
+  const problems = draftProblems(set, options.slots);
   const unfinished = new Map<string, string[]>();
   if (options.editor) {
     for (const problem of problems) {
@@ -118,7 +126,8 @@ export async function approveDraft(
     await putBlockSet(client, next, set.version);
     set = next;
   }
-  const render = renderDraft(set);
+  const issue = await getNewsletterIssue(client, issueId);
+  const render = renderDraft(set, { slots: issue?.slots || {} });
   if (input.expectedVersion !== set.version || input.payloadHash !== render.payloadHash) {
     throw new BlocksError(
       `The draft changed since you reviewed it (now version ${set.version}). Review the current email again, then approve.`,

@@ -23,7 +23,7 @@ const OWN_PROMO = {
   bullets: '- Docker and Terraform\n- Workflow orchestration\n- Batch and streaming',
   closing: 'Learn in public with thousands of students.',
   ctaText: 'Register for free',
-  ctaUrl: 'https://github.com/DataTalksClub/data-engineering-zoomcamp',
+  ctaUrl: 'https://github.com/DataTalksClub/data-engineering-zoomcamp?utm_source=datatalksclub-newsletter',
   graphicsUrl: 'https://datatalks.club/images/zoomcamp.png',
   subjectLine: 'Data Engineering Zoomcamp starts soon',
   previewText: 'A free course by DataTalks.Club',
@@ -126,18 +126,15 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     return doc;
   }
 
-  /** A complete draft: subject, a filled intro, an own sponsor block and two content blocks. */
+  /** A complete draft: subject, a filled intro, an own sponsor block staged from its linked sponsor doc, and two content blocks. */
   async function completeDraft() {
-    const issue = await newIssue();
+    const doc = await ownDoc();
+    const issue = { ...(await newIssue({ primary: { sponsor: 'DataTalks.Club', documentUrl: `${DOC_BASE}${doc.id}` } })), docId: doc.id };
     const created = await req('POST', issue.base);
     assert.strictEqual(created.status, 201, JSON.stringify(created.body));
     let draft = created.body.draft;
     const intro = draft.blocks[0];
     draft = (await req('PUT', `${issue.base}/blocks/${intro.id}`, { version: intro.version, data: { issue_label: intro.data.issue_label, summary: 'This week: **Zoomcamp** news.' } })).body.draft;
-    draft = (await req('POST', `${issue.base}/blocks`, {
-      type: 'sponsor',
-      data: { title: OWN_PROMO.title, body: OWN_PROMO.intro, cta_text: OWN_PROMO.ctaText, cta_url: OWN_PROMO.ctaUrl, image_url: OWN_PROMO.graphicsUrl, image_link: OWN_PROMO.ctaUrl },
-    })).body.draft;
     draft = (await req('POST', `${issue.base}/blocks`, { type: 'events_list', data: { events: 'Mon, Mar 8 · Webinar | Building data products | https://datatalks.club/events/x.html | with Alexey' } })).body.draft;
     draft = (await req('POST', `${issue.base}/blocks`, { type: 'recording', data: { title: 'Last week: dbt in production', cta_text: 'Watch', cta_url: 'https://www.youtube.com/watch?v=abc' } })).body.draft;
     draft = (await req('PUT', issue.base, { version: draft.version, subject: 'Zoomcamp is back | DataTalks.Club Weekly', previewText: 'Free course, events and recordings' })).body.draft;
@@ -167,7 +164,10 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.strictEqual((await req('POST', issue.base)).body.code, 'draft_exists');
 
     const types = (await req('GET', `${issue.base}/types`)).body.types;
-    assert.ok(types.find((t: any) => t.type === 'sponsor').addable, 'a slot without a sponsor doc takes a hand-made sponsor block');
+    assert.strictEqual(types.find((t: any) => t.type === 'sponsor').addable, false, 'a sponsor block comes only from a linked sponsor doc');
+    const handMade = await req('POST', `${issue.base}/blocks`, { type: 'sponsor', data: { title: 'Hand-made promo' } });
+    assert.strictEqual(handMade.status, 409);
+    assert.strictEqual(handMade.body.code, 'sponsor_block_doc_only');
     assert.ok(types.find((t: any) => t.type === 'link_list').fields.some((f: any) => f.name === 'links'));
 
     // Incomplete blocks save (the draft is built step by step) but bad URLs never do.
@@ -213,7 +213,7 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.match(render.html, /\/api\/newsletter-view\/[A-Za-z0-9_-]+/, 'web view link');
     assert.ok(!render.html.includes('<!--RELAY:'), 'every marker filled');
     assert.match(render.text, /SPONSORED\n\n\n\*\* Join the free Data Engineering Zoomcamp/);
-    assert.match(render.text, /Register for free \(https:\/\/github\.com\/DataTalksClub\/data-engineering-zoomcamp\)/);
+    assert.match(render.text, /Register for free \(https:\/\/github\.com\/DataTalksClub\/data-engineering-zoomcamp\?utm_source=datatalksclub-newsletter\)/);
 
     // Markdown escapes raw HTML and drops unsafe links.
     const intro = draft.blocks[0];
@@ -238,12 +238,12 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
   });
 
   it('takes sponsor content without an external sponsor and stages sponsor-doc saves locally only', async () => {
-    // A hand-made own DataTalks.Club promo in a slot without a doc is a normal, editable block.
+    // An own DataTalks.Club promo has its own linked sponsor doc; the block is staged from it and read-only.
     const { issue, draft } = await completeDraft();
     const sponsor = draft.blocks.find((b: any) => b.type === 'sponsor');
-    assert.strictEqual(sponsor.readOnly, false);
+    assert.strictEqual(sponsor.readOnly, true);
     assert.strictEqual(draft.blocks.indexOf(sponsor), 1, 'the main sponsor block goes right under the intro');
-    assert.strictEqual((await req('POST', `${issue.base}/blocks`, { type: 'sponsor', data: { title: 'Twice' } })).body.code, 'sponsor_block_exists');
+    assert.strictEqual((await req('POST', `${issue.base}/blocks`, { type: 'sponsor', data: { title: 'Twice' } })).body.code, 'sponsor_block_doc_only');
 
     // A slot with a sponsor doc (here DataTalks.Club itself, no invoice or outreach): saving the doc stages it.
     const doc = await ownDoc();
@@ -273,6 +273,41 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.strictEqual(revs[revs.length - 1].origin, 'sponsor-doc');
     assert.deepStrictEqual(relay.calls, [], 'sponsor-doc saves never reach Relay');
     assert.deepStrictEqual(strayRelayFetches, []);
+  });
+
+  it('refuses approval until sponsor content comes from a linked doc and the envelope and own promo are review-ready', async () => {
+    // A slot booked for DataTalks.Club without a sponsor doc blocks approval.
+    const booked = await newIssue({ primary: { sponsor: 'DataTalks.Club' } });
+    let draft = (await req('POST', booked.base)).body.draft;
+    draft = (await req('POST', `${booked.base}/blocks`, { type: 'recording', data: { title: 'Last week', cta_text: 'Watch', cta_url: 'https://www.youtube.com/watch?v=abc' } })).body.draft;
+    draft = (await req('PUT', booked.base, { version: draft.version, subject: 'Short subject', previewText: 'Short preview' })).body.draft;
+    const intro = draft.blocks[0];
+    draft = (await req('PUT', `${booked.base}/blocks/${intro.id}`, { version: intro.version, data: { summary: 'Hello' } })).body.draft;
+    assert.ok(draft.problems.some((p: any) => p.field === 'sponsor_primary' && /no sponsor document/.test(p.message)), JSON.stringify(draft.problems));
+    const refused = await req('POST', `${booked.base}/approve`, { version: draft.version, payloadHash: draft.payloadHash });
+    assert.strictEqual(refused.status, 422);
+    assert.strictEqual(refused.body.code, 'draft_incomplete');
+
+    // Over-long subject/preview and a title over 12 words are diagnostics on save, refusals at approval.
+    const { issue } = await completeDraft();
+    let current = (await req('GET', issue.base)).body.draft;
+    current = (await req('PUT', issue.base, { version: current.version, subject: `${'x'.repeat(66)} | DataTalks.Club Weekly`, previewText: 'y'.repeat(141) })).body.draft;
+    assert.deepStrictEqual(current.problems.map((p: any) => p.field).sort(), ['previewText', 'subject']);
+    const tooLong = await req('POST', `${issue.base}/approve`, { version: current.version, payloadHash: current.payloadHash });
+    assert.strictEqual(tooLong.status, 422);
+    current = (await req('PUT', issue.base, { version: current.version, subject: `${'x'.repeat(65)} | DataTalks.Club Weekly`, previewText: 'y'.repeat(140) })).body.draft;
+    assert.deepStrictEqual(current.problems, []);
+
+    // An own promo needs its bullets, closing and utm tracking reviewed in its doc.
+    const save = await req('PUT', `/api/sponsor-docs/${issue.docId}`, {
+      content: { ...OWN_PROMO, title: 'one two three four five six seven eight nine ten eleven twelve thirteen', bullets: '', closing: '', ctaUrl: 'https://datatalks.club/courses' },
+    });
+    assert.strictEqual(save.status, 200, JSON.stringify(save.body));
+    current = (await req('GET', issue.base)).body.draft;
+    const sponsorBlock = current.blocks.find((b: any) => b.type === 'sponsor');
+    assert.deepStrictEqual(current.problems.filter((p: any) => p.blockId === sponsorBlock.id).map((p: any) => p.field).sort(), ['bullets', 'closing', 'cta_url', 'title']);
+    assert.strictEqual((await req('POST', `${issue.base}/approve`, { version: current.version, payloadHash: current.payloadHash })).status, 422);
+    assert.deepStrictEqual(relay.calls, []);
   });
 
   it('lets only the owner approve the exact reviewed revision; any later edit withdraws the approval', async () => {
