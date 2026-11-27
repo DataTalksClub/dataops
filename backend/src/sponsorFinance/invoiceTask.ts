@@ -17,7 +17,7 @@
  */
 import { GetCommand, ScanCommand, TransactWriteCommand, type DynamoDBDocumentClient, type ScanCommandOutput } from '@aws-sdk/lib-dynamodb';
 
-import { getCrmRecord } from '../db/sponsorCrm';
+import { getCrmRecord, listCrmItems } from '../db/sponsorCrm';
 import { getTaskConsistent, updateTask } from '../db/tasks';
 import { TABLE_SPONSOR_CRM, TABLE_TASKS } from '../db/tableNames';
 import { makeTaskHistoryEvent } from '../routes/taskValidation';
@@ -324,19 +324,9 @@ export async function sweepInvoiceTasks(
   const counts = { invoiceTasksCreated: 0, invoiceTasksAdopted: 0, invoiceTasksResolved: 0, invoiceTaskFailures: 0 };
   if (!financeEnabled()) return counts;
   const claimed = new Set<string>();
-  let cursor: Record<string, unknown> | undefined;
-  do {
-    // Eventually consistent: claims are written by earlier sweeps, not this
-    // one, and each sync re-reads its claim consistently before writing.
-    const page: ScanCommandOutput = await client.send(new ScanCommand({
-      TableName: TABLE_SPONSOR_CRM,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'SPONSOR_INVOICE_TASK#' },
-      ...(cursor ? { ExclusiveStartKey: cursor } : {}),
-    }));
-    for (const item of page.Items || []) claimed.add(String(item.dealId));
-    cursor = page.LastEvaluatedKey;
-  } while (cursor);
+  // Eventually consistent (a type-index query): claims are written by earlier
+  // sweeps, not this one, and each sync re-reads its claim consistently.
+  for (const item of await listCrmItems(client, 'SPONSOR_INVOICE_TASK#')) claimed.add(String(item.dealId));
   const since = shiftDate(input.today, -INVOICE_TASK_SWEEP_DAYS);
   const recent = (deal: Record<string, unknown>) => deal.status === 'agreed' && !deal.archivedAt && deal.active !== false
     && [deal.agreementDate, String(deal.updatedAt || '').slice(0, 10)].some((date) => typeof date === 'string' && date >= since);

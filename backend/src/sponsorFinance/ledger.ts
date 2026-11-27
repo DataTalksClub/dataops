@@ -1,5 +1,5 @@
 import { BatchGetCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { listCrmRecords, scanCrmPrefix } from '../db/sponsorCrm';
+import { listCrmRecords, listCrmItems } from '../db/sponsorCrm';
 import { TABLE_BOOKKEEPING } from '../db/tableNames';
 import { berlinDate, displayMoney, scaledMoney, sourceKey } from './core';
 import { settlementBalance, type SettlementAdjustment } from './settlementAdjustment';
@@ -82,16 +82,17 @@ export async function financeLedger(
   today = berlinDate(),
   preload?: CrmPreload,
 ): Promise<FinanceLedger> {
-  const [organizations, deals, deliverables, financeItems, chased] = await Promise.all([
+  const [organizations, deals, deliverables, financeStates, financePayments, chased] = await Promise.all([
     preload?.organizations ?? listCrmRecords(client, 'organization'),
     preload?.deals ?? listCrmRecords(client, 'deal'),
     preload?.deliverables ?? listCrmRecords(client, 'deliverable'),
-    scanCrmPrefix(client, 'SPONSOR_FINANCE'),
+    listCrmItems(client, 'SPONSOR_FINANCE#'),
+    listCrmItems(client, 'SPONSOR_FINANCE_PAYMENT#'),
     chaseDates(client),
   ]);
   const states = new Map<string, FinanceState>();
   const recorded = new Map<string, RecordedPayment>();
-  for (const item of financeItems) {
+  for (const item of [...financeStates, ...financePayments]) {
     if (item.recordType === 'sponsor-finance') states.set(String(item.dealId), item as unknown as FinanceState);
     else if (item.recordType === 'sponsor-finance-payment') recorded.set(String(item.id), item as unknown as RecordedPayment);
   }

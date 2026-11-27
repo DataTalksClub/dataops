@@ -171,7 +171,7 @@ describe('payment-mail candidate API', () => {
           if (input.Key.PK === 'USER#orin') return { Item: { role: 'admin', disabled: false } };
           return { Item: stored.get(input.Key.PK) };
         }
-        if (command.constructor.name === 'ScanCommand') return { Items: [...stored.values()] };
+        if (command.constructor.name === 'QueryCommand' && input.IndexName === 'GSI-EntityType') return { Items: [...stored.values()].filter((row) => input.ExpressionAttributeValues[':type'] === 'PAYMENT_MAIL' && String(row.PK).startsWith('PAYMENT_MAIL#')) };
         if (command.constructor.name === 'UpdateCommand') {
           const current = stored.get(input.Key.PK);
           if (!current || current.status !== input.ExpressionAttributeValues[':previous']) {

@@ -5,7 +5,7 @@ import {
   type DynamoDBDocumentClient,
   type ScanCommandOutput,
 } from '@aws-sdk/lib-dynamodb';
-import { TABLE_NOTIFICATIONS, TABLE_SPONSOR_CRM } from '../db/tableNames';
+import { TABLE_NOTIFICATIONS } from '../db/tableNames';
 import { berlinDate, digest } from './core';
 import { financeEnabled, getFinanceState, projectFinance } from './repository';
 import { deliveredOn } from './context';
@@ -13,6 +13,7 @@ import { chaseDates } from './chase';
 import { ensurePaymentFollowUpTask, paymentTasksByDeal, type OverdueInvoice } from './overdueTasks';
 import { loadAssignmentPolicy } from '../db/workspaceSettings';
 import { sweepInvoiceTasks } from './invoiceTask';
+import { listCrmItems } from '../db/sponsorCrm';
 
 type Condition = { dealId: string; rule: string; basisDate: string; version: number };
 
@@ -26,42 +27,11 @@ export async function evaluateSponsorFinanceAlerts(
   if (!financeEnabled()) {
     return { created: 0, resolved: 0, paymentTasksCreated: 0, paymentTasksReopened: 0, invoiceTasksCreated: 0, invoiceTasksAdopted: 0, invoiceTasksResolved: 0, invoiceTaskFailures: 0 };
   }
-  const deals: Record<string, unknown>[] = [];
-  let cursor: Record<string, unknown> | undefined;
-  do {
-    const page: ScanCommandOutput = await client.send(new ScanCommand({
-      TableName: TABLE_SPONSOR_CRM,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'DEAL#' },
-      ExclusiveStartKey: cursor,
-    }));
-    deals.push(...(page.Items || []));
-    cursor = page.LastEvaluatedKey;
-  } while (cursor);
-  const deliverables: Record<string, unknown>[] = [];
-  cursor = undefined;
-  do {
-    const page: ScanCommandOutput = await client.send(new ScanCommand({
-      TableName: TABLE_SPONSOR_CRM,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'DELIVERABLE#' },
-      ExclusiveStartKey: cursor,
-    }));
-    deliverables.push(...(page.Items || []));
-    cursor = page.LastEvaluatedKey;
-  } while (cursor);
-  const organizations: Record<string, unknown>[] = [];
-  cursor = undefined;
-  do {
-    const page: ScanCommandOutput = await client.send(new ScanCommand({
-      TableName: TABLE_SPONSOR_CRM,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': 'ORGANIZATION#' },
-      ExclusiveStartKey: cursor,
-    }));
-    organizations.push(...(page.Items || []));
-    cursor = page.LastEvaluatedKey;
-  } while (cursor);
+  const [deals, deliverables, organizations] = await Promise.all([
+    listCrmItems(client, 'DEAL#'),
+    listCrmItems(client, 'DELIVERABLE#'),
+    listCrmItems(client, 'ORGANIZATION#'),
+  ]);
   const orgNames = new Map<string, string>(
     organizations.map((org) => [String(org.id), String(org.displayName || org.name || 'Sponsor')]),
   );
@@ -130,7 +100,7 @@ export async function evaluateSponsorFinanceAlerts(
     return [fingerprint, { ...condition, fingerprint }];
   }));
   const existing: Record<string, unknown>[] = [];
-  cursor = undefined;
+  let cursor: Record<string, unknown> | undefined;
   do {
     const page: ScanCommandOutput = await client.send(new ScanCommand({
       TableName: TABLE_NOTIFICATIONS,

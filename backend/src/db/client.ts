@@ -1,5 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { stampSponsorCrmWrite } from './sponsorCrmTypeIndex';
 
 const PRODUCTION_MAX_ATTEMPTS = 6;
 
@@ -45,7 +46,7 @@ async function getClient(localPort?: number): Promise<DynamoDBDocumentClient> {
         secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'local',
       },
     });
-    return failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw));
+    return stampSponsorCrmTypeIndex(failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw)));
   }
 
   // Otherwise, use default AWS SDK config, with more attempts than the SDK's
@@ -53,7 +54,7 @@ async function getClient(localPort?: number): Promise<DynamoDBDocumentClient> {
   // throughput, and the SDK's backoff between attempts lets it recover
   // instead of surfacing the throttle as a 500.
   const raw = new DynamoDBClient({ maxAttempts: PRODUCTION_MAX_ATTEMPTS });
-  return failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw));
+  return stampSponsorCrmTypeIndex(failLoudlyOnMissingTable(DynamoDBDocumentClient.from(raw)));
 }
 
 /**
@@ -86,8 +87,23 @@ function failLoudlyOnMissingTable(client: DynamoDBDocumentClient): DynamoDBDocum
   return client;
 }
 
+/**
+ * Derive the sponsor CRM type-index attribute on every write (see
+ * sponsorCrmTypeIndex.ts). It lives here, at the one place clients are made,
+ * so a new writer cannot leave its rows out of GSI-EntityType.
+ */
+function stampSponsorCrmTypeIndex(client: DynamoDBDocumentClient): DynamoDBDocumentClient {
+  const send = client.send.bind(client) as (...args: unknown[]) => Promise<unknown>;
+  (client as unknown as { send: unknown }).send = async (...args: unknown[]) => {
+    stampSponsorCrmWrite(args[0] as Parameters<typeof stampSponsorCrmWrite>[0]);
+    return send(...args);
+  };
+  return client;
+}
+
 export {
   getClient,
+  stampSponsorCrmTypeIndex,
   failLoudlyOnMissingTable,
   enableLocalTransactionEmulation,
   disableLocalTransactionEmulation,

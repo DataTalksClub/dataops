@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { CreateTableCommand, DeleteTableCommand, DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { stampSponsorCrmTypeIndex } from '../src/db/client';
 import {
   DynamoDBDocumentClient,
   GetCommand,
@@ -47,7 +48,8 @@ const raw = new DynamoDBClient({
   region: process.env.AWS_REGION || 'us-east-1',
   credentials: { accessKeyId: 'local', secretAccessKey: 'local' },
 });
-const client = DynamoDBDocumentClient.from(raw, { marshallOptions: { removeUndefinedValues: true } });
+// Stamps the sponsor CRM type-index key on writes, like every runtime client.
+const client = stampSponsorCrmTypeIndex(DynamoDBDocumentClient.from(raw, { marshallOptions: { removeUndefinedValues: true } }));
 let hmac: HmacKeyring = {
   secretVersionId: 'synthetic-secret-version',
   activeVersion: 'v1',
@@ -382,12 +384,14 @@ describe('real DynamoDB sponsor reviewed-send transactions', { skip: !enabled },
         { AttributeName: 'GSI1PK', AttributeType: 'S' }, { AttributeName: 'GSI1SK', AttributeType: 'S' },
         { AttributeName: 'GSI2PK', AttributeType: 'S' }, { AttributeName: 'GSI2SK', AttributeType: 'S' },
         { AttributeName: 'GSI4PK', AttributeType: 'S' }, { AttributeName: 'GSI4SK', AttributeType: 'S' },
+        { AttributeName: 'GSI5PK', AttributeType: 'S' },
       ],
       KeySchema: [{ AttributeName: 'PK', KeyType: 'HASH' }, { AttributeName: 'SK', KeyType: 'RANGE' }],
       GlobalSecondaryIndexes: [
         { IndexName: 'GSI-Communication', KeySchema: [{ AttributeName: 'GSI1PK', KeyType: 'HASH' }, { AttributeName: 'GSI1SK', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
         { IndexName: 'GSI-SponsorSendDue', KeySchema: [{ AttributeName: 'GSI2PK', KeyType: 'HASH' }, { AttributeName: 'GSI2SK', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
         { IndexName: 'GSI-SponsorBookingCommunication', KeySchema: [{ AttributeName: 'GSI4PK', KeyType: 'HASH' }, { AttributeName: 'GSI4SK', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
+        { IndexName: 'GSI-EntityType', KeySchema: [{ AttributeName: 'GSI5PK', KeyType: 'HASH' }, { AttributeName: 'PK', KeyType: 'RANGE' }], Projection: { ProjectionType: 'ALL' } },
       ],
     }));
     await raw.send(new CreateTableCommand({

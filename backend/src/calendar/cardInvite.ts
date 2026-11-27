@@ -9,7 +9,7 @@ import {
   updateTask,
 } from '../db/tasks';
 import { TaskDependencyError, type TaskReference } from '../db/taskDependencies';
-import { scanCrmPrefix } from '../db/sponsorCrm';
+import { listCrmItems } from '../db/sponsorCrm';
 import { getTemplate } from '../db/templates';
 import { getCalendarHold, listCalendarHolds, putCalendarHold } from '../db/calendarHolds';
 import { calendarsMissingInvite, taskRequiresCalendarInvite, makeTaskHistoryEvent } from '../routes/taskValidation';
@@ -122,7 +122,7 @@ export async function cardGuests(client: DynamoDBDocumentClient, card: Card): Pr
   if (refs.length === 1) return parseCardGuests(refs);
   const people = card.people || [];
   if (!people.length) throw new Error('Set the Card guest email addresses before sending an invite');
-  const contacts = people.some(person => !EMAIL.test(person)) ? await scanCrmPrefix(client, 'CONTACT#') : [];
+  const contacts = people.some(person => !EMAIL.test(person)) ? await listCrmItems(client, 'CONTACT#') : [];
   return parseCardGuests(people.map(person => {
     if (EMAIL.test(person)) return person;
     const matches = contacts.filter(contact => !contact.archivedAt && contact.active !== false && String(contact.name).toLowerCase() === person.toLowerCase());

@@ -868,8 +868,11 @@ def test_sponsor_communication_table_indexes_ttl_and_default_off_contract():
         "GSI-Communication",
         "GSI-SponsorSendDue",
         "GSI-SponsorBookingCommunication",
+        "GSI-EntityType",
     ):
         assert f"IndexName: {index}" in table
+    assert "{ AttributeName: GSI5PK, KeyType: HASH }" in table
+    assert "${DataOpsSponsorCrmTable.Arn}/index/GSI-EntityType" in template
     assert "GSI-SponsorSendLookup" not in template
     assert 'Default: "false"' in parameter
     assert "SponsorSendRequiresPrivateConfiguration" in template

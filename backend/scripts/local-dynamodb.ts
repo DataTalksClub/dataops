@@ -109,11 +109,13 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
         { AttributeName: 'GSI2SK', AttributeType: 'S' as const },
         { AttributeName: 'GSI4PK', AttributeType: 'S' as const },
         { AttributeName: 'GSI4SK', AttributeType: 'S' as const },
+        { AttributeName: 'GSI5PK', AttributeType: 'S' as const },
       ],
       GlobalSecondaryIndexes: [
         { IndexName: 'GSI-Communication', KeySchema: [{ AttributeName: 'GSI1PK', KeyType: 'HASH' as const }, { AttributeName: 'GSI1SK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
         { IndexName: 'GSI-SponsorSendDue', KeySchema: [{ AttributeName: 'GSI2PK', KeyType: 'HASH' as const }, { AttributeName: 'GSI2SK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
         { IndexName: 'GSI-SponsorBookingCommunication', KeySchema: [{ AttributeName: 'GSI4PK', KeyType: 'HASH' as const }, { AttributeName: 'GSI4SK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
+        { IndexName: 'GSI-EntityType', KeySchema: [{ AttributeName: 'GSI5PK', KeyType: 'HASH' as const }, { AttributeName: 'PK', KeyType: 'RANGE' as const }], Projection: { ProjectionType: 'ALL' as const } },
       ],
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
