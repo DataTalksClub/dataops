@@ -1,8 +1,8 @@
 import { createHash, randomBytes, randomUUID } from 'crypto';
-import { GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SESSIONS, TABLE_SPONSOR_CRM } from './tableNames';
-import { transact, scanCrmPrefix } from './sponsorCrm';
+import { transact, scanCrmPrefix, queryCrmPartition } from './sponsorCrm';
 
 const key = (kind: string, id: string) => kind.toUpperCase() + '#' + id;
 const compact = (record: Record<string, any>) => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
@@ -55,8 +55,8 @@ export async function appendContractAudit(client: DynamoDBDocumentClient, contra
 }
 
 export async function listContractAudit(client: DynamoDBDocumentClient, contractId: string) {
-  const result = await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM, FilterExpression: 'PK = :pk', ExpressionAttributeValues: { ':pk': key('contract-history', contractId) } }));
-  return (result.Items || []).map(({ PK, SK, ...item }: any) => item).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const rows = await queryCrmPartition(client, key('contract-history', contractId));
+  return rows.map(({ PK, SK, ...item }) => item).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
 
 /** A deal has a signed contract only when one of its contracts reached status signed. */
