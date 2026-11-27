@@ -1343,7 +1343,7 @@ describe("Planning surface production behavior", () => {
     assert.match(html, /data-issue-stats><div class="newsletter-stats-line" data-issue-mailchimp-stats><strong>Mailchimp:<\/strong> 1,000 sent · 500 opens \(50%\)<\/div>/);
     assert.match(html, /data-issue-card-link href="\/cards\?cardId=card-1"/);
     assert.match(html, /Done ·\s*<span class="dk-mono">0\/6<\/span> open/);
-    assert.match(html, /data-issue-preview-link href="\/newsletter-issues\/22510fb3-4c75\/preview">Open Markdown &amp; HTML preview<\/a>/);
+    assert.doesNotMatch(html, /Markdown/, "the retired Markdown preview link is gone");
   });
 
   test("the issue page shows a loading state until the issue arrives and then clears it", async () => {

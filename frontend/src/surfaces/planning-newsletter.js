@@ -209,18 +209,7 @@ export function createNewsletterPlanner(context) {
         : "";
       const issueId = escapeHtml(item.id);
       const issueHref = `/newsletter/${encodeURIComponent(item.id)}`;
-      const hasMarkdown = Boolean(
-        item.markdown && (item.markdown.issue || item.markdown.sources || item.markdown.brief),
-      );
-      const previewHref = `/newsletter-issues/${encodeURIComponent(item.id)}/preview`;
-      const markdownChip = hasMarkdown
-        ? `<div class="newsletter-slot-card"><a class="newsletter-card-chip" href="${previewHref}" ` +
-          `data-markdown-preview-chip title="Open Newsletter Markdown &amp; HTML preview">` +
-          `<span class="newsletter-card-chip__label">Markdown</span>` +
-          `<span class="newsletter-card-chip__meta">Preview</span></a></div>`
-        : "";
       const actions = `
-            ${markdownChip}
             ${issueCardMarkup(item)}
           `;
       return `

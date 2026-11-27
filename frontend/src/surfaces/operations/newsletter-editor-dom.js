@@ -1,4 +1,4 @@
-// Small DOM helpers shared by the newsletter blocks editor modules.
+// Small DOM helpers shared by the newsletter editor and email review modules.
 
 export const MULTILINE = new Set(["markdown", "lines", "html"]);
 
@@ -17,7 +17,7 @@ export function createDom(documentRef) {
   const button = (label, variant, action) => {
     const node = el("button", `dk-button dk-button--sm${variant ? ` dk-button--${variant}` : ""}`, label);
     node.type = "button";
-    if (action) node.dataset.blocksAction = action;
+    if (action) node.dataset.action = action;
     return node;
   };
   return { el, button };
@@ -32,7 +32,7 @@ export function failureText(failure) {
 
 /** Form control for one block field, prefilled from `value`. */
 export function fieldControl(dom, field, value, placeholderDefault = true) {
-  const wrap = dom.el("label", "dk-label newsletter-blocks__field");
+  const wrap = dom.el("label", "dk-label newsletter-editor__field");
   wrap.append(dom.el("span", "", `${field.label}${field.required ? " *" : ""}`));
   const multiline = MULTILINE.has(field.kind);
   const input = dom.el(multiline ? "textarea" : "input", multiline ? "dk-textarea" : "dk-input");

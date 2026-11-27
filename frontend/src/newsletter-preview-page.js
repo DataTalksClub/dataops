@@ -1,5 +1,5 @@
 import { guardedFetchJson } from "./core/guarded-fetch.js";
-import { createNewsletterPreviewPage } from "./surfaces/operations/newsletter-preview.js";
+import { createNewsletterEmailReview } from "./surfaces/operations/newsletter-email-review.js";
 
 async function request(path, options = {}) {
   const { response, data } = await guardedFetchJson(
@@ -12,7 +12,7 @@ async function request(path, options = {}) {
         ...(options.headers || {}),
       },
     },
-    { surface: "newsletter-preview", check: `${options.method || "GET"} /api/newsletter-issues`, what: "load the preview" },
+    { surface: "newsletter-preview", check: `${options.method || "GET"} /api/newsletter-issues`, what: "load the email" },
   );
   if (!response.ok) {
     const error = new Error(data.error || "Newsletter preview request failed");
@@ -25,11 +25,10 @@ async function request(path, options = {}) {
   return data;
 }
 
-const page = createNewsletterPreviewPage({
+const page = createNewsletterEmailReview({
   documentRef: document,
   request,
   locationRef: location,
-  historyRef: history,
 });
 document.documentElement.dataset.pageReady = "true";
 page.start();
