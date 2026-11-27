@@ -80,11 +80,13 @@ export function createNewsletterEditor({
 
     function setDraft(next, message, tone = "success") {
       const hadApproval = draft?.approval?.state === "current";
+      const wasScheduled = Boolean(draft?.locked);
       draft = next;
       render();
       if (message) {
+        const unscheduled = wasScheduled && !draft.locked ? " The Relay schedule was cancelled first (confirmed by Relay)." : "";
         const withdrawn = hadApproval && draft.approval?.state !== "current" ? " The owner's approval was withdrawn; review again before sending." : "";
-        say(`${message}${withdrawn}`, tone);
+        say(`${message}${unscheduled}${withdrawn}`, tone);
       }
       schedulePreview(0);
     }
