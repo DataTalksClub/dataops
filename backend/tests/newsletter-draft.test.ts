@@ -6,7 +6,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { buildNewsletterIssue, createNewsletterIssue, updateNewsletterIssue, getNewsletterIssue } from '../src/db/newsletterIssues';
-import { createSponsorDoc } from '../src/db/sponsorDocs';
+import { createSponsorDoc, getSponsorDoc } from '../src/db/sponsorDocs';
 import { TABLE_ARTIFACTS } from '../src/db/tableNames';
 import { createUser } from '../src/db/users';
 import { setRelayDepsForTests } from '../src/newsletter/relayTransport';
@@ -680,6 +680,51 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
       assert.strictEqual(retry.status, 200);
       assert.deepStrictEqual(relay.calls, [], 'the draft is no longer scheduled: the retry is a plain local edit');
     }
+  });
+
+  it('a sponsor-doc save of a scheduled issue unschedules it in Relay first, or is not saved at all', async () => {
+    const doc = await ownDoc();
+    const issue = await newIssue({ primary: { sponsor: 'DataTalks.Club', documentUrl: `${DOC_BASE}${doc.id}` } });
+    let draft = (await req('POST', issue.base)).body.draft;
+    const intro = draft.blocks[0];
+    draft = (await req('PUT', `${issue.base}/blocks/${intro.id}`, { version: intro.version, data: { issue_label: intro.data.issue_label, summary: 'This week: our own course.' } })).body.draft;
+    draft = (await req('POST', `${issue.base}/blocks`, { type: 'recording', data: { title: 'Last week: dbt in production', cta_text: 'Watch', cta_url: 'https://www.youtube.com/watch?v=abc' } })).body.draft;
+    const ready = await approveAndConfirm(issue, 'doc-save');
+    const at = new Date(NOW + 3 * 86_400_000).toISOString();
+    const scheduled = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: ready.approval.payloadHash, version: ready.version, requestId: 'sched-doc-save-1' });
+    assert.strictEqual(scheduled.status, 200, JSON.stringify(scheduled.body));
+    const key = scheduled.body.delivery.campaignKey;
+
+    // Relay unreachable: the doc is not saved and the issue stays scheduled with its approval.
+    relay.getsFailing = true;
+    const refused = await req('PUT', `/api/sponsor-docs/${doc.id}`, { content: { ...OWN_PROMO, title: 'Changed while Relay is down' } });
+    relay.getsFailing = false;
+    assert.strictEqual(refused.status, 502, JSON.stringify(refused.body));
+    assert.strictEqual(refused.body.code, 'unschedule_failed');
+    assert.match(refused.body.error, /not saved/);
+    assert.strictEqual((await getSponsorDoc(client, doc.id))!.content.title, OWN_PROMO.title);
+    let now = (await req('GET', issue.base)).body.draft;
+    assert.strictEqual(now.delivery.state, 'scheduled');
+    assert.strictEqual(now.approval.state, 'current');
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'scheduled');
+
+    // A save that changes nothing never touches the schedule.
+    relay.calls = [];
+    const same = await req('PUT', `/api/sponsor-docs/${doc.id}`, { content: { title: OWN_PROMO.title } });
+    assert.strictEqual(same.status, 200, JSON.stringify(same.body));
+    assert.deepStrictEqual(relay.calls, []);
+    assert.strictEqual((await req('GET', issue.base)).body.draft.delivery.state, 'scheduled');
+
+    // Relay reachable: cancel verified, then the doc is saved and staged; review and test start over.
+    const saved = await req('PUT', `/api/sponsor-docs/${doc.id}`, { content: { ...OWN_PROMO, title: 'Data Engineering Zoomcamp 2027' } });
+    assert.strictEqual(saved.status, 200, JSON.stringify(saved.body));
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'cancelled');
+    now = (await req('GET', issue.base)).body.draft;
+    assert.strictEqual(now.delivery.state, 'cancelled');
+    assert.strictEqual(now.approval.state, 'none');
+    assert.strictEqual(now.testReceipt.state, 'none');
+    assert.strictEqual(now.blocks.find((b: any) => b.type === 'sponsor').data.title, 'Data Engineering Zoomcamp 2027');
+    assert.ok(relay.calls.every((c) => c.method === 'GET' || c.path.endsWith('/cancel')), 'the doc save sends no content to Relay');
   });
 
   it('keeps an archived draft first built by the retired Relay import readable and editable', async () => {
