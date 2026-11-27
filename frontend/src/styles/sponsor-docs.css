@@ -575,41 +575,12 @@
   gap: var(--dk-space-1);
 }
 
-.sponsor-preview-envelope {
-  background-color: var(--dk-bg-muted);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-3);
-  display: grid;
-  gap: var(--dk-space-2);
-}
-
-.sponsor-preview-envelope__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--dk-space-2);
-}
-
 .sponsor-preview-envelope__label {
   color: var(--dk-text-muted);
   font-size: var(--dk-text-xs);
   font-weight: var(--dk-weight-semibold);
   text-transform: uppercase;
   min-width: 4.5rem;
-}
-
-.sponsor-preview-envelope__value {
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-sm);
-  font-weight: var(--dk-weight-medium);
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
-.sponsor-preview-envelope__value.is-placeholder {
-  color: var(--dk-text-muted);
-  font-weight: var(--dk-weight-regular);
 }
 
 .sponsor-preview-canvas {
@@ -640,18 +611,10 @@
   overflow-wrap: anywhere;
 }
 
-.sponsor-preview-canvas__title.is-placeholder {
-  color: var(--dk-text-muted);
-}
-
 .sponsor-preview-canvas__paragraph {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.sponsor-preview-canvas__paragraph.is-placeholder {
-  color: var(--dk-text-muted);
 }
 
 .sponsor-preview-canvas__bullets {
@@ -663,10 +626,6 @@
 
 .sponsor-preview-canvas__bullets li {
   overflow-wrap: anywhere;
-}
-
-.sponsor-preview-canvas__bullets li.is-placeholder {
-  color: var(--dk-text-muted);
 }
 
 .sponsor-preview-figure {
@@ -688,19 +647,6 @@
   font-size: var(--dk-text-xs);
 }
 
-.sponsor-preview-visual-placeholder {
-  background-color: var(--dk-bg-muted);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-4);
-  color: var(--dk-text-primary);
-  font-size: var(--dk-text-sm);
-}
-
-.sponsor-preview-visual-placeholder.is-placeholder {
-  color: var(--dk-text-muted);
-}
-
 .sponsor-preview-canvas__cta {
   display: flex;
   flex-wrap: wrap;
@@ -719,18 +665,6 @@
   font-size: var(--dk-text-sm);
   font-weight: var(--dk-weight-semibold);
   text-decoration: none;
-}
-
-.sponsor-preview-canvas__cta-btn.is-placeholder {
-  color: var(--dk-text-muted);
-  border-color: var(--dk-border-default);
-}
-
-.sponsor-preview-canvas__cta-url {
-  color: var(--dk-text-muted);
-  font-family: var(--dk-font-mono);
-  font-size: var(--dk-text-xs);
-  overflow-wrap: anywhere;
 }
 
 .sponsor-preview-social {

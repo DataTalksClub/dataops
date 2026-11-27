@@ -235,13 +235,13 @@ test("renders card-as-email layout (opening -> bullets -> closing -> CTA button)
     .map((node) => node.dataset.sponsorEmailStep);
   assert.deepEqual(editorSteps, ["opening", "bullets", "closing", "cta"]);
 
-  // 2. Preview shows the same ordered flow: opening -> bullets -> closing -> cta
+  // 2. Preview shows the same ordered flow: opening -> bullets -> closing (the CTA appears once it has a label)
   const preview = h.root.querySelector("[data-sponsor-live-preview]");
   assert.ok(preview, "live preview is rendered");
   const previewSteps = preview
     .querySelectorAll("[data-sponsor-preview-step]")
     .map((node) => node.dataset.sponsorPreviewStep);
-  assert.deepEqual(previewSteps, ["opening", "bullets", "closing", "cta"]);
+  assert.deepEqual(previewSteps, ["opening", "bullets", "closing"]);
 
   // 3. CTA button label and URL are required in the UI: submitting while empty is blocked with inline errors
   const submitBtn = h.root.querySelector('[data-sponsor-action="submit-ready"]');
@@ -269,6 +269,8 @@ test("renders card-as-email layout (opening -> bullets -> closing -> CTA button)
   const updatedPreview = h.root.querySelector("[data-sponsor-live-preview]");
   assert.equal(updatedPreview.querySelector("[data-sponsor-preview-cta-link]").textContent, "Try Modal Free");
   assert.equal(updatedPreview.querySelector("[data-sponsor-preview-cta-link]").href, "https://modal.com/signup");
+  assert.equal(updatedPreview.querySelector("[data-sponsor-preview-step=\"cta\"]").textContent, "Try Modal Free", "the CTA URL is the button's href only, never repeated as text");
+  assert.doesNotMatch(updatedPreview.querySelector("[data-sponsor-preview-canvas]").textContent, /modal\.com\/signup/);
 
   const utmBox = h.root.querySelector('[data-sponsor-utm-suggestion="ctaUrl"]');
   assert.ok(utmBox, "soft UTM suggestion box exists");

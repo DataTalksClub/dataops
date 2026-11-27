@@ -406,7 +406,9 @@ test("keeps structured Main Body Opening, Bulleted List, and Closing fields and 
   const preview = h.root.querySelector("[data-sponsor-live-preview]");
   assert.ok(preview, "Live preview pane is rendered");
   assert.match(preview.textContent, /Live Preview/);
-  assert.match(preview.textContent, /Stand-Alone Blast/);
+  // The preview is the block alone: no slot badge, helper copy, envelope labels or sample text.
+  assert.doesNotMatch(preview.textContent, /Stand-Alone Blast|Updates live|Subject|\[Inbox preview text\]|Bullet point 1|Headline for your/);
+  assert.ok(preview.querySelector("[data-sponsor-preview-empty]"), "an empty doc shows one quiet empty-state line");
 
   // 4. Typing into structured fields updates the live preview immediately
   const titleInput = h.root.querySelector("#sponsor-field-title");
