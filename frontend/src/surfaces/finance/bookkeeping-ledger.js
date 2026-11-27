@@ -7,6 +7,7 @@ import { sponsorRecordPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
 import { cashDate, entryDirection, formatAmount, ledgerDate, monthLabel, monthOf } from "./bookkeeping-format.js";
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
+import { CANONICAL_EXPENSE_CATEGORIES } from "./expense-categories.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
 export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "tx", "view", "invoice"];
@@ -483,9 +484,9 @@ function dateCell(entry, e) {
   return html`<time datetime="${e(date)}"${entry.useReceivedDate ? ' title="Invoice received date"' : ""}>${e(ledgerDate(date))}</time>`;
 }
 
-function selectMarkup({ id, field, label, value, options, e }) {
+function selectMarkup({ id, field, label, value, options, e, allowCustom = true }) {
   const current = String(value ?? "").trim();
-  const list = current && !options.some((o) => o === current) ? [...options, current] : options;
+  const list = allowCustom && current && !options.some((o) => o === current) ? [...options, current] : options;
   return html`<select class="bk-inline-select" data-inline-field="${field}" data-id="${e(id)}" aria-label="${e(label)}">
       <option value=""${current ? "" : " selected"}>—</option>
       ${list.map((option) => html`<option value="${e(option)}"${option === current ? " selected" : ""}>${e(option)}</option>`).join("")}
@@ -594,7 +595,10 @@ export function ledgerRowMarkup(entry, { hasEvidence, hasInvoice = () => false, 
         ? html`<td class="bk-col-class bk-col-${field}">${e(entry[field] || "—")}</td>`
         : html`<td class="bk-col-class bk-col-${field}">${selectMarkup({
             id: entry.id, field, label: `${label} for ${entry.counterparty || "transaction"}`,
-            value: entry[field], options: vocab[field] || [], e,
+            value: entry[field],
+            allowCustom: field !== "category" || direction === "income",
+            options: field === "category" && direction !== "income" ? CANONICAL_EXPENSE_CATEGORIES : (vocab[field] || []),
+            e,
           })}</td>`).join("")}
       <td class="bk-col-flag">${invoiceCellMarkup(invoiceDocuments, hasInvoiceAttached, e, entry.id)}</td>
       <td class="bk-col-account">${accountCellMarkup(account, accountDoc, e)}</td>

@@ -6,6 +6,7 @@ import { confirmInvoice, documentUrl, processInvoiceIntake, publishInvoice, read
 import { InvoiceDocumentError, replaceInvoiceDocument } from '../invoices/replaceDocument';
 import { noStoreJson as json } from '../http';
 import { recordRequestError } from '../requestErrorLog';
+import { validateExpenseCategoryAssignment, InvalidExpenseCategoryError } from '../finance/expenseCategories';
 async function publicInvoiceResponse(client:DynamoDBDocumentClient,record:Invoice) {
   const records=await listInvoices(client);
   return publicInvoice(record,duplicateInvoiceIds(record,records));
@@ -35,6 +36,11 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
       if(record.status!=='pending')return json(409,{error:'Only pending drafts can be edited'});
       if(body.verified!==undefined && typeof body.verified!=='boolean')return json(400,{error:'verified must be a boolean'});
       const errors=validateFields(body.fields);if(errors.length)return json(400,{error:'Invalid fields',fields:errors});
+      const incomingFields=body.fields as Record<string, unknown>;
+      {
+        const categoryCheck=validateExpenseCategoryAssignment({category:incomingFields.category === undefined ? record.fields.category : incomingFields.category,entryType:record.extraction.direction,allowEmpty:true});
+        if(!categoryCheck.ok)return json(400,{error:categoryCheck.error,fields:['category']});
+      }
       const next=structuredClone(record);next.fields={...next.fields,...body.fields as object};
       for(const key of ['amount','amountEur','quantity'] as const) if(next.fields[key] === null) delete next.fields[key];
       delete next.verification;next.revision+=1;
@@ -51,6 +57,7 @@ export async function handleInvoiceRoutes(path:string,method:string,event:Lambda
     if(method==='POST' && match[2]==='reject') {if(record.status==='confirmed')return json(409,{error:'Confirmed invoices cannot be rejected'});const next=structuredClone(record);next.status='rejected';next.audit.push({action:'rejected',actor,at:new Date().toISOString(),revision:next.revision});return json(200,await publicInvoiceResponse(client,await saveInvoice(client,next,record)));}
     return json(405,{error:'Method not allowed'});
   } catch(error) {
+    if(error instanceof InvalidExpenseCategoryError) return json(400,{error:error.message,fields:['category']});
     if(error instanceof InvoiceDocumentError) return json(error.statusCode,{error:error.message});
     recordRequestError(error);
     const name=(error as Error).name;const message=(error as Error).message;

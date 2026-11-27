@@ -63,14 +63,14 @@ test.describe("production portal bookkeeping", () => {
     await expect(detail.locator("[name=description]")).toHaveValue("Synthetic browser evidence");
     await page.keyboard.press("Escape");
     const updated = await context.request.put(`/api/bookkeeping/transactions/${transactionId}`, {
-      data: { category: "synthetic-testing", counterparty: "Saved Portal Vendor", description: "Saved operator description" },
+      data: { category: "Business Software", counterparty: "Saved Portal Vendor", description: "Saved operator description" },
     });
     expect(updated.ok()).toBe(true);
     await page.reload();
     const savedRow = page.locator(`[data-tx="${transactionId}"]`);
     await expect(savedRow).toContainText("Saved Portal Vendor");
     await expect(savedRow).toContainText("Saved operator description");
-    await expect(savedRow.locator('[data-inline-field="category"]')).toHaveValue("synthetic-testing");
+    await expect(savedRow.locator('[data-inline-field="category"]')).toHaveValue("Business Software");
     await uploadBookkeepingEvidence(page, context, transactionId, {
       month: "2026-10", filename: "synthetic-upload.pdf",
     });

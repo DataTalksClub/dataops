@@ -1,4 +1,5 @@
 import { canonicalBookkeepingCounterparty } from "./bookkeepingVendors";
+import { validateExpenseCategoryAssignment } from "./finance/expenseCategories";
 
 export interface BookkeepingInvoiceAllocation {
   id: string;
@@ -183,6 +184,12 @@ export function validateAndNormalizeAllocations(
     "transaction amountEur",
   );
   const parentCategory = String(transaction.category || "").trim();
+  const parentCategoryCheck = validateExpenseCategoryAssignment({
+    category: transaction.category,
+    entryType: transaction.entryType,
+    allowEmpty: true,
+  });
+  if (!parentCategoryCheck.ok) throw new AllocationValidationError(parentCategoryCheck.error, 400);
   const parentSubtype = String(transaction.subtype || "").trim();
   const parentTxDate = String(transaction.transactionDate || transaction.paidDate || "").trim();
   const parentPaidDate = String(transaction.paidDate || transaction.transactionDate || "").trim();
@@ -381,6 +388,16 @@ export function validateAndNormalizeAllocations(
       ? String(item.vatCurrency || parentCurrency).trim().toUpperCase()
       : undefined;
 
+    {
+      const categoryCheck = validateExpenseCategoryAssignment({
+        category: item.category ?? parentCategory,
+        entryType: transaction.entryType,
+        allowEmpty: true,
+      });
+      if (!categoryCheck.ok) {
+        throw new AllocationValidationError(categoryCheck.error, 400);
+      }
+    }
     const category = String(item.category ?? parentCategory).trim() || undefined;
     const subtype = String(item.subtype ?? parentSubtype).trim() || undefined;
     const transactionDate =

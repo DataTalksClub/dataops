@@ -5,6 +5,28 @@ import type { Invoice } from '../src/invoices/model';
 const config:PublicationConfig={brokerUrl:'https://broker.example.invalid',brokerCredential:'synthetic-secret',agent:'invoice-test',googleConnection:'google-sheets',googleAccountId:'google-test-account',dropboxConnection:'dropbox',dropboxAccountId:'dropbox-test-account',spreadsheetId:'synthetic-workbook',sheetTab:'2026',dropboxRoot:'/synthetic-expenses',monthFolderPrefix:'workspace-'};
 const headers=['Date sent','Date paid','Provider','What','Price, $','Price, EUR','Statement','Count','Comment','Entry Type','Type','Period','Category'];
 afterEach(()=>{delete process.env.INVOICE_PUBLICATION_CONFIG;setInvoiceProviderClientsForTests({});});
+test('income publication keeps positive RAW amounts, income entry type and income category', async () => {
+  const calls:Array<{url:string;init:RequestInit}>=[];
+  setInvoiceProviderClientsForTests({fetch:fakeFetch({},(url,init)=>calls.push({url,init}))});
+  const adapter=await officialProviders(config);
+  const layout=await adapter.sheetLayout();
+  const invoice={id:'c'.repeat(64),fields:{transactionDate:'2026-10-01',paidDate:'2026-10-02',counterparty:'Example Sponsor',description:'Sponsorship',currency:'USD',amount:'250.50',amountEur:'230.05',category:'Sponsorship'},extraction:{direction:'income'},source:{artifactId:'synthetic-income-doc'}} as Invoice;
+  await adapter.writeRow(3,sheetValues(invoice,layout.headers));
+  const cells=JSON.parse(String(calls.find(c=>c.init.method==='PUT')!.init.body)).values[0];
+  assert.equal(cells[4],250.5);
+  assert.equal(cells[5],230.05);
+  assert.equal(cells[9],'income');
+  assert.equal(cells[12],'Sponsorship');
+});
+test('supplier refunds retain negative expense amounts and their canonical category', () => {
+  const invoice={id:'d'.repeat(64),fields:{amount:'25.50',amountEur:'23.05',currency:'USD',category:'Business Software',subtype:'Refund'},extraction:{direction:'expense',documentType:'credit_note'},source:{artifactId:'synthetic-refund-doc'}} as Invoice;
+  const cells=sheetValues(invoice,headers);
+  assert.equal(cells[4],'-25.50');
+  assert.equal(cells[5],'-23.05');
+  assert.equal(cells[9],'expense');
+  assert.equal(cells[10],'Refund');
+  assert.equal(cells[12],'Business Software');
+});
 function response(body:unknown,status=200,headers:Record<string,string>={}) {return new Response(JSON.stringify(body),{status,headers:{'Content-Type':'application/json',...headers}});}
 function fakeFetch(overrides:{account?:boolean;scope?:boolean;brokerStatus?:number;wrongHeader?:boolean}={},inspect?:(url:string,init:RequestInit)=>void):typeof fetch {
   return (async(url:unknown,init:RequestInit)=>{
@@ -18,4 +40,4 @@ function fakeFetch(overrides:{account?:boolean;scope?:boolean;brokerStatus?:numb
 test('managed base64 configuration decodes without echoing credentials',async()=>{process.env.INVOICE_PUBLICATION_CONFIG=Buffer.from(JSON.stringify(config)).toString('base64');assert.deepEqual(await publicationConfig(),config);});
 test('official broker response validates account and required scopes before destination calls',async()=>{for(const options of [{account:true},{scope:true},{brokerStatus:403}]){let destinationCalls=0;setInvoiceProviderClientsForTests({fetch:fakeFetch(options,url=>{if(!url.startsWith(config.brokerUrl))destinationCalls++;})});const checks=await (await officialProviders(config)).readiness();assert.ok(checks.filter(c=>c.name.includes('broker')).every(c=>!c.ready));assert.equal(destinationCalls,0);assert.ok(checks.every(c=>!c.message.includes(config.brokerCredential)));}});
 test('wrong headers block configuration readiness',async()=>{setInvoiceProviderClientsForTests({fetch:fakeFetch({wrongHeader:true})});assert.ok((await(await officialProviders(config)).readiness()).some(c=>c.name==='sheet-headers'&&!c.ready));});
-test('official sheet requests numeric RAW cells and unformatted readback, dynamic optional comment',async()=>{const calls:Array<{url:string;init:RequestInit}>=[];setInvoiceProviderClientsForTests({fetch:fakeFetch({},(url,init)=>calls.push({url,init}))});const adapter=await officialProviders(config);const layout=await adapter.sheetLayout();const invoice={id:'b'.repeat(64),fields:{transactionDate:'2026-10-01',paidDate:'2026-10-02',counterparty:'Example',description:'Subscription',currency:'USD',amount:'25.50',amountEur:'23.05',quantity:1,paymentEvidence:'Operator confirmed actual bank value'},source:{artifactId:'synthetic-doc'}} as Invoice;await adapter.writeRow(2,sheetValues(invoice,layout.headers));await adapter.readRow(2);const write=calls.find(c=>c.init.method==='PUT')!;const cells=JSON.parse(String(write.init.body)).values[0];assert.equal(cells[4],-25.5);assert.equal(cells[5],-23.05);assert.equal(cells[7],1);assert.equal(cells[9],'expense');assert.ok(cells[6].includes(invoice.id));assert.match(write.url,/valueInputOption=RAW/);assert.ok(calls.filter(c=>c.url.includes('sheets.googleapis.com')&&c.init.method==='GET').every(c=>c.url.includes('valueRenderOption=UNFORMATTED_VALUE')));});
+test('official sheet requests numeric RAW cells and unformatted readback, dynamic optional comment',async()=>{const calls:Array<{url:string;init:RequestInit}>=[];setInvoiceProviderClientsForTests({fetch:fakeFetch({},(url,init)=>calls.push({url,init}))});const adapter=await officialProviders(config);const layout=await adapter.sheetLayout();const invoice={id:'b'.repeat(64),fields:{transactionDate:'2026-10-01',paidDate:'2026-10-02',counterparty:'Example',description:'Subscription',currency:'USD',amount:'25.50',amountEur:'23.05',quantity:1,paymentEvidence:'Operator confirmed actual bank value'},extraction:{direction:'expense'},source:{artifactId:'synthetic-doc'}} as Invoice;await adapter.writeRow(2,sheetValues(invoice,layout.headers));await adapter.readRow(2);const write=calls.find(c=>c.init.method==='PUT')!;const cells=JSON.parse(String(write.init.body)).values[0];assert.equal(cells[4],-25.5);assert.equal(cells[5],-23.05);assert.equal(cells[7],1);assert.equal(cells[9],'expense');assert.ok(cells[6].includes(invoice.id));assert.match(write.url,/valueInputOption=RAW/);assert.ok(calls.filter(c=>c.url.includes('sheets.googleapis.com')&&c.init.method==='GET').every(c=>c.url.includes('valueRenderOption=UNFORMATTED_VALUE')));});

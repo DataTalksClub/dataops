@@ -584,7 +584,7 @@ describe('reconcile API', () => {
     assert.equal((await operator('POST', '/api/reconcile/months/2026-12/document', { transactionId: cloud.id, documentId: invoiceDoc.id })).statusCode, 200);
     view = await month();
     const shop = view.rows.find((item: Record<string, any>) => item.counterparty === 'Unbooked Shop');
-    const created = await operator('POST', '/api/reconcile/months/2026-12/ledger', { bankKey: shop.id, category: 'Office', documentId: invoiceDoc.id });
+    const created = await operator('POST', '/api/reconcile/months/2026-12/ledger', { bankKey: shop.id, category: 'Hardware & Equipment', documentId: invoiceDoc.id });
     assert.equal(created.statusCode, 201, created.body);
     const again = await operator('POST', '/api/reconcile/months/2026-12/ledger', { bankKey: shop.id });
     assert.equal(JSON.parse(again.body).duplicate, true);
