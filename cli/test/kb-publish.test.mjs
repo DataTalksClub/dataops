@@ -372,6 +372,35 @@ describe("kb publish from a Git checkout", () => {
     assert.equal(Buffer.from(mutation.base64, "base64").toString(), completed);
   });
 
+  test("leaves a later portal edit ahead of the completed Git snapshot", async () => {
+    const file = "content/completed.md";
+    const raw = "---\r\nid: example.completed\r\n---\r\nOriginal\r\n";
+    write(file, "---\nid: example.completed\naliases: []\n---\nOriginal\n");
+    commit("completed portal snapshot");
+    const live = raw.replace("Original", "Portal edit");
+    const calls = portal({ [file]: live }, { [file]: [live, raw] });
+    const io = captureIo();
+    assert.equal(await run(["kb", "publish", "--repo", repo, "--json"], io), 0, io.errors.join("\n"));
+    assert.deepEqual(io.json().ahead, [file]);
+    assert.equal(calls.some((call) => call.method === "POST"), false);
+  });
+
+  test("never publishes over a later portal edit when Git edited the completed snapshot too", async () => {
+    const file = "content/completed.md";
+    const raw = "---\r\nid: example.completed\r\n---\r\nOriginal\r\n";
+    const completed = "---\nid: example.completed\naliases: []\n---\nOriginal\n";
+    write(file, completed);
+    commit("completed portal snapshot");
+    write(file, completed.replace("Original", "Git edit"));
+    commit("Git edit");
+    const live = raw.replace("Original", "Portal edit");
+    const calls = portal({ [file]: live }, { [file]: [live, raw] });
+    const io = captureIo();
+    assert.equal(await run(["kb", "publish", "--repo", repo, "--json"], io), 5);
+    assert.match(io.errors.join("\n"), /changed both/);
+    assert.equal(calls.some((call) => call.method === "POST"), false);
+  });
+
   test("repairs files Git restored to an older version, with exact bytes and the commit in the message", async () => {
     write("content/sop.md", "good");
     write("content/gone.md", "bye");
