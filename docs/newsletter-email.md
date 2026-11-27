@@ -63,9 +63,11 @@ from Relay, and no block is ever written to Relay.
    a sponsor-doc save) is one action that first cancels the Relay campaign and
    reads it back to verify the cancel, then saves the change, withdraws the
    approval and test receipt, and leaves the email a draft (`delivery.state
-   cancelled`). If Relay cannot be reached, refuses the cancel, or has started
-   sending, the edit fails (`unschedule_failed`) and neither the content nor
-   the schedule changes. While a schedule request is still in flight the edit
+   cancelled`). Only an explicit `cancelled` status read back from Relay
+   counts. If Relay cannot be reached, times out, answers 403, has no campaign
+   under that key (404), refuses the cancel, or has started sending, the edit
+   fails (`unschedule_failed`) and neither the content nor the schedule
+   changes. While a schedule request is still in flight the edit
    waits (`409 schedule_in_progress`). "Cancel schedule" cancels without an
    edit. The next schedule is a new campaign.
 
@@ -158,7 +160,7 @@ scoped API token; others get `403 newsletter_owner_required`.
 | POST | `/draft/test-send` | `{requestId}` | owner, approval current; sends to the owner's mailbox only (`emails` other than it: 400 `test_recipient_not_owner`); `{testSend: {requestId, ...}, draft}`; a replayed `requestId` returns the first result |
 | POST | `/draft/test-receipt` | `{version (approval.draftVersion), payloadHash, testRequestId}` | owner; needs a provider-accepted test of that approval to the owner; `{testReceipt, draft}`; 409 `test_send_required`, `draft_changed`, `approval_required` |
 | POST | `/draft/schedule` | `{scheduledAt (ISO with offset, 15 min to 60 days ahead), payloadHash, version, requestId}` | owner, approval and test receipt current (409 `test_receipt_required`); `{delivery, adopted, replayed, draft}` |
-| POST | `/draft/cancel` | `{}` | owner; `{delivery, draft}` |
+| POST | `/draft/cancel` | `{}` | owner; `{delivery, draft}`; 409 `relay_campaign_missing` when Relay answers 404 (not proof nothing is pending; the delivery is kept) |
 | GET | `/draft/delivery[?refresh=1]` | | stored delivery; `refresh=1` (owner) reads Relay |
 
 `draft` carries `subject`, `previewText`, `version`, `locked` (Relay holds the
@@ -197,7 +199,8 @@ The campaign key is `dataops-newsletter-<number>-<issue-id prefix>`, with
 - Test sends go only to the owner's mailbox; nothing is queued before the
   owner recorded a receipt for that exact approved version and payload hash.
 - An edit of a scheduled draft never claims success unless Relay confirmed the
-  cancel on a read-back. If two edits race, Relay is cancelled once, one edit
+  cancel on a read-back (status `cancelled`; a 404 is unconfirmed, because the
+  campaign may sit under another scope or be hidden from the credential). If two edits race, Relay is cancelled once, one edit
   is saved, the other gets `409 draft_version_conflict`, and the cancellation
   is recorded either way, so DataOps never shows a schedule Relay dropped.
 - Relay must store exactly the approved HTML and time before it is queued.

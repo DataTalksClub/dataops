@@ -694,6 +694,46 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.match(sending.body.error, /sending/);
     relay.campaigns.get(key)!.status = 'scheduled';
     await unchanged();
+
+    // A 404, 403 or timeout is not proof that nothing will be sent: each leaves
+    // the scheduled draft as it is, whether it comes before or after the cancel.
+    const withRelay = (wrap: (input: string | URL, init: RequestInit) => Promise<Response> | undefined) => {
+      restore();
+      restore = setRelayDepsForTests({
+        fetchImpl: (async (input: string | URL, init: RequestInit = {}) => (await wrap(input, init)) || fakeFetch(input, init)) as typeof fetch,
+        readSecret: async (name) => SECRETS[name],
+        now: () => NOW,
+      });
+    };
+    const isRead = (input: string | URL, init: RequestInit) => (init.method || 'GET') === 'GET' && String(input).includes(`/api/campaigns/${key}?`);
+    const notFound = () => new Response(JSON.stringify({ external_key: 'not_found' }), { status: 404 });
+    const cases: Array<[string, (input: string | URL, init: RequestInit) => Promise<Response> | undefined, RegExp]> = [
+      ['404 before the cancel', (input, init) => (isRead(input, init) ? Promise.resolve(notFound()) : undefined), /HTTP 404/],
+      ['403 on the read', (input, init) => (isRead(input, init) ? Promise.resolve(new Response('forbidden', { status: 403 })) : undefined), /could not be read/],
+      ['timeout on the read', (input, init) => (isRead(input, init) ? Promise.reject(Object.assign(new Error('timed out'), { name: 'TimeoutError' })) : undefined), /could not be read/],
+    ];
+    for (const [label, wrap, message] of cases) {
+      relay.calls = [];
+      withRelay(wrap);
+      const res = await tryEdit();
+      assert.strictEqual(res.body.code, 'unschedule_failed', `${label}: ${JSON.stringify(res.body)}`);
+      assert.match(res.body.error, message, label);
+      assert.ok(!relay.calls.some((c) => c.path.endsWith('/cancel')), `${label}: nothing confirmed, so no cancel is sent`);
+      assert.strictEqual(relay.campaigns.get(key)!.status, 'scheduled', label);
+      await unchanged();
+    }
+
+    // The cancel goes through, but the readback is a 404: still unconfirmed.
+    let cancelSeen = false;
+    withRelay((input, init) => {
+      if (String(input).endsWith('/cancel')) { cancelSeen = true; return undefined; }
+      return cancelSeen && isRead(input, init) ? Promise.resolve(notFound()) : undefined;
+    });
+    const gone = await tryEdit();
+    assert.ok(cancelSeen);
+    assert.strictEqual(gone.body.code, 'unschedule_failed', JSON.stringify(gone.body));
+    assert.match(gone.body.error, /HTTP 404/);
+    await unchanged();
     assert.ok(!relay.calls.some((c) => c.method === 'PUT'), 'no content ever went to Relay');
   });
 

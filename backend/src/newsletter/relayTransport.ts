@@ -736,8 +736,17 @@ export async function cancelScheduled(
   }
   const relay = await relayCampaignClient();
   const existing = await relay.getCampaign(delivery.campaignKey);
-  let relayStatus = existing?.status || 'missing';
-  if (existing && existing.status !== 'cancelled') {
+  if (!existing) {
+    // A 404 does not prove nothing is pending (another scope, or a credential
+    // that cannot see it): keep the delivery as it is rather than unlock it.
+    throw new RelayError(
+      `Relay does not show campaign ${delivery.campaignKey} to DataOps (HTTP 404), so DataOps cannot confirm it is cancelled; the delivery was not changed. Check the campaign in Relay.`,
+      409,
+      'relay_campaign_missing',
+    );
+  }
+  let relayStatus = existing.status;
+  if (existing.status !== 'cancelled') {
     const result = await relay.cancel(delivery.campaignKey);
     relayStatus = result.campaign?.status || relayStatus;
     if (relayStatus !== 'cancelled') {
@@ -754,7 +763,7 @@ export async function cancelScheduled(
     createdAt: now,
     actorUserId: actor.id,
     actorName: actor.name,
-    detail: `Relay campaign ${delivery.campaignKey} ${existing ? 'cancelled' : 'not found in Relay'}; the draft is editable again`,
+    detail: `Relay campaign ${delivery.campaignKey} cancelled; the draft is editable again`,
     before: null,
     after: null,
   }]);
@@ -773,6 +782,11 @@ const unscheduleFailed = (message: string, status = 502) => new BlocksError(mess
  * the cancel, or has started sending, it throws `unschedule_failed` and the
  * caller leaves the draft untouched: an edit never claims success while a
  * stale email may still go out.
+ *
+ * Only an explicit `cancelled` status read back from Relay clears the edit.
+ * A 404 (no campaign under this key, client and audience) is not proof that
+ * nothing will be sent: the campaign may sit under another scope, or the
+ * credential may not see it. It counts as unconfirmed, like a timeout or 403.
  */
 export async function unscheduleForEdit(
   client: DynamoDBDocumentClient,
@@ -802,9 +816,13 @@ export async function unscheduleForEdit(
       throw unscheduleFailed(`Relay campaign ${key} could not be read (${(error as Error).message}), so the schedule is not confirmed cancelled; the draft was not changed.`);
     }
   };
+  const missing = () => unscheduleFailed(
+    `Relay does not show campaign ${key} to DataOps (HTTP 404), so DataOps cannot confirm the scheduled email will not go out; the draft was not changed. Check the campaign in Relay.`,
+  );
   let campaign = await read();
+  if (!campaign) throw missing();
   let cancelled = false;
-  if (campaign && campaign.status !== 'cancelled') {
+  if (campaign.status !== 'cancelled') {
     if (campaign.status === 'sending' || campaign.status === 'sent') {
       throw unscheduleFailed(`Relay is already ${campaign.status === 'sent' ? 'done sending' : 'sending'} campaign ${key}; it can no longer be unscheduled, and the draft was not changed.`, 409);
     }
@@ -816,7 +834,8 @@ export async function unscheduleForEdit(
     }
     // Verify with Relay itself, whatever the cancel call answered.
     campaign = await read();
-    if (campaign && campaign.status !== 'cancelled') {
+    if (!campaign) throw missing();
+    if (campaign.status !== 'cancelled') {
       throw unscheduleFailed(
         `Relay did not cancel campaign ${key} (status ${campaign.status}${cancelError ? `; ${cancelError}` : ''}); the draft was not changed.`,
         campaign.status === 'sending' || campaign.status === 'sent' ? 409 : 502,
@@ -827,8 +846,8 @@ export async function unscheduleForEdit(
   await deleteWebView(client, set.webViewToken).catch(() => undefined);
   const now = new Date().toISOString();
   return {
-    delivery: { ...delivery, state: 'cancelled', relayStatus: campaign?.status || 'missing', updatedAt: now },
-    detail: `Relay campaign ${key} ${cancelled ? 'cancelled' : campaign ? 'already cancelled' : 'not found in Relay'} (verified) to edit the draft; it goes back to draft and needs a new approval, test and schedule`,
+    delivery: { ...delivery, state: 'cancelled', relayStatus: campaign.status, updatedAt: now },
+    detail: `Relay campaign ${key} ${cancelled ? 'cancelled' : 'already cancelled'} (verified) to edit the draft; it goes back to draft and needs a new approval, test and schedule`,
   };
 }
 
