@@ -810,6 +810,15 @@
   overflow-wrap: anywhere;
 }
 
+.podcast-host-snapshot__headline {
+  margin: 0;
+  color: var(--dk-text-primary);
+  font-size: var(--dk-text-body);
+  font-weight: var(--dk-weight-medium);
+  line-height: var(--dk-leading-tight);
+  overflow-wrap: anywhere;
+}
+
 .podcast-host-snapshot__time {
   margin: 0;
   color: var(--dk-text-muted);

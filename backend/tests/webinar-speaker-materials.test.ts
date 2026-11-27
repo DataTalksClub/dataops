@@ -2,15 +2,15 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { getSponsorDocTemplate, renderSponsorDocMarkdownExport, renderSponsorEmailDraft, validateSubmittedContent } from '../src/sponsorDocs/templates';
 
-const content = { talkTitle: 'Practical pipelines', outline: '- Design\n- Build\n- Monitor', bio: 'A data engineer.' };
+const content = { talkTitle: 'Practical pipelines', outline: '- Design\n- Build\n- Monitor', jobTitle: 'Data Engineer', company: 'Example Corp', bio: 'A data engineer.' };
 
 describe('webinar speaker materials validation', () => {
-  it('requires title, outline and bio, and makes summary and links optional', () => {
+  it('requires title, outline, job title, company and bio, and makes summary and links optional', () => {
     const fields = getSponsorDocTemplate('webinar').sections.flatMap((s) => s.fields);
-    assert.deepEqual(fields.filter((f) => f.required).map((f) => f.key), ['talkTitle', 'outline', 'bio']);
+    assert.deepEqual(fields.filter((f) => f.required).map((f) => f.key), ['talkTitle', 'outline', 'jobTitle', 'company', 'bio']);
     assert.ok(fields.some((f) => f.key === 'sponsorNotes' && !f.required), 'speaker notes field exists and is optional');
     assert.doesNotThrow(() => validateSubmittedContent('webinar', content));
-    for (const key of ['talkTitle', 'outline', 'bio']) {
+    for (const key of ['talkTitle', 'outline', 'jobTitle', 'company', 'bio']) {
       assert.throws(() => validateSubmittedContent('webinar', { ...content, [key]: '  ' }), /required/);
     }
   });

@@ -33,8 +33,21 @@ describe("speakers", () => {
     const calls = fakePortal({ "GET /api/people": { items: [speaker({})] } });
     const io = captureIo();
     assert.equal(await run(["speakers", "list"], io), 0);
-    assert.match(io.text(), /adaexample\s+Ada Example/);
+    assert.match(io.text(), /adaexample\s+Ada Example\s+\(missing job title\/company\)/);
     assert.equal(calls.length, 1);
+  });
+
+  test("list and show print the website headline", async () => {
+    fakePortal({
+      "GET /api/people": { items: [speaker({ jobTitle: "AI Engineer", company: "Example Corp" })] },
+      "GET /api/people/p-1": speaker({ jobTitle: "AI Engineer", company: "Example Corp" }),
+    });
+    const listed = captureIo();
+    assert.equal(await run(["speakers", "list"], listed), 0);
+    assert.match(listed.text(), /AI Engineer at Example Corp/);
+    const shown = captureIo();
+    assert.equal(await run(["speakers", "show", "p-1"], shown), 0);
+    assert.match(shown.text(), /headline:\s+AI Engineer at Example Corp/);
   });
 
   test("create sends public fields; update merges links and clears with none", async () => {
@@ -44,11 +57,19 @@ describe("speakers", () => {
       "PUT /api/people/p-1": ({ body }) => speaker({ ...body }),
     });
     assert.equal(
-      await run(["speakers", "create", "--name", "Ada Example", "--slug", "adaexample", "--github", "ada"], captureIo()),
+      await run(["speakers", "create", "--name", "Ada Example", "--slug", "adaexample",
+        "--job-title", "AI Engineer", "--company", "Example Corp", "--github", "ada"], captureIo()),
       0,
     );
-    assert.deepEqual(calls[0].body, { name: "Ada Example", slug: "adaexample", links: { github: "ada" } });
+    assert.deepEqual(calls[0].body, {
+      name: "Ada Example", slug: "adaexample", jobTitle: "AI Engineer", company: "Example Corp", links: { github: "ada" },
+    });
     assert.equal(await run(["speakers", "create", "--name", "No Slug"], captureIo()), 2);
+    assert.equal(
+      await run(["speakers", "create", "--name", "No Title", "--slug", "notitle", "--company", "Example Corp"], captureIo()),
+      2,
+      "a new profile states its job title",
+    );
 
     const io = captureIo();
     assert.equal(

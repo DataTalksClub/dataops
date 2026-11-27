@@ -184,6 +184,8 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
       lastEditedBy: 'sponsor',
       content: {
         guestName: 'Sofiia',
+        jobTitle: 'AI Engineer',
+        company: 'Example Corp',
         proposedSlotLabel: 'Tuesday, November 3 at 12:30 CET',
         slotChoice: 'slot:2026-11-04:midday',
         topicsToCover: 'LLM evals, data pipelines',
@@ -195,6 +197,9 @@ describe('podcast guest form (radio slot picker + topics; email stays one slot)'
     assert.ok(exported.includes('Tuesday, November 3 at 12:30 CET'));
     assert.ok(exported.includes('LLM evals, data pipelines'));
     assert.ok(exported.includes('**Guest:** Sofiia'));
+    assert.ok(exported.includes('**Job title:** AI Engineer'));
+    assert.ok(exported.includes('**Company:** Example Corp'));
+    assert.ok(exported.includes('**Website headline:** AI Engineer at Example Corp'));
     assert.ok(!exported.includes('**Sponsor**'));
     assert.ok(exported.includes('## Notes from the Guest'));
     assert.ok(!exported.includes('Sponsor / Guest'));

@@ -188,11 +188,11 @@ describe('guest photo rule: shorter side at least 800 px', () => {
     const invoke = (method: string, url: string, body: unknown) =>
       handler({ httpMethod: method, path: url, headers: {}, queryStringParameters: {}, body: JSON.stringify(body) } as any, {});
 
-    const refused = await invoke('POST', '/api/people', { name: 'Photo Small', slug: 'photo-small', photoUrl: small.url });
+    const refused = await invoke('POST', '/api/people', { name: 'Photo Small', slug: 'photo-small', jobTitle: 'Engineer', company: 'Example Corp', photoUrl: small.url });
     assert.equal(refused.statusCode, 400, refused.body);
     assert.ok(JSON.parse(refused.body).error.startsWith(GUEST_PHOTO_TOO_SMALL_MESSAGE));
 
-    const person = await invoke('POST', '/api/people', { name: 'Photo Big', slug: 'photo-big', photoUrl: big.url });
+    const person = await invoke('POST', '/api/people', { name: 'Photo Big', slug: 'photo-big', jobTitle: 'Engineer', company: 'Example Corp', photoUrl: big.url });
     assert.equal(person.statusCode, 201, person.body);
     const { id, version } = JSON.parse(person.body);
     const downgrade = await invoke('PUT', `/api/people/${id}`, { version, photoUrl: small.url });

@@ -754,6 +754,7 @@ export function createSponsorDocPage({
           if (fieldDef.required) { control.required = true; control.setAttribute("aria-required", "true"); }
           if (fieldErrors[fieldDef.key]) control.setAttribute("aria-invalid", "true");
           if (fieldDef.format === "url" && !imageOnly) control.type = "url";
+          if (fieldDef.format === "headline") control.maxLength = fieldDef.maxCharsHint;
           fieldWrap.append(top, control);
 
           const isSocialField = fieldDef.key === "linkedinPost" || fieldDef.key === "twitterPost";

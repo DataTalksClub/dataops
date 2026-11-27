@@ -9,15 +9,20 @@ export const help = `dataops speakers - the website speaker/author profiles behi
 Usage
   dataops speakers list
   dataops speakers show <person-id>
-  dataops speakers create --name NAME --slug SLUG [--bio TEXT] [--bio-short TEXT]
-      [--photo-url URL] [--github HANDLE] [--twitter HANDLE]
+  dataops speakers create --name NAME --slug SLUG --job-title TEXT --company TEXT
+      [--bio TEXT] [--bio-short TEXT] [--photo-url URL] [--github HANDLE] [--twitter HANDLE]
       [--linkedin HANDLE] [--website URL]
   dataops speakers update <person-id> [same flags as create]
                                   "none" clears the bio, photo or a link
 
-A profile holds only public facts: name, bio, photo and social links.
-Private contact details never live here. The website script resolves
-speaker names to profile slugs from this register.
+A profile holds only public facts: name, job title, company, bio, photo and
+social links. Private contact details never live here. The website script
+resolves speaker names to profile slugs from this register.
+
+Job title and company are required for a new profile and cannot be cleared:
+the website shows every guest as "<job title> at <company>" next to the photo
+(e.g. --job-title "AI Engineer" --company IBM). Take both from the guest form,
+never from the bio. Plain text, at most 80 characters each, no links.
 
 The photo feeds the event picture: at least 800 px on the shorter side,
 square-ish, one face, no text or logos, JPG/PNG/WebP. A photo hosted by
@@ -31,12 +36,21 @@ const LINK_FLAGS = [
   ["website", "website"],
 ];
 
+/** The website headline: "AI Engineer at IBM". */
+export function headline(person) {
+  return person.jobTitle && person.company ? `${person.jobTitle} at ${person.company}` : "";
+}
+
 function speakerBody(args, current = {}) {
   const body = {};
   const name = optionalString(args, "name");
   if (name !== undefined) body.name = name;
   const slug = optionalString(args, "slug");
   if (slug !== undefined) body.slug = slug;
+  for (const key of ["jobTitle", "company"]) {
+    const value = optionalString(args, key);
+    if (value !== undefined) body[key] = value;
+  }
   for (const [flag, key] of [["bio", "bio"], ["bioShort", "bioShort"], ["photoUrl", "photoUrl"]]) {
     const value = optionalString(args, flag);
     if (value !== undefined) body[key] = value === "none" ? null : value;
@@ -57,6 +71,7 @@ export async function list(args, io) {
     ["ID", (person) => person.id],
     ["SLUG", (person) => person.slug],
     ["NAME", (person) => person.name],
+    ["TITLE", (person) => headline(person) || "(missing job title/company)"],
   ], "No speaker profiles.");
   return result;
 }
@@ -69,6 +84,9 @@ export async function show(args, io) {
     ["id", person.id],
     ["slug", person.slug],
     ["name", person.name],
+    ["jobTitle", person.jobTitle],
+    ["company", person.company],
+    ["headline", headline(person)],
     ["bioShort", person.bioShort],
     ["bio", person.bio ? `${person.bio.length} chars` : ""],
     ["photo", person.photoUrl],
@@ -82,6 +100,8 @@ export async function create(args, io) {
   const body = speakerBody(args);
   if (!body.name) throw new UsageError("--name is required.");
   if (!body.slug) throw new UsageError("--slug is required: the website _people short id.");
+  if (!body.jobTitle) throw new UsageError('--job-title is required, e.g. --job-title "AI Engineer".');
+  if (!body.company) throw new UsageError('--company is required, e.g. --company IBM.');
   if (body.links) body.links = Object.fromEntries(Object.entries(body.links).filter(([, value]) => value));
   const person = await apiFor(args).post("/api/people", body);
   if (args.json) return person;
