@@ -164,9 +164,13 @@ export function guestEventMetadataRow({ el, doc, tDef, draftContent, isSpeakerDo
   return { metaRow, secondaryRow, guestSchedule, guestZone };
 }
 
+/** The template's intro and guidelines, folded away under one summary line so the header stays compact. */
 export function buildSponsorDocIntroCallout(el, tDef) {
   const hasGuidelines = Array.isArray(tDef.guidelines) && tDef.guidelines.length > 0;
   if (!tDef.intro && !tDef.guidelinesUrl && !hasGuidelines) return null;
+  const details = el("details", "sponsor-doc-intro");
+  details.dataset.sponsorDocIntro = "";
+  details.append(el("summary", "sponsor-doc-intro__summary", "About this document"));
   const callout = el("div", "dk-callout");
   const body = el("div", "dk-callout__body");
   if (tDef.intro) body.append(el("p", "", tDef.intro));
@@ -185,9 +189,16 @@ export function buildSponsorDocIntroCallout(el, tDef) {
     body.append(ul);
   }
   callout.append(body);
-  return callout;
+  details.append(callout);
+  return details;
 }
 
+/**
+ * The staff-only action strip: Copy share link and Open Card, with everything
+ * secondary (sponsor email, send, rotate code, Copy Markdown, the auto-send
+ * status) in a "More" overflow. The share URL and access code are never shown
+ * as text; people opening the share link never get this strip.
+ */
 export function renderSponsorDocStaffBar({
   el,
   actionBtn,
@@ -199,18 +210,19 @@ export function renderSponsorDocStaffBar({
   copyText,
   onSendEmail,
   onRotateCode,
+  onCopyExport,
 }) {
   const staffBar = el("div", "sponsor-doc-staff-bar");
   staffBar.dataset.sponsorStaffBar = "";
-  const topRow = el("div", "sponsor-doc-staff-bar__row");
-  const shareInfo = el("div", "");
-  const linkLabel = isSpeaker
-    ? "Shareable speaker link (includes access code): "
-    : isPodcastGuest
-      ? "Shareable guest link (includes access code): "
-      : "Shareable sponsor link (includes access code): ";
-  shareInfo.append(el("strong", "", linkLabel), el("code", "dk-mono", doc.shareUrl || doc.docUrl || ""));
-  topRow.append(shareInfo);
+  const smBtn = "dk-button dk-button--secondary dk-button--sm";
+  const btnRow = el("div", "sponsor-doc-actions__buttons");
+  const more = el("details", "sponsor-doc-more");
+  more.dataset.sponsorStaffMore = "";
+  const moreSummary = el("summary", smBtn, "More");
+  moreSummary.setAttribute("aria-label", "More document actions");
+  const menu = el("div", "dk-menu sponsor-doc-more__menu");
+  const menuItem = "dk-menu__item";
+  more.append(moreSummary, menu);
 
   if (doc.emailDelivery) {
     const delivery = doc.emailDelivery;
@@ -220,11 +232,9 @@ export function renderSponsorDocStaffBar({
       ? `Auto-sent from ${delivery.from} to ${delivery.to}${delivery.sentAt ? ` at ${formatEditedTimestamp(delivery.sentAt)}` : ""}`
       : `Auto-send (${delivery.from || "orin@datatalks.club"}): ${delivery.state}${delivery.reason ? ` (${delivery.reason})` : ""}`;
     delivRow.append(el("span", "dk-hint", statusText));
-    topRow.append(delivRow);
+    menu.append(delivRow);
   }
 
-  const smBtn = "dk-button dk-button--secondary dk-button--sm";
-  const btnRow = el("div", "sponsor-doc-actions__buttons");
   if (doc.shareUrl) {
     const copyShareLabel = isPodcastGuest ? "Copy guest link" : "Copy share link";
     const copyShareToast = isSpeaker
@@ -234,28 +244,27 @@ export function renderSponsorDocStaffBar({
         : "Copied shareable sponsor link with access code.";
     btnRow.append(actionBtn(smBtn, copyShareLabel, "copy-share-url", () => copyText(doc.shareUrl, copyShareToast)));
   }
-  if (doc.emailDraft?.body) {
-    const isInviteCopy = isSpeaker || isPodcastGuest;
-    btnRow.append(actionBtn(smBtn, isInviteCopy ? "Copy invitation email" : "Copy sponsor email", "copy-email", () =>
-      copyText(
-        `Subject: ${doc.emailDraft.subject}\n\n${doc.emailDraft.body}`,
-        isInviteCopy ? "Copied invitation email draft." : "Copied ready-to-send sponsor email draft.",
-      )));
-  }
-  if (!isSpeaker && !isPodcastGuest) {
-    btnRow.append(actionBtn(smBtn, "Send from orin@datatalks.club", "send-sponsor-email", onSendEmail, busy));
-  }
-  btnRow.append(actionBtn(smBtn, "Rotate code", "rotate-code", onRotateCode, busy));
   const cardIdForLink = doc.hostContext?.cardId || doc.cardId;
   if (cardIdForLink) {
     const cardLink = el("a", smBtn, "Open Card");
     cardLink.href = `/cards?cardId=${encodeURIComponent(cardIdForLink)}`;
     btnRow.append(cardLink);
   }
-  const staffNote = el("p", "dk-hint sponsor-doc-staff-bar__note",
-    "Staff only: people opening the share link never see this panel.");
-  staffNote.dataset.sponsorStaffOnlyNote = "";
-  staffBar.append(staffNote, topRow, btnRow);
+  if (doc.emailDraft?.body) {
+    const isInviteCopy = isSpeaker || isPodcastGuest;
+    menu.append(actionBtn(menuItem, isInviteCopy ? "Copy invitation email" : "Copy sponsor email", "copy-email", () =>
+      copyText(
+        `Subject: ${doc.emailDraft.subject}\n\n${doc.emailDraft.body}`,
+        isInviteCopy ? "Copied invitation email draft." : "Copied ready-to-send sponsor email draft.",
+      )));
+  }
+  if (!isSpeaker && !isPodcastGuest) {
+    menu.append(actionBtn(menuItem, "Send from orin@datatalks.club", "send-sponsor-email", onSendEmail, busy));
+  }
+  if (onCopyExport && doc.markdownExport) menu.append(actionBtn(menuItem, "Copy Markdown", "copy-export", onCopyExport));
+  menu.append(actionBtn(menuItem, "Rotate code", "rotate-code", onRotateCode, busy));
+  btnRow.append(more);
+  staffBar.append(btnRow);
   if (isTwoTab) {
     staffBar.append(el(
       "p",

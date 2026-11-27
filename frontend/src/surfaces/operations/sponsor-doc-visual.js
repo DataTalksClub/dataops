@@ -140,11 +140,14 @@ export function mountSponsorDocVisualControls({
   function renderInlineVisualPreview(rawVal) {
     const v = String(rawVal || "").trim();
     visualPreview.replaceChildren();
+    // In the editor an uploaded image is a small thumbnail next to Replace/Remove;
+    // the email preview and the delivered image keep their full width.
+    if (imageOnly) visualPreview.classList.toggle("is-thumbnail", Boolean(v) && isLoadableImageSrc(v));
     if (!v) {
       if (isPhotoField || imageOnly) {
         visualPreview.hidden = false;
         const placeholder = el("p", "dk-hint sponsor-doc-photo-placeholder", imageOnly
-          ? "No image yet. Drag an image here or click Upload image (PNG, JPG, WebP, or GIF, up to 4 MiB)."
+          ? "No image yet. Drag one here or upload it."
           : "No photo yet — upload a portrait at least 800 × 800 px, or paste a link to one, to see a preview.");
         placeholder.dataset.sponsorPhotoPlaceholder = "";
         visualPreview.append(placeholder);
@@ -179,7 +182,7 @@ export function mountSponsorDocVisualControls({
     }
   }
 
-  const removeLabel = isPhotoField ? "Remove photo" : imageOnly ? "Remove image" : "Remove visual";
+  const removeLabel = isPhotoField ? "Remove photo" : imageOnly ? "Remove" : "Remove visual";
   const clearBtn = actionBtn("dk-button dk-button--secondary dk-button--sm", removeLabel, "clear-visual", () => {
     setUploadedVisualName("");
     draftContent[fieldDef.key] = "";
@@ -197,10 +200,8 @@ export function mountSponsorDocVisualControls({
     const v = String(draftContent[fieldDef.key] || "").trim();
     const name = getUploadedVisualName();
     if (imageOnly) {
-      uploadLabel.textContent = v ? "Replace image" : "Upload image";
-      statusSpan.textContent = name
-        ? `Uploaded ${name}.`
-        : v ? "" : "Drag and drop works too.";
+      uploadLabel.textContent = v ? "Replace" : "Upload image";
+      statusSpan.textContent = name ? `Uploaded ${name}.` : "";
       clearBtn.hidden = !v;
       return;
     }
@@ -307,6 +308,10 @@ export function mountSponsorDocVisualControls({
   syncVisualControls();
   renderInlineVisualPreview(draftContent[fieldDef.key]);
   visualControls.append(uploadLabel, fileInput, statusSpan, clearBtn);
-  if (imageOnly) fieldWrap.append(visualPreview, visualControls, errorSlot);
+  if (imageOnly) {
+    const row = el("div", "sponsor-doc-visual-row");
+    row.append(visualPreview, visualControls);
+    fieldWrap.append(row, errorSlot);
+  }
   else fieldWrap.append(visualControls, visualPreview);
 }

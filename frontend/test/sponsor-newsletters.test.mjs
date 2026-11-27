@@ -234,14 +234,17 @@ test("renders card-as-email layout (opening -> bullets -> closing -> CTA button)
     .querySelectorAll("[data-sponsor-email-step]")
     .map((node) => node.dataset.sponsorEmailStep);
   assert.deepEqual(editorSteps, ["opening", "bullets", "closing", "cta"]);
+  // Closing shares the inputs' surface: dakit's .dk-textarea, like the bullet and CTA .dk-input fields.
+  assert.ok(h.root.querySelector("#sponsor-field-closing").classList.contains("dk-textarea"));
+  assert.ok(h.root.querySelector("#sponsor-field-ctaText").classList.contains("dk-input"));
 
-  // 2. Preview shows the same ordered flow: opening -> bullets -> closing -> cta
+  // 2. Preview shows the same ordered flow: opening -> bullets -> closing (the CTA appears once it has a label)
   const preview = h.root.querySelector("[data-sponsor-live-preview]");
   assert.ok(preview, "live preview is rendered");
   const previewSteps = preview
     .querySelectorAll("[data-sponsor-preview-step]")
     .map((node) => node.dataset.sponsorPreviewStep);
-  assert.deepEqual(previewSteps, ["opening", "bullets", "closing", "cta"]);
+  assert.deepEqual(previewSteps, ["opening", "bullets", "closing"]);
 
   // 3. CTA button label and URL are required in the UI: submitting while empty is blocked with inline errors
   const submitBtn = h.root.querySelector('[data-sponsor-action="submit-ready"]');
@@ -269,6 +272,8 @@ test("renders card-as-email layout (opening -> bullets -> closing -> CTA button)
   const updatedPreview = h.root.querySelector("[data-sponsor-live-preview]");
   assert.equal(updatedPreview.querySelector("[data-sponsor-preview-cta-link]").textContent, "Try Modal Free");
   assert.equal(updatedPreview.querySelector("[data-sponsor-preview-cta-link]").href, "https://modal.com/signup");
+  assert.equal(updatedPreview.querySelector("[data-sponsor-preview-step=\"cta\"]").textContent, "Try Modal Free", "the CTA URL is the button's href only, never repeated as text");
+  assert.doesNotMatch(updatedPreview.querySelector("[data-sponsor-preview-canvas]").textContent, /modal\.com\/signup/);
 
   const utmBox = h.root.querySelector('[data-sponsor-utm-suggestion="ctaUrl"]');
   assert.ok(utmBox, "soft UTM suggestion box exists");
@@ -443,7 +448,13 @@ test("auto-generates LinkedIn post and single X post (<= 280 chars) or numbered 
 
   const combinedTweets = previewTweets.map((node) => node.textContent).join("\n");
   assert.ok(combinedTweets.includes(ctaUrlInput.value), "X thread includes CTA link");
-  assert.ok(twitterInput.value.includes(ctaUrlInput.value), "X textarea includes CTA link");
+  // The editor shows one card per tweet (no "---" separators), matching the preview thread.
+  const tweetCards = h.root.querySelectorAll("[data-sponsor-x-tweet]");
+  assert.equal(tweetCards.length, previewTweets.length, "one editable card per tweet");
+  assert.equal(twitterInput.dataset.sponsorXTweet, "1", "the field's label points at the first tweet card");
+  assert.ok(tweetCards.map((node) => node.value).join("\n").includes(ctaUrlInput.value), "X tweet cards include CTA link");
+  assert.ok(tweetCards.every((node) => !node.value.includes("---")), "no thread separator is shown");
+  assert.match(h.root.querySelector('[data-sponsor-x-tweet-count="1"]').textContent, /^\d+ \/ 280$/);
 
   // 3. Direct helper verification for very long unbroken sentences
   const directSocial = generateSponsorSocialPosts(
@@ -465,5 +476,48 @@ test("auto-generates LinkedIn post and single X post (<= 280 chars) or numbered 
   assert.ok(directSocial.xPosts.at(-1).includes("https://example.com/benchmark"));
   assert.ok(directSocial.linkedinPost.includes("https://example.com/benchmark"));
 
+  h.controller.destroy();
+});
+
+test("X thread cards add, edit, reorder and remove tweets and store the separator-joined thread", async () => {
+  const { mountSponsorXThreadEditor, X_THREAD_SEPARATOR } = await import("../src/surfaces/operations/sponsor-doc-x-thread.js");
+  const h = setupPageHarness();
+  await h.controller.start();
+  const el = (tag, className, text) => {
+    const node = globalThis.document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const fieldWrap = el("div");
+  const draftContent = { twitterPost: `First tweet${X_THREAD_SEPARATOR}Second tweet` };
+  let changes = 0;
+  const binding = mountSponsorXThreadEditor({
+    el, fieldWrap, fieldDef: { key: "twitterPost" }, inputId: "x", draftContent, busy: false, onChange: () => { changes += 1; },
+  });
+  const tweets = () => fieldWrap.querySelectorAll("[data-sponsor-x-tweet]").map((node) => node.value);
+  assert.deepEqual(tweets(), ["First tweet", "Second tweet"]);
+
+  await fieldWrap.querySelector("[data-sponsor-x-add]").click();
+  const third = fieldWrap.querySelector('[data-sponsor-x-tweet="3"]');
+  third.value = "Third tweet";
+  await third.dispatch("input");
+  assert.equal(draftContent.twitterPost, ["First tweet", "Second tweet", "Third tweet"].join(X_THREAD_SEPARATOR));
+
+  await fieldWrap.querySelector('[data-sponsor-x-control="up-3"]').click();
+  assert.deepEqual(tweets(), ["First tweet", "Third tweet", "Second tweet"]);
+  await fieldWrap.querySelector('[data-sponsor-x-control="remove-1"]').click();
+  assert.deepEqual(tweets(), ["Third tweet", "Second tweet"]);
+  assert.equal(draftContent.twitterPost, `Third tweet${X_THREAD_SEPARATOR}Second tweet`);
+  assert.ok(changes >= 4);
+
+  const long = fieldWrap.querySelector('[data-sponsor-x-tweet="1"]');
+  long.value = "x".repeat(281);
+  await long.dispatch("input");
+  assert.equal(fieldWrap.querySelector('[data-sponsor-x-tweet-count="1"]').textContent, "281 / 280");
+  assert.equal(long.getAttribute("aria-invalid"), "true");
+
+  binding.control.value = "Regenerated single tweet";
+  assert.deepEqual(tweets(), ["Regenerated single tweet"]);
   h.controller.destroy();
 });

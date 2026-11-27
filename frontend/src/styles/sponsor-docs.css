@@ -247,20 +247,21 @@
   min-width: 0;
 }
 
+/* Surface, border, placeholder, hover and focus come from dakit's shared
+   .dk-textarea, so Closing/Intro match the Bullet and CTA inputs (.dk-input)
+   in both themes; only the sizing is the doc's own. */
 .sponsor-doc-textarea {
-  width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   min-height: var(--dk-size-control-lg);
-  padding: var(--dk-space-3);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background-color: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
   font-family: var(--dk-font-sans);
   font-size: var(--dk-text-body);
   line-height: var(--dk-leading-normal);
-  resize: vertical;
+}
+
+.sponsor-doc-card .dk-input[aria-invalid="true"],
+.sponsor-doc-textarea[aria-invalid="true"] {
+  border-color: var(--dk-border-strong);
 }
 
 .sponsor-doc-card .dk-input,
@@ -365,11 +366,6 @@
   display: none;
 }
 
-.sponsor-doc-textarea:focus {
-  outline: none;
-  border-color: var(--dk-border-strong);
-}
-
 .sponsor-doc-actions {
   display: flex;
   flex-wrap: wrap;
@@ -388,13 +384,74 @@
 }
 
 .sponsor-doc-staff-bar {
-  background-color: var(--dk-bg-muted);
+  display: grid;
+  gap: var(--dk-space-2);
+  padding-top: var(--dk-space-2);
+  border-top: 1px solid var(--dk-border-default);
+  min-width: 0;
+}
+
+.sponsor-x-thread {
+  display: grid;
+  gap: var(--dk-space-2);
+}
+
+.sponsor-x-thread__card {
+  display: grid;
+  gap: var(--dk-space-1);
+  padding: var(--dk-space-2);
   border: 1px solid var(--dk-border-default);
   border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-4);
-  display: grid;
-  gap: var(--dk-space-3);
-  min-width: 0;
+}
+
+.sponsor-x-thread__label {
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-xs);
+  font-weight: var(--dk-weight-semibold);
+}
+
+.sponsor-x-thread__controls {
+  display: inline-flex;
+  gap: var(--dk-space-1);
+  margin-left: auto;
+}
+
+.sponsor-doc-field__count.is-over {
+  color: var(--dk-danger-text);
+}
+
+.sponsor-doc-more {
+  position: relative;
+}
+
+.sponsor-doc-more > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.sponsor-doc-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sponsor-doc-more__menu {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + var(--dk-space-1));
+  right: 0;
+}
+
+.sponsor-doc-staff-bar__delivery {
+  padding: var(--dk-space-1) var(--dk-space-2);
+}
+
+.sponsor-doc-intro__summary {
+  cursor: pointer;
+  color: var(--dk-text-muted);
+  font-size: var(--dk-text-sm);
+}
+
+.sponsor-doc-intro[open] > .dk-callout {
+  margin-top: var(--dk-space-2);
 }
 
 .sponsor-doc-staff-bar__row {
@@ -537,6 +594,43 @@
   background-color: var(--dk-bg-muted);
 }
 
+.sponsor-doc-visual-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--dk-space-3);
+  margin-top: var(--dk-space-2);
+}
+
+.sponsor-doc-visual-row > .sponsor-doc-visual-preview {
+  margin-top: 0;
+}
+
+.sponsor-doc-visual-row > .sponsor-doc-visual-dropzone:not(.is-thumbnail) {
+  flex: 1 1 100%;
+  min-height: 4rem;
+}
+
+.sponsor-doc-visual-row > .sponsor-doc-visual-upload {
+  padding-top: 0;
+}
+
+.sponsor-doc-visual-row .sponsor-doc-visual-upload__status:empty {
+  display: none;
+}
+
+.sponsor-doc-visual-dropzone.is-thumbnail {
+  min-height: 0;
+  padding: var(--dk-space-1);
+  border-style: solid;
+}
+
+.sponsor-doc-visual-dropzone.is-thumbnail .sponsor-doc-visual-preview__img {
+  width: auto;
+  max-width: 6rem;
+  max-height: 4rem;
+}
+
 .sponsor-doc-visual-dropzone.is-dragover {
   border-color: var(--dk-border-strong);
   background-color: var(--dk-accent-soft);
@@ -575,41 +669,12 @@
   gap: var(--dk-space-1);
 }
 
-.sponsor-preview-envelope {
-  background-color: var(--dk-bg-muted);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-3);
-  display: grid;
-  gap: var(--dk-space-2);
-}
-
-.sponsor-preview-envelope__row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--dk-space-2);
-}
-
 .sponsor-preview-envelope__label {
   color: var(--dk-text-muted);
   font-size: var(--dk-text-xs);
   font-weight: var(--dk-weight-semibold);
   text-transform: uppercase;
   min-width: 4.5rem;
-}
-
-.sponsor-preview-envelope__value {
-  color: var(--dk-text-heading);
-  font-size: var(--dk-text-sm);
-  font-weight: var(--dk-weight-medium);
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
-.sponsor-preview-envelope__value.is-placeholder {
-  color: var(--dk-text-muted);
-  font-weight: var(--dk-weight-regular);
 }
 
 .sponsor-preview-canvas {
@@ -640,18 +705,10 @@
   overflow-wrap: anywhere;
 }
 
-.sponsor-preview-canvas__title.is-placeholder {
-  color: var(--dk-text-muted);
-}
-
 .sponsor-preview-canvas__paragraph {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-.sponsor-preview-canvas__paragraph.is-placeholder {
-  color: var(--dk-text-muted);
 }
 
 .sponsor-preview-canvas__bullets {
@@ -663,10 +720,6 @@
 
 .sponsor-preview-canvas__bullets li {
   overflow-wrap: anywhere;
-}
-
-.sponsor-preview-canvas__bullets li.is-placeholder {
-  color: var(--dk-text-muted);
 }
 
 .sponsor-preview-figure {
@@ -688,19 +741,6 @@
   font-size: var(--dk-text-xs);
 }
 
-.sponsor-preview-visual-placeholder {
-  background-color: var(--dk-bg-muted);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  padding: var(--dk-space-4);
-  color: var(--dk-text-primary);
-  font-size: var(--dk-text-sm);
-}
-
-.sponsor-preview-visual-placeholder.is-placeholder {
-  color: var(--dk-text-muted);
-}
-
 .sponsor-preview-canvas__cta {
   display: flex;
   flex-wrap: wrap;
@@ -719,18 +759,6 @@
   font-size: var(--dk-text-sm);
   font-weight: var(--dk-weight-semibold);
   text-decoration: none;
-}
-
-.sponsor-preview-canvas__cta-btn.is-placeholder {
-  color: var(--dk-text-muted);
-  border-color: var(--dk-border-default);
-}
-
-.sponsor-preview-canvas__cta-url {
-  color: var(--dk-text-muted);
-  font-family: var(--dk-font-mono);
-  font-size: var(--dk-text-xs);
-  overflow-wrap: anywhere;
 }
 
 .sponsor-preview-social {

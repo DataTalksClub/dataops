@@ -129,7 +129,7 @@ test("Add block opens a type picker; picking adds that type and opens it", async
     [`POST ${BASE}/preview`]: preview(),
     [`GET ${BASE}/types`]: () => ({ types: [
       { type: "feature", label: "Feature", addable: true, fields: [] },
-      { type: "sponsor", label: "Sponsor (main)", addable: true, fields: [] },
+      { type: "sponsor", label: "Sponsor (main)", addable: false, fields: [] },
       { type: "sponsor_secondary", label: "Sponsor (secondary)", addable: false, fields: [] },
     ] }),
     [`POST ${BASE}/blocks`]: () => ({ block: added, draft: draftOf({ blocks: [...draftOf().blocks, added] }) }),
@@ -139,7 +139,7 @@ test("Add block opens a type picker; picking adds that type and opens it", async
   await container.querySelector("[data-add-block]").dispatch("click");
   await flush();
   const picker = container.querySelector("[data-block-picker]");
-  assert.deepEqual(picker.querySelectorAll("[data-block-type]").map((b) => b.dataset.blockType), ["feature", "sponsor"], "a slot with a sponsor doc offers no hand-made block");
+  assert.deepEqual(picker.querySelectorAll("[data-block-type]").map((b) => b.dataset.blockType), ["feature"], "sponsor blocks come only from a sponsor doc, never the picker");
   await picker.querySelector('[data-block-type="feature"]').dispatch("click");
   await flush();
   assert.deepEqual(calls.find((c) => c.method === "POST" && c.url === `${BASE}/blocks`).body, { type: "feature" });

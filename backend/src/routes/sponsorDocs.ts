@@ -381,6 +381,7 @@ export function isAnonymousSponsorDocAsset(method: string, path: string): boolea
     || path === '/src/surfaces/operations/sponsor-doc-bullets.js'
     || path === '/src/surfaces/operations/sponsor-doc-newsletter-sync.js'
     || path === '/src/surfaces/operations/sponsor-doc-visual.js'
+    || path === '/src/surfaces/operations/sponsor-doc-x-thread.js'
     || path === '/src/surfaces/operations/sponsor-doc-autosave.js'
     || path === '/src/surfaces/operations/sponsor-doc-files.js'
     || path === '/src/surfaces/operations/sponsor-doc-email-card.js'

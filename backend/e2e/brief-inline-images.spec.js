@@ -145,7 +145,7 @@ test('sponsor and guest brief editors upload images durably and render them inli
 
   // Graphics is an image control (Upload/Replace), never a raw URL text box.
   await expect(page.locator('#sponsor-field-graphicsUrl')).toHaveAttribute('type', 'hidden');
-  await expect(page.locator('[data-sponsor-visual-upload-label="graphicsUrl"]')).toHaveText('Replace image');
+  await expect(page.locator('[data-sponsor-visual-upload-label="graphicsUrl"]')).toHaveText('Replace');
 
   // A stored broken image URL shows a visible error, not a silent blank
   const brokenSave = await request.put(`${server.baseURL}/api/sponsor-docs/${sponsorDoc.id}`, {

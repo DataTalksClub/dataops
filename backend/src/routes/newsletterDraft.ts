@@ -123,7 +123,7 @@ export function draftView(set: IssueBlockSet, issue: Pick<NewsletterIssue, 'id' 
   const urls = sponsorDocUrls(issue);
   const ordered = byPosition(set.blocks);
   const pin = pinnedIndex(ordered);
-  const render = renderDraft(set);
+  const render = renderDraft(set, { slots: issue.slots });
   const problemsByBlock = new Map<string, string[]>();
   for (const problem of render.problems) {
     if (problem.blockId) problemsByBlock.set(problem.blockId, [...(problemsByBlock.get(problem.blockId) || []), problem.message]);
@@ -152,7 +152,9 @@ export function draftView(set: IssueBlockSet, issue: Pick<NewsletterIssue, 'id' 
         fields: fieldSpecs(block.type, block.data),
         problems: problemsByBlock.get(block.id) || [],
         sponsor,
-        readOnly: owned,
+        // Sponsor copy changes only through its linked doc; a scheduled draft stays
+        // editable (the save unschedules it first).
+        readOnly: Boolean(sponsor),
         pinned: sponsor === 'primary',
         canMove: sponsor !== 'primary' && !(pin >= 0 && index < pin),
         canDelete: !owned,
@@ -174,13 +176,14 @@ export function draftView(set: IssueBlockSet, issue: Pick<NewsletterIssue, 'id' 
   };
 }
 
-export function blockTypesView(urls: SponsorDocUrls = {}) {
+/** Sponsor blocks are listed (for their field specs) but never addable: they come only from a sponsor doc. */
+export function blockTypesView() {
   return Object.entries(BLOCK_TYPES).map(([type, spec]) => {
     const slot = sponsorSlotOf(type);
     return {
       type,
       label: spec.label,
-      addable: !slot || !urls[slot],
+      addable: !slot,
       fields: fieldSpecs(type, {}),
     };
   });
@@ -258,8 +261,8 @@ export async function handleNewsletterDraftRoutes(
     if (rest === '/render') {
       if (method !== 'GET') return json(405, { error: 'Method not allowed' });
       const set = await requireBlockSet(client, issue.id);
-      const render = renderDraft(set, { editor: event.queryStringParameters?.mode === 'editor' });
-      return json(200, { issueId: issue.id, render, approval: { state: approvalState(set), ...(set.approval || {}) } });
+      const render = renderDraft(set, { editor: event.queryStringParameters?.mode === 'editor', slots: issue.slots });
+      return json(200, { issueId: issue.id, render, approval: { state: approvalState(set, render), ...(set.approval || {}) } });
     }
     if (rest === '/preview') {
       if (method !== 'POST') return json(405, { error: 'Method not allowed' });
@@ -269,7 +272,7 @@ export async function handleNewsletterDraftRoutes(
     }
     if (rest === '/types') {
       if (method !== 'GET') return json(405, { error: 'Method not allowed' });
-      return json(200, { issueId: issue.id, types: blockTypesView(urls) });
+      return json(200, { issueId: issue.id, types: blockTypesView() });
     }
     if (rest === '/revisions') {
       if (method !== 'GET') return json(405, { error: 'Method not allowed' });

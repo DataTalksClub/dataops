@@ -289,9 +289,10 @@ export async function syncSponsorDoc(
 
 /**
  * A doc-owned secondary sponsor block leaves the draft when its slot's sponsor
- * document is removed from the issue (local only). The main block stays: it
- * becomes a hand-made block the editor can change or delete. Never throws:
- * failures are recorded and alerted.
+ * document is removed from the issue (local only). The main block stays,
+ * read-only and deletable, and blocks approval until the slot has a linked
+ * sponsor doc again (./draftReadiness.ts). Never throws: failures are recorded
+ * and alerted.
  */
 export async function releaseRemovedSponsorBlocks(
   client: DynamoDBDocumentClient,

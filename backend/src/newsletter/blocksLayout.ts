@@ -5,13 +5,14 @@
  *  - The main sponsor block (`sponsor`) is pinned as the first content block:
  *    it cannot be moved, and nothing can be placed above it (the intro stays on
  *    top as the header; blocks above it cannot be moved).
- *  - A sponsor block whose slot has a sponsor document is content read-only and
- *    cannot be deleted: its content only comes from that document, staged into
- *    the draft on every doc save (./sponsorBlocks.ts). It leaves when the doc is
- *    removed from the slot.
- *  - A sponsor slot without a document (an own DataTalks.Club promo, or a
- *    placement booked without a doc yet) takes a hand-made sponsor block that is
- *    edited, and deleted, like any other block.
+ *  - A sponsor block's copy comes only from its slot's linked sponsor document,
+ *    staged into the draft on every doc save (./sponsorBlocks.ts). That holds
+ *    for an own DataTalks.Club promo too: it gets an internal sponsor doc.
+ *    Sponsor blocks cannot be added by hand and their content is read-only.
+ *  - A doc-owned sponsor block cannot be deleted; it leaves when the doc is
+ *    removed from the slot. An archived hand-made sponsor block (from before
+ *    this rule) stays readable and deletable, and blocks approval
+ *    (./draftApproval.ts) until the slot has a linked doc.
  */
 import type { IssueBlock } from './blocks';
 import { BlocksError } from './blocksErrors';
@@ -44,12 +45,14 @@ export function docOwned(block: Pick<IssueBlock, 'type'>, urls: SponsorDocUrls):
   return Boolean(slot && urls[slot]);
 }
 
-/** Content edits of a doc-owned sponsor block come only from the sponsor doc. */
+/** Content edits of a sponsor block come only from the slot's linked sponsor doc. */
 export function assertEditable(block: IssueBlock, urls: SponsorDocUrls): void {
   const slot = sponsorSlotOf(block.type);
-  if (!slot || !urls[slot]) return;
+  if (!slot) return;
   throw sponsorRefusal(
-    `Block ${block.id} is the ${slot === 'primary' ? 'main' : 'secondary'} sponsor block: its content comes only from the slot's sponsor document. Edit it in the sponsor doc; every doc save stages it into this draft.`,
+    urls[slot]
+      ? `Block ${block.id} is the ${slot === 'primary' ? 'main' : 'secondary'} sponsor block: its content comes only from the slot's sponsor document. Edit it in the sponsor doc; every doc save stages it into this draft.`
+      : `Block ${block.id} is the ${slot === 'primary' ? 'main' : 'secondary'} sponsor block: its content comes only from a linked sponsor document, an own DataTalks.Club promo included. Create or link the ${slot} slot's sponsor document and edit it there.`,
     'sponsor_block_readonly',
     slot,
     urls,
@@ -67,21 +70,18 @@ export function assertDeletable(block: IssueBlock, urls: SponsorDocUrls): void {
   );
 }
 
-/** A hand-made sponsor block is allowed only for a slot without a doc, once per slot. */
-export function assertSponsorAddable(type: string, ordered: IssueBlock[], urls: SponsorDocUrls): void {
+/** Sponsor blocks are never added by hand: they come only from the slot's linked sponsor doc. */
+export function assertSponsorAddable(type: string, _ordered: IssueBlock[], urls: SponsorDocUrls): void {
   const slot = sponsorSlotOf(type);
   if (!slot) return;
-  if (urls[slot]) {
-    throw sponsorRefusal(
-      `The ${slot} slot has a sponsor document: its sponsor block comes from that document (save the doc to stage it).`,
-      'sponsor_block_doc_only',
-      slot,
-      urls,
-    );
-  }
-  if (ordered.some((block) => block.type === type)) {
-    throw new BlocksError(`The draft already has a ${slot} sponsor block; edit that one.`, 409, 'sponsor_block_exists');
-  }
+  throw sponsorRefusal(
+    urls[slot]
+      ? `The ${slot} slot has a sponsor document: its sponsor block comes from that document (save the doc to stage it).`
+      : `A sponsor block comes only from the ${slot} slot's linked sponsor document, an own DataTalks.Club promo included. Create or link the slot's sponsor document; saving it stages the block.`,
+    'sponsor_block_doc_only',
+    slot,
+    urls,
+  );
 }
 
 /**

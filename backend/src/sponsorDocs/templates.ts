@@ -177,7 +177,6 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             label: 'Graphics',
             type: 'text',
             placeholder: '',
-            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
@@ -285,7 +284,6 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             label: 'Graphics (optional)',
             type: 'text',
             placeholder: '',
-            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
@@ -406,7 +404,6 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             label: 'Graphics',
             type: 'text',
             placeholder: '',
-            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
@@ -1406,6 +1403,7 @@ export class SponsorDocValidationError extends Error {
 /** Drafts may be incomplete; ready documents must satisfy their template. */
 export function validateSubmittedContent(key: SponsorDocTemplateKey, content: Record<string, string>): void {
   const errors: Record<string, string> = {};
+  const newsletterPlacement = key.startsWith('newsletter-');
   for (const field of getSponsorDocTemplate(key).sections.flatMap((section) => section.fields)) {
     const value = (content[field.key] || '').trim();
     if (field.derived) continue;
@@ -1419,6 +1417,15 @@ export function validateSubmittedContent(key: SponsorDocTemplateKey, content: Re
     }
     if (value && field.maxChars && value.length > field.maxChars) {
       errors[field.key] = `${field.label} must be at most ${field.maxChars} characters.`;
+    }
+    // A newsletter placement's subject, preview text and title limits are hard
+    // at Ready (they shape the inbox line and the sponsor block); drafts may exceed them.
+    if (value && newsletterPlacement && field.type === 'text' && !field.allowVisualUpload && field.maxCharsHint && value.length > field.maxCharsHint) {
+      errors[field.key] = `${field.label.replace(/\s*\(≤[^)]*\)/, '')} is ${value.length} characters; keep it to ${field.maxCharsHint}.`;
+    }
+    const words = value.split(/\s+/).filter(Boolean).length;
+    if (value && newsletterPlacement && field.maxWordsHint && words > field.maxWordsHint) {
+      errors[field.key] = `${field.label.replace(/\s*\(≤[^)]*\)/, '')} has ${words} words; keep it to ${field.maxWordsHint}.`;
     }
     if (value && field.format === 'url') {
       try {

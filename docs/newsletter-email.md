@@ -81,11 +81,38 @@ confirm, the doc is not saved. A sponsor's own save of a doc whose issue is
 scheduled is refused (`409 newsletter_scheduled`).
 The block is read-only in the editor and links to its doc.
 
-A slot without a document takes a hand-made sponsor block ("Add block" >
-Sponsor), edited like any other block. Use it for an own DataTalks.Club promo
-(a course, a Zoomcamp) when no external sponsor is booked; booking a slot for
-DataTalks.Club already skips the invoice and sponsor-email Tasks
-(`dataops newsletter sync-tasks`).
+The linked sponsor document is the only way to change a sponsor block's copy.
+Sponsor blocks are not in the "Add block" picker and cannot be edited in the
+draft (`409 sponsor_block_doc_only` / `sponsor_block_readonly`). An own
+DataTalks.Club promo (a course, a Zoomcamp) gets its own internal sponsor doc
+too: book the slot for DataTalks.Club (which skips the invoice and
+sponsor-email Tasks, `dataops newsletter sync-tasks`) and create the doc from
+the issue page; no sponsor email is prepared for an own slot. A sponsor block
+left without a doc (archived hand-made blocks, or a main block whose doc was
+removed) stays readable and deletable but blocks approval.
+
+Readiness (`422 draft_incomplete` at approval; draft saves stay possible and
+list the same problems):
+
+- every sponsor block comes from a linked sponsor doc, and a booked slot has one;
+- the subject is at most 65 characters, not counting the
+  ` | DataTalks.Club Weekly` suffix, and the preview text at most 140;
+- a sponsor block's title is at most 12 words;
+- an own DataTalks.Club promo has bullet points, a closing sentence and `utm_`
+  tracking parameters in its button link.
+
+A newsletter sponsor doc marked Submitted / Ready enforces the same subject,
+preview text and title limits (`422` with per-field messages); drafts may
+exceed them.
+
+The sponsor doc page shows the sponsor block as recipients see it: the
+button's link carries the URL (with its tracking) and is not repeated as text,
+empty fields render nothing, and the subject and preview text are edited on the
+left and shown in the whole-email preview. The X post is one card per tweet
+(stored as the `---`-joined thread). Staff get a compact strip (Copy share
+link, Open Card, and a More menu with the sponsor email, send, rotate code and
+Copy Markdown); the share URL and access code are never displayed, and a
+newsletter sponsor doc shows no Markdown dump.
 
 ### Rendering
 
@@ -120,7 +147,7 @@ scoped API token; others get `403 newsletter_owner_required`.
 | PUT | `/draft` | `{version, subject?, previewText?}` | `{changed, draft}`; 409 `draft_version_conflict` |
 | GET | `/draft/render[?mode=editor]` | | `{render: {subject, previewText, html, text, payloadHash, draftVersion, problems}, approval}` |
 | POST | `/draft/preview` | `{subject?, previewText?, blocks?: [{id, type, data}]}` | `{preview: {subject, previewText, html, text}}`; no write |
-| GET | `/draft/types` | | `{types: [{type, label, addable, fields}]}` |
+| GET | `/draft/types` | | `{types: [{type, label, addable, fields}]}` (sponsor types: `addable: false`) |
 | POST | `/draft/blocks` | `{type, data?, position?}` | 201 `{block, draft}` |
 | PUT | `/draft/blocks/<id>` | `{version, data}` | `{changed, draft}`; 409 `block_version_conflict`, `sponsor_block_readonly`, `schedule_in_progress`; 409/502 `unschedule_failed` (scheduled draft, Relay did not confirm the cancel) |
 | POST | `/draft/blocks/<id>/move` | `{direction: up\|down}` or `{to}` | `{draft}` |
