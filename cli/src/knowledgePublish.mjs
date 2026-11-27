@@ -28,7 +28,6 @@
  * "Absent" is a Git-recorded state only where Git deleted the path, or before
  * prod's first version of it.
  */
-import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -108,11 +107,15 @@ export function completedMirrorBytes(file, bytes, completeAliases = true) {
   if (!Buffer.from(text).equals(bytes)) return bytes;
   text = text.replaceAll("\r\n", "\n");
   const header = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(text);
-  const { load } = createRequire(import.meta.url)("js-yaml");
-  let metadata;
-  try { metadata = header && load(header[1]); } catch { return bytes; }
-  if (completeAliases && metadata && typeof metadata.id === "string" && !Object.hasOwn(metadata, "aliases")) {
-    const completed = header[0].replace(/^(id:[^\n]*)$/m, "$1\naliases: []");
+  // This is the exact textual insertion the snapshot performs, not a YAML
+  // reserialization. Restrict it to one unambiguous governed ID and leave
+  // every existing aliases key (including quoted/nested forms) untouched.
+  // Knowledge publication deliberately runs without npm dependencies.
+  const ids = header && [...header[1].matchAll(/^id[ \t]*:/gm)];
+  const id = header && /^(id:[ \t]*(?:[a-zA-Z0-9_.-]+|"[a-zA-Z0-9_.-]+"|'[a-zA-Z0-9_.-]+')[ \t]*)$/m.exec(header[1]);
+  if (ids?.length > 1) return bytes;
+  if (completeAliases && id && !/^[ \t]*["']?aliases["']?[ \t]*:/m.test(header[1])) {
+    const completed = header[0].replace(id[0], id[0] + "\naliases: []");
     text = completed + text.slice(header[0].length);
   }
   return Buffer.from(text);
