@@ -36,6 +36,7 @@ import { CardVersionConflictError, getCardConsistent } from '../db/cards';
 import { listPodcastEpisodes, type PodcastEpisode } from '../db/podcastEpisodes';
 import { CardInviteConflictError, CardInviteInputError, resolvePodcastCardInviteTitle, syncCardInvite } from '../calendar/cardInvite';
 import { recordAutomationRun } from '../automations/runs';
+import { getEventRecord } from '../events/store';
 import {
   EventConflictError,
   EventInputError,
@@ -493,8 +494,15 @@ async function verifyInviteRoute(id: string, event: LambdaEvent, client: DynamoD
   const deps = await calendarInviteDeps({}, client);
   const card = hold.cardId ? await getCardConsistent(client, hold.cardId) : null;
   const guestTitle = card ? await resolvePodcastCardInviteTitle(client, card) : undefined;
+  // An event-lifecycle invite carries every guest on its event record; a plain hold (no
+  // lifecycle authority on the shared row) has one guestRef.
+  const record = await getEventRecord(client, hold.id).catch((error: unknown) => {
+    if (error instanceof EventConflictError) return null;
+    throw error;
+  });
+  const guests = record?.guestEmails?.length ? record.guestEmails : hold.guestRef ? [hold.guestRef] : [];
   const expected = buildGuestInvite({
-    eventKey: hold.id, title: hold.title, guestTitle, documentUrl: hold.documentUrl, guests: hold.guestRef ? [hold.guestRef] : [],
+    eventKey: hold.id, title: hold.title, guestTitle, documentUrl: hold.documentUrl, guests,
     startIso: hold.startIso, endIso: hold.endIso,
   }, deps.calendarIds);
   const problems = await validateGuestInviteReadback(expected, hold.googleEventIds || {}, deps);

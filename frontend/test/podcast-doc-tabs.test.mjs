@@ -708,3 +708,81 @@ test("tentative podcast recording shows compact slot picker open immediately wit
   assert.ok(h.root.querySelector('[data-sponsor-action="save-time-choice"].sponsor-doc-time-save'));
   h.controller.destroy();
 });
+
+test("header separates clean H1, labeled status chips, schedule, and secondary Berlin timestamp", async () => {
+  const h = createHarness({
+    docOverrides: {
+      viewerRole: "staff",
+      title: "Jordan Taylor: Landing a Forward Deployed Engineer Role",
+      status: "draft",
+      lastEditedAt: "2026-11-25T07:52:00.000Z",
+      lastEditedBy: "staff",
+      lastEditedByName: "Orin Vale",
+      eventMetadata: {
+        state: "confirmed",
+        label: "Tue, 12 Jan 2027 17:00 Europe/Berlin (confirmed)",
+        startIso: "2027-01-12T16:00:00Z",
+        endIso: "2027-01-12T17:00:00Z",
+        durationMinutes: 60,
+        version: 1,
+      },
+      templateDefinition: {
+        key: "podcast",
+        label: "Podcast — Materials from the Guest",
+        sections: [
+          {
+            id: "who-you-are",
+            title: "2) Who You Are",
+            tab: "guest",
+            fields: [
+              { key: "guestName", label: "Name", type: "text", maxCharsHint: 120, maxChars: 120 },
+              { key: "guestRole", label: "Role", type: "text", maxCharsHint: 120, maxChars: 120 },
+              { key: "guestCompany", label: "Company", type: "text", maxCharsHint: 120, maxChars: 120 },
+            ],
+          },
+          { id: "run-sheet", title: "Run Sheet", tab: "internal", internal: true, fields: [] },
+        ],
+      },
+      content: {
+        guestName: "Jordan Taylor",
+        guestRole: "Forward Deployed Engineer",
+        guestCompany: "Eliza",
+      },
+    },
+  });
+  await h.controller.start();
+
+  const h1 = h.root.querySelector("h1.sponsor-doc-title");
+  assert.equal(h1.textContent, "Jordan Taylor: Landing a Forward Deployed Engineer Role");
+  assert.equal(h.root.querySelector('[data-sponsor-doc-status="draft"]').textContent, "Draft");
+  assert.equal(h.root.querySelector('[data-sponsor-event-status="confirmed"]').textContent, "Confirmed");
+  const statusRow = h.root.querySelector(".sponsor-doc-status-row");
+  assert.match(statusRow.textContent, /Document/);
+  assert.match(statusRow.textContent, /Event/);
+
+  const secondary = h.root.querySelector(".sponsor-doc-meta--secondary");
+  assert.match(secondary.textContent, /Podcast — Materials from the Guest/);
+  assert.match(secondary.textContent, /Last edited 25 Nov 2026, 08:52 CET \(Europe\/Berlin\) by staff \(Orin Vale\)/);
+
+  // Three identity fields with char-count hints and validation
+  assert.equal(h.root.querySelector("#sponsor-field-guestName").value, "Jordan Taylor");
+  assert.equal(h.root.querySelector("#sponsor-field-guestRole").value, "Forward Deployed Engineer");
+  assert.equal(h.root.querySelector("#sponsor-field-guestCompany").value, "Eliza");
+  assert.match(h.root.querySelector('[data-sponsor-field-group="guestName"] .sponsor-doc-field__count').textContent, /13 \/ 120 chars/);
+
+  // Host view snapshot renders Name + Role · Company
+  await h.root.querySelector('[data-podcast-tab="internal"]').click();
+  await h.root.querySelector('[data-podcast-internal-mode="host"]').click();
+  assert.equal(h.root.querySelector(".podcast-host-snapshot__name").textContent, "Jordan Taylor");
+  assert.equal(h.root.querySelector(".podcast-host-snapshot__role").textContent, "Forward Deployed Engineer · Eliza");
+
+  // Validation rejects over-limit identity fields on submit
+  await h.root.querySelector('[data-podcast-tab="guest"]').click();
+  const roleInput = h.root.querySelector("#sponsor-field-guestRole");
+  roleInput.value = "r".repeat(121);
+  await roleInput.dispatch("input");
+  await h.root.querySelector('[data-sponsor-action="submit-ready"]').click();
+  assert.match(h.root.querySelector('[data-sponsor-field-error="guestRole"]').textContent, /at most 120 characters/);
+
+  h.controller.destroy();
+});

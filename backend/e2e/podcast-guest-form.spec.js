@@ -68,7 +68,9 @@ test.describe("podcast guest materials form", () => {
       ".sponsor-doc-meta, .sponsor-doc-form-card, [data-sponsor-export], .dk-auth-page__identity",
     );
     expect((await guestRegions.allInnerTexts()).join('\n')).not.toMatch(/sponsor/i);
-    await expect(page.locator(".sponsor-doc-meta")).toContainText("Guest: E2E Guest");
+    const episodeMeta = page.locator(".sponsor-doc-meta:not(.sponsor-doc-meta--secondary)");
+    await expect(episodeMeta).toHaveCount(1);
+    await expect(episodeMeta).toContainText("Guest: E2E Guest");
 
     // Slot picker is radios: confirm + free Mon/Tue slots + reply-by-email none-fit.
     const radios = page.locator('[data-sponsor-radios="slotChoice"] input[type="radio"]');

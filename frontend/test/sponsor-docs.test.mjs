@@ -190,7 +190,7 @@ test("sponsor link with ?code= strips code from URL, opens straight into editor,
   await nextTicks();
 
   assert.match(h.root.textContent, /Saved draft/);
-  assert.match(h.root.textContent, /Last edited 2026-10-17 20:30 UTC by sponsor/);
+  assert.match(h.root.textContent, /Last edited 17 Oct 2026, 22:30 CEST \(Europe\/Berlin\) by sponsor/);
 
   const submitBtn = h.root.querySelector('[data-sponsor-action="submit-ready"]');
   await submitBtn.click();
@@ -700,12 +700,49 @@ test("webinar speaker form preserves its invite path, required labels and speake
 });
 
 
+test("podcast header keeps event status out of its schedule text", async () => {
+  for (const metadata of [
+    { state: "tentative", date: "2030-12-03", label: "2030-12-03 (tentative; time not set)" },
+    { state: "unscheduled", date: null, label: "Unscheduled" },
+  ]) {
+    const h = harness({ docOverrides: {
+      template: "podcast", title: "Synthetic episode", publicationDate: null,
+      eventMetadata: metadata, templateDefinition: podcastTemplateDefinition(),
+    } });
+    await h.controller.start();
+    const schedule = h.root.querySelector('[data-sponsor-doc-event]');
+    assert.equal(schedule?.textContent || "", metadata.date ? "2030-12-03 · Time not set" : "");
+    assert.ok(h.root.querySelector(`[data-sponsor-event-status="${metadata.state}"]`));
+    h.controller.destroy();
+  }
+});
+
+test("scheduled podcast templates show the time without repeating the event status", async () => {
+  for (const template of ["podcast", "podcast-guest-research", "podcast-run-sheet", "podcast-episode-brief"]) {
+    const h = harness({ docOverrides: {
+      template, title: "Synthetic episode", publicationDate: null,
+      eventMetadata: {
+        state: "confirmed", date: "2030-12-03", label: "3 Dec 2030 12:30 Europe/Berlin (confirmed)",
+        startIso: "2030-12-03T11:30:00Z", endIso: "2030-12-03T12:30:00Z", durationMinutes: 60,
+      },
+      templateDefinition: podcastTemplateDefinition(),
+    } });
+    await h.controller.start();
+    const schedule = h.root.querySelector('[data-sponsor-doc-event]');
+    assert.match(schedule.textContent, /Berlin/);
+    assert.match(schedule.textContent, /12:30/);
+    assert.doesNotMatch(schedule.textContent, /confirmed|tentative|unscheduled/i);
+    assert.ok(h.root.querySelector('[data-sponsor-event-status="confirmed"]'));
+    h.controller.destroy();
+  }
+});
+
 test("event fields render read-only and are excluded from document saves", async () => {
   const h = harness({ docOverrides: {
     template: "podcast-episode-brief",
     title: "Synthetic · 3 Dec 2030 12:30 Europe/Berlin (tentative)",
     publicationDate: null,
-    eventMetadata: { label: "3 Dec 2030 12:30 Europe/Berlin (tentative)", state: "tentative" },
+    eventMetadata: { label: "3 Dec 2030 12:30 Europe/Berlin (tentative)", state: "tentative", date: "2030-12-03", startIso: "2030-12-03T11:30:00Z", endIso: "2030-12-03T12:30:00Z", durationMinutes: 60 },
     content: { recordingDate: "3 Dec 2030 12:30 Europe/Berlin (tentative)", goal: "Authored goal" },
     templateDefinition: { label: "Episode brief", sections: [{ id: "overview", fields: [
       { key: "recordingDate", label: "Recording Date", type: "text", derived: "event-datetime" },
