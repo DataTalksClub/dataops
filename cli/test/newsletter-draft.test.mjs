@@ -74,21 +74,34 @@ describe("newsletter draft CLI", () => {
     assert.match(io.text(), new RegExp(`payload sha256: ${HASH}`));
   });
 
-  test("approve needs the reviewed version and hash; schedule needs --yes and sends a request id", async () => {
+  test("approve needs the reviewed version and hash; the test goes to the owner and is confirmed; schedule needs --yes", async () => {
     const calls = fakePortal({
       [`POST ${BASE}/approve`]: () => ({ payloadHash: HASH, ...draftOf([intro], { approval: { state: "current", draftVersion: 4 } }) }),
       [`POST ${BASE}/schedule`]: () => ({ delivery: { campaignKey: "dataops-newsletter-900-iss", scheduledAt: "2027-03-04T08:00:00.000Z" }, adopted: false }),
-      [`POST ${BASE}/test-send`]: () => ({ testSend: { campaignKey: "dataops-newsletter-900-iss", status: "provider_accepted", emails: ["alexey@datatalks.club"] } }),
+      [`POST ${BASE}/test-send`]: () => ({
+        testSend: { requestId: "cli-req", campaignKey: "dataops-newsletter-900-iss", status: "provider_accepted", emails: ["alexey@datatalks.club"] },
+        ...draftOf([intro], { approval: { state: "current", draftVersion: 4, payloadHash: HASH } }),
+      }),
+      [`POST ${BASE}/test-receipt`]: () => ({ testReceipt: { approvedVersion: 4, payloadHash: HASH } }),
     });
     assert.notEqual(await run(["newsletter", "approve", "900"], captureIo()), 0, "approve without --version/--hash is refused locally");
     const io = captureIo();
     assert.equal(await run(["newsletter", "approve", "900", "--version", "3", "--hash", HASH, "--note", "ok"], io), 0, io.errors.join("\n"));
     assert.deepEqual(calls.at(-1).body, { version: 3, payloadHash: HASH, note: "ok" });
 
-    assert.equal(await run(["newsletter", "test-send", "900", "--to", "alexey@datatalks.club"], captureIo()), 0);
+    const before0 = calls.length;
+    assert.notEqual(await run(["newsletter", "test-send", "900", "--to", "someone@x.example"], captureIo()), 0, "no recipient choice");
+    assert.equal(calls.length, before0);
+    const testIo = captureIo();
+    assert.equal(await run(["newsletter", "test-send", "900"], testIo), 0, testIo.errors.join("\n"));
     const sent = calls.at(-1).body;
-    assert.deepEqual(sent.emails, ["alexey@datatalks.club"]);
+    assert.equal(sent.emails, undefined, "the server picks the owner's mailbox");
     assert.match(sent.requestId, /^cli-[0-9a-f-]{36}$/);
+    assert.match(testIo.text(), new RegExp(`test-receipt 900 --test cli-req --version 4 --hash ${HASH}`));
+
+    assert.notEqual(await run(["newsletter", "test-receipt", "900", "--version", "4", "--hash", HASH], captureIo()), 0, "--test is required");
+    assert.equal(await run(["newsletter", "test-receipt", "900", "--test", "cli-req", "--version", "4", "--hash", HASH], captureIo()), 0);
+    assert.deepEqual(calls.at(-1).body, { testRequestId: "cli-req", version: 4, payloadHash: HASH });
 
     const before = calls.length;
     assert.notEqual(await run(["newsletter", "schedule", "900", "--at", "2027-03-04T08:00:00Z", "--version", "4", "--hash", HASH], captureIo()), 0);
