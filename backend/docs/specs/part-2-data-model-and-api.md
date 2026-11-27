@@ -129,6 +129,7 @@ All endpoints accept and return JSON. All endpoints are auth-gated - unauthentic
 
 - `GET /api/tasks?date=YYYY-MM-DD` - list tasks for a specific date
 - `GET /api/tasks?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD` - list tasks in a date range
+- `GET /api/tasks/search?q=text&limit=50` - global-search matches as light rows ({ id, description, status, date, cardId?, assigneeId? }) from a projection cached for 60 seconds
 - `POST /api/tasks` - create a task (body: { description, date, comment?, instructionsUrl?, link?, requiredLinkName?, source?, cardId?, assigneeId?, tags? })
 - `GET /api/tasks/:id` - get a single task
 - `PUT /api/tasks/:id` - update a task (body: subset of { description, date, status, comment, instructionsUrl, link, assigneeId, tags })

@@ -1181,7 +1181,7 @@ describe("Knowledge surface boundary", () => {
             sources: [{ source: "docs", status: "ok", count: 1 }],
           };
         }
-        if (parsed.pathname === "/api/tasks") {
+        if (parsed.pathname === "/api/tasks/search") {
           return {
             tasks: [
               {
