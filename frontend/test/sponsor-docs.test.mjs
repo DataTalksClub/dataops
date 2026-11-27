@@ -1080,7 +1080,8 @@ test("Graphics renders the image with Upload/Replace (no URL text box), rejects 
   assert.ok(img, "the existing value renders as an image preview");
   assert.equal(img.src, existing);
   const uploadLabel = h.root.querySelector('[data-sponsor-visual-upload-label="graphicsUrl"]');
-  assert.equal(uploadLabel.textContent, "Replace image");
+  assert.equal(uploadLabel.textContent, "Replace");
+  assert.ok(h.root.querySelector('[data-sponsor-visual-preview="graphicsUrl"]').classList.contains("is-thumbnail"), "the editor shows the uploaded image as a thumbnail");
 
   // Wrong type: visible alert, no upload, current image kept.
   const fileInput = h.root.querySelector('[data-sponsor-visual-upload="graphicsUrl"]');

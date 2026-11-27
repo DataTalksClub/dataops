@@ -177,7 +177,6 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             label: 'Graphics',
             type: 'text',
             placeholder: '',
-            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
@@ -285,7 +284,6 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             label: 'Graphics (optional)',
             type: 'text',
             placeholder: '',
-            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
@@ -406,7 +404,6 @@ export const SPONSOR_DOC_TEMPLATES: Record<SponsorDocTemplateKey, SponsorDocTemp
             label: 'Graphics',
             type: 'text',
             placeholder: '',
-            helpText: 'Upload the image for this block (PNG, JPG, WebP, or GIF, up to 4 MiB). It is stored on DataTalks.Club image hosting.',
             allowVisualUpload: true,
           },
           {
