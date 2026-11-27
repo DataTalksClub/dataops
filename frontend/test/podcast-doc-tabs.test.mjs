@@ -760,7 +760,9 @@ test("header separates clean H1, labeled status chips, schedule, and secondary B
   assert.match(statusRow.textContent, /Document/);
   assert.match(statusRow.textContent, /Event/);
 
-  const secondary = h.root.querySelector(".sponsor-doc-meta--secondary");
+  // Title and state share one line; type and last-edited join the single meta line.
+  assert.ok(h.root.querySelector(".sponsor-doc-title-row .sponsor-doc-status-row"), "status chips sit on the title line");
+  const secondary = h.root.querySelector(".sponsor-doc-meta");
   assert.match(secondary.textContent, /Podcast — Materials from the Guest/);
   assert.match(secondary.textContent, /Last edited 25 Nov 2026, 08:52 CET \(Europe\/Berlin\) by staff \(Orin Vale\)/);
 

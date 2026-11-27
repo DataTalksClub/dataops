@@ -498,14 +498,21 @@ export function createSponsorDocPage({
       ));
     }
 
+    // Strip 1: title and state on one line, then one quiet meta line; strip 2 (staff only): the action strip.
     const statusRow = buildSponsorDocStatusRow({ el, doc, isSubmitted, isTwoTab, isStaff });
+    const [heading, ...titleActions] = [...titleRow.childNodes];
+    titleRow.replaceChildren(heading, statusRow, ...titleActions);
 
     const { metaRow, secondaryRow, guestSchedule, guestZone } = guestEventMetadataRow({
       el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel,
     });
-    headWrap.append(titleRow, statusRow);
-    if (metaRow.childNodes.length > 0) headWrap.append(metaRow);
-    headWrap.append(secondaryRow);
+    if (metaRow.childNodes.length > 0) {
+      const sep = el("span", "sponsor-doc-meta__sep", "·");
+      sep.setAttribute("aria-hidden", "true");
+      metaRow.append(sep);
+    }
+    metaRow.append(...[...secondaryRow.childNodes]);
+    headWrap.append(titleRow, metaRow);
     headerCard.append(headWrap);
     if (guestSchedule && !isTwoTab) {
       appendGuestTimezoneSelector({ el, headerCard, guestZone, busy, draftContent, render });
@@ -523,6 +530,7 @@ export function createSponsorDocPage({
         copyText,
         onSendEmail: () => sendSponsorEmailFromOrin(),
         onRotateCode: () => rotateStaffCode(),
+        onCopyExport: () => copyText(doc.markdownExport, "Copied Markdown export to clipboard."),
       }));
     }
 
@@ -902,8 +910,9 @@ export function createSponsorDocPage({
       root.append(formCard);
     }
 
-    // 3. Read-only Markdown Export card
-    if (doc.markdownExport) {
+    // 3. Read-only Markdown Export card; a newsletter sponsor doc keeps only
+    // "Copy Markdown" in the staff "More" menu, never a displayed dump.
+    if (doc.markdownExport && !String(doc.template || "").startsWith("newsletter-")) {
       root.append(renderSponsorDocExportCard({
         el,
         markdownExport: doc.markdownExport,
