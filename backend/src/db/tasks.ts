@@ -77,7 +77,7 @@ interface TaskCreationOptions {
   triggerKind?: string;
 }
 
-async function createTask(
+async function writeNewTask(
   client: DynamoDBDocumentClient,
   taskData: Record<string, unknown>,
   options: TaskCreationOptions = {},
@@ -191,7 +191,7 @@ async function getTaskWithConsistency(
  * Conditionally mutate one canonical Task row. Task fields, timestamp, version,
  * and history events are applied by one DynamoDB write.
  */
-async function updateTask(
+async function writeTaskUpdate(
   client: DynamoDBDocumentClient,
   id: string,
   mutation: TaskMutation,
@@ -344,7 +344,7 @@ async function updateTaskAdditive(
 /**
  * Delete a task by id.
  */
-async function deleteTask(
+async function writeTaskDelete(
   client: DynamoDBDocumentClient,
   id: string,
   expectedVersion: number,
@@ -588,6 +588,32 @@ async function listTaskSearchRows(client: DynamoDBDocumentClient): Promise<TaskS
 }
 
 /**
+ * Global search used to list every full Task (inline history included) on
+ * every query. It now matches against this cached projection: one table read
+ * per container per TTL serves a whole search session. Task writes made
+ * through this module drop the cache in their container, so a Task the
+ * operator just created or edited is searchable at once there; writes in
+ * other containers, or ones that bypass this module (Template Card creation),
+ * show up within the TTL.
+ */
+const SEARCH_ROWS_TTL_MS = 15_000;
+let searchRowsCache: { expiresAt: number; rows: Promise<TaskSearchRow[]> } | null = null;
+
+function invalidateTaskSearchRows(): void {
+  searchRowsCache = null;
+}
+
+function listTaskSearchRowsCached(client: DynamoDBDocumentClient): Promise<TaskSearchRow[]> {
+  if (!searchRowsCache || searchRowsCache.expiresAt <= Date.now()) {
+    const rows = listTaskSearchRows(client);
+    const entry = { expiresAt: Date.now() + SEARCH_ROWS_TTL_MS, rows };
+    searchRowsCache = entry;
+    rows.catch(() => { if (searchRowsCache === entry) searchRowsCache = null; });
+  }
+  return searchRowsCache.rows;
+}
+
+/**
  * List Tasks by owner reference when `owner` is the only supplied filter.
  *
  * There is no assignee index, and this change may not add one: DynamoDB index
@@ -640,6 +666,23 @@ function listTasksByStatus(
   }));
 }
 
+/** Every Task write below drops this container's search cache once it settles. */
+function invalidatingSearch<Args extends unknown[], Result>(
+  write: (...args: Args) => Promise<Result>,
+): (...args: Args) => Promise<Result> {
+  return async (...args: Args) => {
+    try {
+      return await write(...args);
+    } finally {
+      invalidateTaskSearchRows();
+    }
+  };
+}
+
+const createTask = invalidatingSearch(writeNewTask);
+const updateTask = invalidatingSearch(writeTaskUpdate);
+const deleteTask = invalidatingSearch(writeTaskDelete);
+
 export {
   createTask,
   getTask,
@@ -654,6 +697,7 @@ export {
   listTasksByStatus,
   listTasksByOwner,
   listTaskSearchRows,
+  listTaskSearchRowsCached,
   TaskVersionConflictError,
   CardLifecycleConflictError,
 };

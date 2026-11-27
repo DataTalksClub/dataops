@@ -243,7 +243,7 @@ test.describe('issue 204 slice 4 Knowledge feedback', () => {
     await clearFaults(context.request);
     await setFaults(context.request, [
       { method: 'GET', path: '/search', status: 503 },
-      { method: 'GET', path: '/api/tasks', status: 503 },
+      { method: 'GET', path: '/api/tasks/search', status: 503 },
       { method: 'GET', path: '/api/cards', status: 503 },
       { method: 'GET', path: '/api/templates', status: 503 },
       { method: 'GET', path: '/api/artifacts', status: 503 },
