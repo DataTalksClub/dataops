@@ -3,6 +3,7 @@ import { renderBannerJob } from './banners/service';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from './router';
 import { getClient } from './db/client';
+import { withCrmReadSnapshot } from './db/sponsorCrm';
 import { runCron } from './cron/runner';
 import { recordAutomationRun } from './automations/runs';
 import { expireCalendarHolds } from './db/calendarHolds';
@@ -459,7 +460,8 @@ async function handleInvocation(
         }),
       };
     }
-    return runCron(client!);
+    // Cron evaluators each list deals and organizations; read each type once.
+    return withCrmReadSnapshot(() => runCron(client!));
   }
 
   return sanitizeJsonResponse(await route(event as LambdaEvent, client!));

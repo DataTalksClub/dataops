@@ -6,7 +6,7 @@ import { DynamoDBDocumentClient, GetCommand, PutCommand, TransactWriteCommand, B
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { backfillSponsorCrmEntityType } from '../scripts/backfill-sponsor-crm-entity-type';
 import { getClient } from '../src/db/client';
-import { createOrganizationAtomic, listCrmItems, listCrmRecords } from '../src/db/sponsorCrm';
+import { createOrganizationAtomic, listCrmItems, listCrmRecords, withCrmReadSnapshot } from '../src/db/sponsorCrm';
 import { entityTypeOf, entityTypeOfPrefix, stampSponsorCrmWrite } from '../src/db/sponsorCrmTypeIndex';
 import { TABLE_SPONSOR_CRM, TABLE_TASKS } from '../src/db/tableNames';
 
@@ -97,5 +97,26 @@ describe('sponsor CRM type index: storage', () => {
     const again = await backfillSponsorCrmEntityType(client, { apply: true });
     assert.equal(again.planned, 0);
     assert.equal(again.applied, 0);
+  });
+
+  it('memoizes each type per scope and re-reads a type after it is written', async () => {
+    const queries: string[] = [];
+    const observed = { send: (command: any) => {
+      if (command.constructor.name === 'QueryCommand' && command.input.IndexName === 'GSI-EntityType') queries.push(command.input.ExpressionAttributeValues[':type']);
+      return client.send(command);
+    } } as unknown as DocClient;
+    await withCrmReadSnapshot(async () => {
+      await listCrmRecords(observed, 'organization');
+      await listCrmRecords(observed, 'organization');
+      await listCrmRecords(observed, 'deal');
+      assert.deepEqual(queries, ['ORGANIZATION', 'DEAL'], 'repeat reads are served from the scope');
+      const { item } = await createOrganizationAtomic(observed, { displayName: 'Written Mid-Scope' }, 'tester');
+      const after = await listCrmRecords(observed, 'organization');
+      assert.ok(after.some((org) => org.id === item.id), 'a write invalidates its type');
+      await listCrmRecords(observed, 'deal');
+      assert.deepEqual(queries, ['ORGANIZATION', 'DEAL', 'ORGANIZATION'], 'other types stay memoized');
+    });
+    await listCrmRecords(observed, 'deal');
+    assert.equal(queries.length, 4, 'nothing is memoized outside a scope');
   });
 });

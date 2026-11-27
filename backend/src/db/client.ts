@@ -1,6 +1,6 @@
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { stampSponsorCrmWrite } from './sponsorCrmTypeIndex';
+import { invalidateCrmReadSnapshot, stampSponsorCrmWrite } from './sponsorCrmTypeIndex';
 
 const PRODUCTION_MAX_ATTEMPTS = 6;
 
@@ -88,15 +88,25 @@ function failLoudlyOnMissingTable(client: DynamoDBDocumentClient): DynamoDBDocum
 }
 
 /**
- * Derive the sponsor CRM type-index attribute on every write (see
+ * Derive the sponsor CRM type-index attribute on every write and invalidate
+ * the invocation's memoized lists of the written types (see
  * sponsorCrmTypeIndex.ts). It lives here, at the one place clients are made,
- * so a new writer cannot leave its rows out of GSI-EntityType.
+ * so a new writer cannot leave its rows out of GSI-EntityType or leave a stale
+ * list behind.
  */
 function stampSponsorCrmTypeIndex(client: DynamoDBDocumentClient): DynamoDBDocumentClient {
   const send = client.send.bind(client) as (...args: unknown[]) => Promise<unknown>;
   (client as unknown as { send: unknown }).send = async (...args: unknown[]) => {
-    stampSponsorCrmWrite(args[0] as Parameters<typeof stampSponsorCrmWrite>[0]);
-    return send(...args);
+    const written = stampSponsorCrmWrite(args[0] as Parameters<typeof stampSponsorCrmWrite>[0]);
+    if (!written.length) return send(...args);
+    // Drop memoized lists of the written types before and after the write, so
+    // no read in this invocation serves a list from before it.
+    invalidateCrmReadSnapshot(written);
+    try {
+      return await send(...args);
+    } finally {
+      invalidateCrmReadSnapshot(written);
+    }
   };
   return client;
 }

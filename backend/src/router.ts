@@ -179,7 +179,15 @@ function decodeBase64Body(event: LambdaEvent): void {
   event.isBase64Encoded = false;
 }
 
-async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+/**
+ * Every request lists each sponsor CRM type at most once (writes invalidate the
+ * written type), whichever route family reads it.
+ */
+function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
+  return withCrmReadSnapshot(() => routeRequest(event, client));
+}
+
+async function routeRequest(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
   const method = event.httpMethod || 'GET';
   let reqPath = event.path || '/';
   const portalMode = process.env.WORK_ENGINE_AUTH_MODE === 'portal';
@@ -390,9 +398,7 @@ async function route(event: LambdaEvent, client: DynamoDBDocumentClient): Promis
       return await handleSponsorContractRoutes(reqPath, method, event, client, { skipAuth });
     }
     if (reqPath.startsWith('/api/sponsor-crm')) {
-      const sponsorRoute = () => handleSponsorRoute(reqPath, method, event, client);
-      // A read-only request scans the CRM table once, not once per kind.
-      return await (method === 'GET' ? withCrmReadSnapshot(sponsorRoute) : sponsorRoute());
+      return await handleSponsorRoute(reqPath, method, event, client);
     }
     if (reqPath.startsWith('/api/newsletter-issues')) return await handleNewsletterIssueRoutes(reqPath,method,event,client);
     if (reqPath === '/api/podcast-episodes' || reqPath.startsWith('/api/podcast-episodes/')) return await handlePodcastEpisodeRoutes(reqPath, method, event, client);
