@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { TABLE_SPONSOR_CRM } from './tableNames';
 
 /**
@@ -105,4 +106,41 @@ export function stampSponsorCrmWrite(command: Command): string[] {
       break;
   }
   return written;
+}
+
+// One invocation (an API request, a cron run) often lists the same types
+// several times: a page load fans out into several list routes, and cron
+// evaluators each read deals and organizations. Inside a snapshot scope each
+// type is queried once and served from memory after that. Every write to an
+// indexed type drops that type's memo (the storage client calls
+// invalidateCrmReadSnapshot), so a read after a write in the same scope
+// queries again instead of serving the pre-write list.
+type CrmReadSnapshot = { byType: Map<string, Promise<Record<string, unknown>[]>> };
+const readSnapshot = new AsyncLocalStorage<CrmReadSnapshot>();
+
+/** Memoize sponsor CRM type lists for the duration of `operation`. */
+export function withCrmReadSnapshot<T>(operation: () => Promise<T>): Promise<T> {
+  if (readSnapshot.getStore()) return operation();
+  return readSnapshot.run({ byType: new Map() }, operation);
+}
+
+/** The memoized list of `type` in this scope, loading it with `load` once. */
+export function memoizedCrmType(type: string, load: () => Promise<Record<string, unknown>[]>) {
+  const snapshot = readSnapshot.getStore();
+  if (!snapshot) return load();
+  let items = snapshot.byType.get(type);
+  if (!items) {
+    const loading = load();
+    items = loading;
+    snapshot.byType.set(type, loading);
+    // A failed read must not poison later reads in the same scope.
+    loading.catch(() => { if (snapshot.byType.get(type) === loading) snapshot.byType.delete(type); });
+  }
+  return items;
+}
+
+export function invalidateCrmReadSnapshot(types: readonly string[]) {
+  const snapshot = readSnapshot.getStore();
+  if (!snapshot) return;
+  for (const type of types) snapshot.byType.delete(type);
 }

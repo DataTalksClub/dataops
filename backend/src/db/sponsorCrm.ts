@@ -1,5 +1,4 @@
 import { advanceForMaterialChange } from '../sponsorCrm/readiness';
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'crypto';
 import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
@@ -7,7 +6,7 @@ import { cleanItem } from './cleanItem';
 import { TABLE_SPONSOR_CRM } from './tableNames';
 import { usesLocalTransactionEmulation } from './client';
 import { collectBoundedPages } from './boundedPagination';
-import { ENTITY_TYPE_ATTRIBUTE, ENTITY_TYPE_INDEX, entityTypeOfPrefix } from './sponsorCrmTypeIndex';
+import { ENTITY_TYPE_ATTRIBUTE, ENTITY_TYPE_INDEX, entityTypeOfPrefix, memoizedCrmType } from './sponsorCrmTypeIndex';
 
 export type CrmRecord = Record<string, unknown> & { id: string; version: number; createdAt: string; updatedAt: string };
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
@@ -85,20 +84,8 @@ export async function getCrmRecord(client: DynamoDBDocumentClient, kind: string,
 }
 
 // Listing a type is a Query on GSI-EntityType (see sponsorCrmTypeIndex.ts),
-// which reads that type's rows only. One page load still fans out into
-// several list routes that ask for the same types, so a request memoizes
-// each type's query and serves repeat reads from it.
-type CrmReadSnapshot = { byType: Map<string, Promise<Record<string, unknown>[]>> };
-const readSnapshot = new AsyncLocalStorage<CrmReadSnapshot>();
-
-/**
- * Serve repeated sponsor CRM list reads inside `operation` from one query per
- * type. Only for requests that do not write: a write inside the scope would
- * not be seen by later list reads in the same request.
- */
-export function withCrmReadSnapshot<T>(operation: () => Promise<T>): Promise<T> {
-  return readSnapshot.run({ byType: new Map() }, operation);
-}
+// which reads that type's rows only, memoized per invocation scope.
+export { withCrmReadSnapshot } from './sponsorCrmTypeIndex';
 
 // List reads are eventually consistent: a strongly consistent read costs twice
 // the read units, and a list view tolerates a write that landed a moment ago
@@ -147,16 +134,7 @@ function queryCrmType(client: DynamoDBDocumentClient, type: string, query: TypeQ
 /** Raw items of one indexed type, named by its PK prefix (`DEAL#`). */
 export async function listCrmItems(client: DynamoDBDocumentClient, prefix: string): Promise<Record<string, unknown>[]> {
   const type = entityTypeOfPrefix(prefix);
-  const snapshot = readSnapshot.getStore();
-  if (!snapshot) return queryCrmType(client, type);
-  let items = snapshot.byType.get(type);
-  if (!items) {
-    items = queryCrmType(client, type);
-    snapshot.byType.set(type, items);
-    // A failed read must not poison later reads in the same scope.
-    items.catch(() => { if (snapshot.byType.get(type) === items) snapshot.byType.delete(type); });
-  }
-  return [...await items];
+  return [...await memoizedCrmType(type, () => queryCrmType(client, type))];
 }
 
 export async function listCrmRecords(client: DynamoDBDocumentClient, kind: string) {
