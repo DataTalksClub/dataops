@@ -120,10 +120,10 @@ for (const [width, height] of [[1440, 900], [1280, 800], [375, 667], [390, 844]]
     // Stage totals filter the same bounded rows.
     await page.locator('[data-pipeline-status="invoiced"]').click();
     await expect(page).toHaveURL(/stage=invoiced/);
-    await page.locator('.crm-filter-disclosure > summary').click();
-    await expect(page.locator('[data-crm-status]')).toBeVisible();
-    await expect(page.locator('[data-crm-status]')).toHaveValue("invoiced");
-    await page.locator('[data-crm-status]').selectOption('');
+    // Stage is filtered by the chips only: the pressed chip is the state, and
+    // pressing it again clears the stage.
+    await expect(page.locator('[data-pipeline-status="invoiced"]')).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('[data-pipeline-status="invoiced"]').click();
     await expect(page).toHaveURL(/\/sponsors\/pipeline\?view=all$/);
     await page.screenshot({ path: path.join(screenshots, `pipeline-${width}x${height}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
