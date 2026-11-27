@@ -240,6 +240,16 @@ export interface DraftTestReceipt {
   receivedByName: string | null;
 }
 
+/** The newest test send of the draft, which the owner confirms after it arrives. */
+export interface DraftLastTest {
+  requestId: string;
+  payloadHash: string;
+  approvedVersion: number;
+  recipient: string;
+  status: string;
+  at: string;
+}
+
 /** Where the approved payload went in Relay (see ./relayTransport.ts). */
 export interface DraftDelivery {
   state: 'scheduling' | 'scheduled' | 'failed' | 'cancelled';
@@ -273,6 +283,7 @@ export interface IssueBlockSet {
   approval?: DraftApproval | null;
   /** Required before scheduling: the owner got the test email of the current approval. */
   testReceipt?: DraftTestReceipt | null;
+  lastTest?: DraftLastTest | null;
   delivery?: DraftDelivery | null;
   /** Held while a test send rewrites the Relay draft campaign; a schedule waits for it. */
   testLock?: { requestId: string; at: string } | null;

@@ -166,6 +166,7 @@ export function draftView(set: IssueBlockSet, issue: Pick<NewsletterIssue, 'id' 
     approval: { state: approvalState(set, render), ...(set.approval || {}) },
     testReceipt: { state: testReceiptState(set, render), ...(set.testReceipt || {}) },
     testRecipient: TEST_RECIPIENT,
+    lastTest: set.lastTest || null,
     delivery: set.delivery || null,
     relayAudience: relayAudience(),
     webViewUrl: webViewUrl(set.webViewToken),

@@ -155,6 +155,11 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
   async function confirmTest(issue: { base: string }, approved: any, requestId: string) {
     const sent = await req('POST', `${issue.base}/test-send`, { requestId });
     assert.strictEqual(sent.status, 200, JSON.stringify(sent.body));
+    assert.deepStrictEqual(
+      { requestId: sent.body.draft.lastTest.requestId, status: sent.body.draft.lastTest.status, payloadHash: sent.body.draft.lastTest.payloadHash },
+      { requestId, status: 'provider_accepted', payloadHash: approved.approval.payloadHash },
+      'the draft remembers the test the owner is asked to confirm',
+    );
     const receipt = await req('POST', `${issue.base}/test-receipt`, { version: approved.approval.draftVersion, payloadHash: approved.approval.payloadHash, testRequestId: requestId });
     assert.strictEqual(receipt.status, 200, JSON.stringify(receipt.body));
     assert.strictEqual(receipt.body.draft.testReceipt.state, 'current');

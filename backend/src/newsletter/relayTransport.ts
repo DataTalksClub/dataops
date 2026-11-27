@@ -29,7 +29,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
 import { OWNER_WORK_EMAIL } from '../identity/operatingIdentities';
 import { readRuntimeSecret } from '../secrets/reader';
-import type { DraftDelivery, DraftTestReceipt, IssueBlockSet } from './blocks';
+import type { DraftDelivery, DraftLastTest, DraftTestReceipt, IssueBlockSet } from './blocks';
 import { BlocksError } from './blocksErrors';
 import {
   appendBlockRevisions,
@@ -297,12 +297,13 @@ function testLocked(set: IssueBlockSet): boolean {
   return Boolean(set.testLock && Date.now() - Date.parse(set.testLock.at) < TEST_LOCK_MS);
 }
 
-async function releaseTestLock(client: DynamoDBDocumentClient, issueId: string, requestId: string): Promise<void> {
+/** Release the test lock and remember the outcome, so the review page can ask the owner to confirm that test. */
+async function releaseTestLock(client: DynamoDBDocumentClient, issueId: string, requestId: string, lastTest: DraftLastTest): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const set = await requireBlockSet(client, issueId);
     if (set.testLock?.requestId !== requestId) return;
     try {
-      await putBlockSet(client, { ...set, testLock: null, version: set.version + 1 }, set.version);
+      await putBlockSet(client, { ...set, testLock: null, lastTest, version: set.version + 1 }, set.version);
       return;
     } catch (error) {
       if (!(error instanceof BlockSetVersionConflict)) throw error;
@@ -313,6 +314,7 @@ async function releaseTestLock(client: DynamoDBDocumentClient, issueId: string, 
 const testKey = (issueId: string, requestId: string) => ({ PK: `NL_DELIVERY#${issueId}`, SK: `TEST#${requestId}` });
 
 export interface TestSendOutcome {
+  requestId: string;
   campaignKey: string;
   emails: string[];
   status: string;
@@ -390,6 +392,7 @@ export async function testSendApproved(
     if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') throw error;
     const recorded = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: testKey(issue.id, requestId), ConsistentRead: true }))).Item || {};
     return {
+      requestId,
       campaignKey: String(recorded.campaignKey || campaignKey),
       emails: (recorded.emails as string[]) || emails,
       status: String(recorded.state || 'unknown'),
@@ -415,8 +418,15 @@ export async function testSendApproved(
     error = (failure as Error).message;
     throw failure;
   } finally {
-    await releaseTestLock(client, issue.id, requestId);
     const done = new Date().toISOString();
+    await releaseTestLock(client, issue.id, requestId, {
+      requestId,
+      payloadHash: payload.payloadHash,
+      approvedVersion: set.approval?.draftVersion || 0,
+      recipient: emails[0],
+      status: error ? 'failed' : status,
+      at: done,
+    });
     await client.send(new UpdateCommand({
       TableName: TABLE_ARTIFACTS,
       Key: testKey(issue.id, requestId),
@@ -438,7 +448,7 @@ export async function testSendApproved(
       after: null,
     }]).catch(() => undefined);
   }
-  return { campaignKey, emails, status, sentCount: detail?.sent_count || 0, replayed: false, detail };
+  return { requestId, campaignKey, emails, status, sentCount: detail?.sent_count || 0, replayed: false, detail };
 }
 
 // ------------------------------------------------------------------ test receipt
