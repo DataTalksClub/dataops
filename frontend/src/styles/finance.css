@@ -1430,6 +1430,8 @@ body[data-workspace-view="sponsors"] .document-list {
 /* Secondary CRM navigation: a dropdown that overlays the content under the
 tab row (it never grows the tab bar) and closes on selection or outside click.
 The summary is a tab and carries the active page's name. */
+/* dakit tabs scroll sideways (overflow-x:auto), which also clips vertically; the More dropdown must overlay the page. */
+.crm-views { overflow: visible; }
 .crm-more { position: relative; display: inline-flex; }
 .crm-more > summary { cursor: pointer; list-style: none; }
 .crm-more > summary::-webkit-details-marker { display: none; }
