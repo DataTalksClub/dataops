@@ -74,6 +74,15 @@ export function createNewsletterEmailReview({
       paint();
       say(message, "success");
     } catch (error) {
+      if (error.code === "draft_changed" || error.code === "approval_required") {
+        // Show the current email instead of the one that is no longer current.
+        try {
+          await load();
+          paint();
+        } catch {
+          // keep the page as it is; the message below still explains the refusal
+        }
+      }
       say(failureText(error), "danger");
     }
   }

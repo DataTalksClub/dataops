@@ -125,3 +125,18 @@ test("an issue without a draft says so", async () => {
   await page.start();
   assert.ok(findByText(root, "This issue has no email draft yet. Start it on the issue page."));
 });
+
+test("a refused approval because the draft changed reloads the current email", async () => {
+  const state = { draft: draft(), render: render() };
+  const { page, root } = setup({
+    ...base(state),
+    [`POST ${BASE}/approve`]: () => {
+      state.render = render({ html: "<html>newer</html>", payloadHash: "q".repeat(64) });
+      throw Object.assign(new Error("The draft changed since you reviewed it"), { code: "draft_changed" });
+    },
+  });
+  await page.start();
+  await root.querySelector("[data-approve-form]").dispatch("submit");
+  assert.equal(root.querySelector("[data-email-frame]").srcdoc, "<html>newer</html>");
+  assert.match(root.querySelector("[data-review-status]").textContent, /draft changed/);
+});
