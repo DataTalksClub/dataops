@@ -24,7 +24,7 @@ import { makeTaskHistoryEvent } from '../routes/taskValidation';
 import { berlinDate, digest, INVOICE_TASK_SOURCE, INVOICE_TASK_TAG } from './core';
 import { dealProjectionContext, deliveredOn } from './context';
 import { resolveDealOwnerId } from './finomPaidTask';
-import { relatedDealTasks, PAYMENT_FOLLOW_UP_TAG } from './paymentFollowUp';
+import { PAYMENT_FOLLOW_UP_TAG } from './paymentFollowUp';
 import { financeEnabled, getFinanceState, projectFinance, type ProjectionContext } from './repository';
 import type { FinanceProjection, FinanceState } from './types';
 import type { Task } from '../types';
@@ -190,7 +190,7 @@ export async function syncDealInvoiceTask(
   if (claimed) return reconcileClaimedTask(client, claimed, decision);
   if (decision.kind !== 'owed') return { outcome: 'none' };
 
-  const open = (options.tasks || await relatedDealTasks(client, dealId))
+  const open = (options.tasks || (await openDealTasks(client, dealId)).get(dealId) || [])
     .filter((task) => task.subject?.type === 'sponsor-deal' && task.subject.id === dealId && OPEN.has(String(task.status)));
   const adopt = open.find(isInvoiceTask)
     || open.filter(isManualInvoiceTask).sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.id.localeCompare(b.id))[0];
@@ -371,16 +371,20 @@ function shiftDate(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-/** Open Tasks about sponsor deals, grouped by deal, in one scan. */
-async function openDealTasks(client: DynamoDBDocumentClient): Promise<Map<string, Task[]>> {
+/**
+ * Open Tasks about sponsor deals (or one deal), grouped by deal, in one filtered
+ * scan. Unlike the capped review scan, it reads the whole Tasks table: missing a
+ * hand-made invoice Task would mean a duplicate, and it runs once per deal.
+ */
+async function openDealTasks(client: DynamoDBDocumentClient, dealId?: string): Promise<Map<string, Task[]>> {
   const byDeal = new Map<string, Task[]>();
   let cursor: Record<string, unknown> | undefined;
   do {
     const page: ScanCommandOutput = await client.send(new ScanCommand({
       TableName: TABLE_TASKS, ConsistentRead: true,
-      FilterExpression: 'subject.#type = :deal AND (#status = :todo OR #status = :waiting)',
-      ExpressionAttributeNames: { '#type': 'type', '#status': 'status' },
-      ExpressionAttributeValues: { ':deal': 'sponsor-deal', ':todo': 'todo', ':waiting': 'waiting' },
+      FilterExpression: `subject.#type = :deal AND (#status = :todo OR #status = :waiting)${dealId ? ' AND subject.#id = :id' : ''}`,
+      ExpressionAttributeNames: { '#type': 'type', '#status': 'status', ...(dealId ? { '#id': 'id' } : {}) },
+      ExpressionAttributeValues: { ':deal': 'sponsor-deal', ':todo': 'todo', ':waiting': 'waiting', ...(dealId ? { ':id': dealId } : {}) },
       ...(cursor ? { ExclusiveStartKey: cursor } : {}),
     }));
     for (const item of page.Items || []) {
