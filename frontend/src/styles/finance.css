@@ -1900,3 +1900,34 @@ The summary is a tab and carries the active page's name. */
     grid-template-columns: minmax(0, 1fr);
   }
 }
+@media (max-width: 640px) {
+  .crm-stack-table,
+  .crm-stack-table tbody,
+  .crm-stack-table tr,
+  .crm-stack-table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .crm-stack-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .crm-stack-table tr {
+    padding: var(--dk-space-3, 12px) 0;
+    border-bottom: 1px solid var(--dk-border-default);
+  }
+  .crm-stack-table td {
+    padding: var(--dk-space-1) 0;
+    overflow-wrap: anywhere;
+  }
+  .crm-stack-table td[data-label="Status"],
+  .crm-stack-table td[data-label="Kind"] {
+    display: inline-block;
+    width: auto;
+    margin-right: var(--dk-space-2, 8px);
+  }
+}
