@@ -7,7 +7,7 @@ import { DIRECTORY_FILTER_KEYS, validateDirectoryState } from "../src/surfaces/f
 import { validateViewFilters } from "../src/surfaces/finance/sponsor-saved-views.js";
 import { personHeaderMarkup } from "../src/surfaces/finance/sponsor-person-detail.js";
 import { recordHeaderMarkup } from "../src/surfaces/finance/sponsor-record-markup.js";
-import { followupsTablesMarkup } from "../src/surfaces/finance/sponsor-followups.js";
+import { followupDate, followupNoteText, followupsTablesMarkup } from "../src/surfaces/finance/sponsor-followups.js";
 
 describe("CRM follow-ups and DNC frontend surface components", () => {
   it("registers followups tab in sponsor routes and navigation", () => {
@@ -126,7 +126,23 @@ describe("CRM follow-ups and DNC frontend surface components", () => {
     assert.ok(html.includes("Follow-up tasks"));
     assert.ok(html.includes("Check deck"));
 
+    assert.ok(html.includes("22 Oct") && html.includes("20 Oct") && !html.includes("2026-10-22"));
+
+    // Phones stack each row as a card: every cell carries its column label.
+    assert.ok(html.includes("crm-stack-table"));
+    assert.ok(html.includes('<td data-label="Note">revisit</td>'));
+
     const empty = followupsTablesMarkup({ items: [], records: [] }, {});
     assert.ok(empty.includes("No open follow-ups."));
+  });
+
+  it("hides the machine prefix of stored follow-up notes without rewriting them", () => {
+    assert.equal(followupNoteText("[crm-followup task:8fe1f8b0-1234] Ask about Q1. Thread 19fa (work Gmail)."), "Ask about Q1. Thread 19fa (work Gmail).");
+    assert.equal(followupNoteText("plain note"), "plain note");
+    assert.equal(followupNoteText(null), "");
+    assert.equal(followupDate("2026-10-26"), "26 Oct");
+    assert.equal(followupDate(""), "No date");
+    const html = followupsTablesMarkup({ items: [], records: [{ kind: "company", id: "o", name: "X", follow_up_at: "2026-10-26", follow_up_note: "[crm-followup task:abc] Call back", isOverdue: true }] });
+    assert.ok(html.includes("Call back") && !html.includes("crm-followup"));
   });
 });

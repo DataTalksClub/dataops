@@ -252,7 +252,7 @@ export interface TaskNote {
   createdAt: string;
 }
 
-export type TaskSubjectType = 'sponsor-deal' | 'sponsor-company' | 'sponsor-person' | 'tuition-agreement';
+export type TaskSubjectType = 'sponsor-deal' | 'sponsor-company' | 'sponsor-person' | 'tuition-agreement' | 'marketing-step';
 
 export interface TaskSubject {
   type: TaskSubjectType;
@@ -423,6 +423,7 @@ export interface CardTemplateTaskExclusion {
 }
 
 export interface Card {
+  titleReview?: import('./events/titleQuality').TitleReview;
   guestIntake?: { jobId: string; taskId: string; status: import('./events/guestIntakeStore').GuestIntakeStatus; skipEmail: boolean; recipient?: string; messageId?: string; sentAt?: string; startIso?: string; error?: string; calendarOnlySentAt?: string };
   id: string;
   /** Monotonic optimistic-concurrency token. */

@@ -22,6 +22,7 @@ import * as newsletter from "./commands/newsletter.mjs";
 import * as notifications from "./commands/notifications.mjs";
 import * as queue from "./commands/queue.mjs";
 import * as people from "./commands/people.mjs";
+import * as marketing from "./commands/marketing.mjs";
 import * as books from "./commands/books.mjs";
 import * as company from "./commands/company.mjs";
 import * as offers from "./commands/offers.mjs";
@@ -108,6 +109,7 @@ export const FAMILIES = {
   webinar: { group: "Planning", summary: "Webinar speaker materials", help: sponsorDocs.webinarDocHelp, commands: { doc: sponsorDocs.domainDocCommand("webinar") } },
   workshop: { group: "Planning", summary: "Workshop document", help: sponsorDocs.workshopDocHelp, commands: { doc: sponsorDocs.domainDocCommand("workshop") } },
   speakers: { group: "Planning", summary: speakers.summary, help: speakers.help, commands: speakers.commands },
+  marketing: { group: "Planning", summary: marketing.summary, help: marketing.help, commands: marketing.commands },
   books: { group: "Planning", summary: books.summary, help: books.help, commands: books.commands },
   calendar: {
     group: "Planning",
@@ -334,6 +336,10 @@ export async function run(argv, io = console) {
   try {
     const result = await handler(args, output);
     if (args.json) print(JSON.stringify(result ?? null, null, 2));
+    else if (result?.titleQuality) {
+      for (const issue of result.titleQuality.issues || []) print(`Title check: ${issue.message}`);
+      if (result.titleQuality.reviewRequired) print('Review the topic and title copies with dataops event title-check <card|hold|episode>; approve-title records the completed review.');
+    }
     return EXIT.ok;
   } catch (error) {
     if (wantsJson) {

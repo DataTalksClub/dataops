@@ -11,6 +11,31 @@ test.beforeAll(async () => {
   agreement = await response.json();
 });
 test.afterAll(async () => stopOwnedTestServer(server));
+test('tuition deep links render while unrelated ledger requests remain pending', async ({ browser }) => {
+  const context = await browser.newContext({ baseURL: server.baseURL });
+  const page = await context.newPage();
+  const blockedPaths = new Set();
+  let releaseLedger;
+  const ledgerGate = new Promise((resolve) => { releaseLedger = resolve; });
+  await page.route(/\/api\/bookkeeping\/(?:transactions|invoices)(?:\?|$)/, async (route) => {
+    blockedPaths.add(new URL(route.request().url()).pathname);
+    await ledgerGate;
+    await route.continue();
+  });
+  try {
+    await page.goto(`/bookkeeping?view=tuition&agreement=${agreement.id}`);
+    await expect.poll(() => [...blockedPaths].sort()).toEqual([
+      '/api/bookkeeping/invoices', '/api/bookkeeping/transactions',
+    ]);
+    await expect(page.getByRole('heading', { name: 'Tuition agreements & installments' })).toBeVisible();
+    await expect(page.locator('[data-tuition-form] [name="studentName"]')).toHaveValue('Synthetic Student');
+  } finally {
+    releaseLedger();
+    await page.unrouteAll({ behavior: 'wait' });
+    await context.close();
+  }
+});
+
 test('individual tuition has an editable billing home and retains its real condition with no invented due date', async ({ browser }, testInfo) => {
   const context = await browser.newContext({ baseURL: server.baseURL });
   const page = await context.newPage();

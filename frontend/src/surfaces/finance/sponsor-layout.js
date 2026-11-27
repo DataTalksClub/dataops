@@ -43,7 +43,6 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEsc
     ${renderCrmNav(crmNavModel(initialTab), { escapeHtml })}
     <section class="crm-pipeline-summary" data-crm-pipeline-summary aria-label="Pipeline stage totals">
       <nav class="crm-pipeline" data-crm-pipeline aria-label="Deal pipeline"></nav>
-      <p class="crm-funnel-scope">Stage totals reflect search and company; owner, date, view and stage filter the list below.</p>
     </section>
     <details class="crm-alerts">
       <summary data-crm-alert-summary>Sponsor alerts</summary>
@@ -72,22 +71,13 @@ export function sponsorSurfaceMarkup(humanizeOptionLabel, { escapeHtml = coreEsc
                 data-crm-search
                 type="search"
                 placeholder="Company, person, next action" /></label
-            ><label>Show <select data-pipeline-view>
-              <option value="actionable">Needs attention</option><option value="active">Active deals</option>
-              <option value="early">Early prospects</option><option value="overdue">Overdue</option>
-              <option value="reply">Needs reply</option>
-              <option value="unscheduled">Missing next step / date</option><option value="all">All deals</option><option value="closed">Closed / lost</option></select></label>
+            ><input data-pipeline-view type="hidden" value="actionable" />
+            <input data-crm-status type="hidden" value="" />
             <label>Sort <select data-pipeline-sort><option value="next-action">Next action</option><option value="recent">Recently updated</option></select></label>
           </div>
           <details class="crm-filter-disclosure"><summary>More filters <span class="crm-filter-badge" data-crm-filter-badge hidden></span></summary>
             <div class="crm-filters dk-split__tools">
-              <label
-                >Stage
-                <select data-crm-status>
-                  <option value="">All statuses</option>
-                  ${dealStatusOptions}
-                </select></label
-              ><label class="crm-owner-filter">Next action owner
+              <label class="crm-owner-filter">Next action owner
                 <select data-pipeline-owner><option value="">All owners</option></select></label>
               <label>Next action from <input data-pipeline-from type="date" /></label>
               <label>Through <input data-pipeline-to type="date" /></label>

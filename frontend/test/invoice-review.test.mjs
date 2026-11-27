@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { invoiceDetailMarkup, invoiceLedgerMarkup } from "../src/surfaces/finance/invoices.js";
+import { invoiceDetailMarkup, invoiceLedgerMarkup, invoiceReviewShellMarkup, markOpenInvoiceRow } from "../src/surfaces/finance/invoices.js";
 import { escapeHtml as escape } from "../src/core/html.js";
 const draft = { id: "demo", revision: 3, status: "pending", fields: { counterparty: "Example <Vendor>", amount: "12.00", currency: "USD", archiveRequired: true }, extraction: { method: "bounded-pdf-text", evidence: ["Invoice total label"], issues: ["Payment requires bank evidence"] }, source: { intakeItemIds: ["intake-demo"], artifactId: "artifact-demo", checksum: "sanitized-checksum" }, destinations: { dropbox: { state: "pending", operationId: "archive-demo" }, sheets: { state: "pending", operationId: "sheet-demo" } }, missingEvidence: ["amountEur", "paidDate"], publicationStatus: "not-confirmed", audit: [] };
 
@@ -82,4 +82,37 @@ test("blank conversions and possible duplicate invoices are flagged in the list 
     "Possible duplicate: draft",
     "Both records remain available for review.",
   ]) assert.ok(detail.includes(value), value);
+});
+
+test("the open draft's detail sits above the list, so a long list cannot push it off screen", () => {
+  const shell = invoiceReviewShellMarkup("<header></header>");
+  assert.ok(shell.indexOf("<header></header>") < shell.indexOf("data-invoice-detail"));
+  assert.ok(shell.indexOf("data-invoice-detail") < shell.indexOf("data-invoice-list"), shell);
+  // Focusable without joining the Tab order: opening a draft moves focus to it.
+  assert.ok(shell.includes('<article data-invoice-detail hidden tabindex="-1">'));
+});
+
+test("the open draft's row is marked, and unmarked while no draft is open", () => {
+  const row = (id) => ({
+    dataset: { reviewInvoice: id },
+    attrs: {},
+    setAttribute(name, value) { this.attrs[name] = value; },
+    removeAttribute(name) { delete this.attrs[name]; },
+  });
+  const rows = [row("a"), row("b")];
+  const list = { querySelectorAll: () => rows };
+  const marks = () => rows.map((item) => item.attrs["aria-current"]);
+  markOpenInvoiceRow(list, { id: "b" });
+  assert.deepEqual(marks(), [undefined, "true"]);
+  // A refresh re-renders the list; the open draft stays marked.
+  markOpenInvoiceRow(list, { id: "a" });
+  assert.deepEqual(marks(), ["true", undefined]);
+  markOpenInvoiceRow(list, undefined);
+  assert.deepEqual(marks(), [undefined, undefined]);
+});
+
+test("the draft header carries the description under the counterparty, escaped", () => {
+  const markup = invoiceDetailMarkup({ ...draft, fields: { ...draft.fields, description: "Refund <Veselka>" } }, escape);
+  assert.ok(markup.includes('<p class="invoice-review-what">Refund &lt;Veselka&gt;</p>'), markup);
+  assert.ok(!invoiceDetailMarkup(draft, escape).includes("invoice-review-what"));
 });

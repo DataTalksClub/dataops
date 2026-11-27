@@ -10,6 +10,7 @@ import {
   accountsOf,
   bankOnlyEntryFromMonthRow,
   CLASSIFICATION_FIELDS,
+  createBookkeepingRouter,
   displayRowCount,
   emptyLedgerMarkup,
   filterEntries,
@@ -18,13 +19,14 @@ import {
   inLens,
   INVOICE_SOURCE_PREFIX,
   invoiceSourceDocuments,
+  ledgerClickAction,
   linkedEvidenceDocuments,
-  LEDGER_PARAMS,
   ledgerTableMarkup,
+  markSelectedLedgerRow,
   needsCategory,
   pendingInvoiceEntry,
+  readBookkeepingRoute,
   resolveAccountName,
-  SECONDARY_VIEWS,
   suggestionLoader,
   suggestionsMarkup,
   vocabulary,
@@ -51,7 +53,6 @@ import {
   yearsOf,
 } from "./bookkeeping-format.js";
 
-const LENS = /^(\d{4}(-\d{2})?|all)$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const CURRENCY = /^[A-Z]{3}$/;
 // Detail fields whose empty value clears the stored one (sent as null).
@@ -86,20 +87,22 @@ export function createBookkeepingSurface(context) {
       accounts = [],
       reports = [],
       statementLinks = new Map();
-    const initial = new URLSearchParams(locationRef?.search || "");
+    const initialRoute = readBookkeepingRoute(locationRef?.search || "");
     // The lens is a month ("YYYY-MM"), a year, or "all". Without one in the
     // URL it opens on the latest month that has transactions.
-    let lens = LENS.test(initial.get("month") || "") ? initial.get("month") : "";
-    let filters = filtersFromParams(initial);
-    let selectedId = initial.get("tx") || "";
+    let lens = initialRoute.lens;
+    let filters = initialRoute.filters;
+    let selectedId = initialRoute.tx || "";
     // Secondary views (files, package/VAT, invoices, tuition) ride ?view= on
     // the ledger path; inventory is a separate surface at /invertory.
-    const requestedView = initial.get("view") || "";
-    let view = SECONDARY_VIEWS.includes(requestedView) ? requestedView : "";
-    let defaultLens = "", invoicesMounted = false, invoiceReviewApi = null, pendingInvoiceToOpen = "";
+    let view = initialRoute.view;
+    // The invoice draft open for review while ?view=invoices. It travels in
+    // the URL next to the list context so Back returns to the same list.
+    let selectedInvoiceId = initialRoute.invoice || "";
+    let defaultLens = "", invoicesMounted = false, invoiceReviewApi = null, invoiceMountPromise = null;
     const reconciliationCache = new Map();
     let reconciliationGeneration = 0;
-    const loadTuition = createTuitionLoader(surface.querySelector("[data-tuition]"), context, initial.get("agreement"));
+    const loadTuition = createTuitionLoader(surface.querySelector("[data-tuition]"), context, new URLSearchParams(locationRef?.search || "").get("agreement"));
     let vocab = {};
     const suggestions = suggestionLoader({ load: (id) => api(`/transactions/${encodeURIComponent(id)}/suggestions`),
       holder: (id) => (selectedId === id ? transactionDialog.querySelector("[data-suggestions]") : null),
@@ -152,22 +155,37 @@ export function createBookkeepingSurface(context) {
       link.click();
     }
 
-    function syncUrl() {
-      if (view === "tuition" || !historyRef?.replaceState || !locationRef) return;
-      const params = new URLSearchParams();
-      // The default month (latest with transactions) stays out of the URL.
-      const values = {
-        month: lens === defaultLens ? "" : lens,
-        ...filters,
-        tx: selectedId,
-        view,
-      };
-      for (const name of LEDGER_PARAMS) if (values[name]) params.set(name, values[name]);
-      const query = params.toString();
-      const next = `/bookkeeping${query ? `?${query}` : ""}`;
-      if (`${locationRef.pathname}${locationRef.search}` !== next)
-        historyRef.replaceState(historyRef.state, "", next);
-    }
+    const router = createBookkeepingRouter({
+      locationRef,
+      historyRef,
+      getRoute: () => ({ lens, defaultLens, filters, tx: selectedId, view, invoice: selectedInvoiceId }),
+      setRoute: (route) => {
+        lens = route.lens || defaultLens || lens;
+        filters = route.filters;
+        view = route.view;
+        selectedInvoiceId = route.invoice;
+        selectedId = route.tx;
+      },
+      render: () => {
+        navigation.refresh();
+        renderView();
+        renderFilterOptions();
+        renderLedger();
+      },
+      findEntry: (id) => entries.find((entry) => entry.id === id) || null,
+      openEntry: (entry) => {
+        markSelectedLedgerRow(ledger, selectedId);
+        transactionModal.render(entry);
+      },
+      closeEntry: () => {
+        selectedId = "";
+        markSelectedLedgerRow(ledger, selectedId);
+        if (transactionDialog.open) transactionDialog.close();
+      },
+      openDraft: (invoiceId) => openMountedInvoice(invoiceId),
+      isLive: () => surface.isConnected,
+    });
+    const syncUrl = router.sync;
 
     const hasEvidence = (id) =>
       bankOnlyEntries.some((entry) => entry.id === id)
@@ -242,27 +260,37 @@ export function createBookkeepingSurface(context) {
       if (view === "tuition") loadTuition();
       if (view === "invoices" && !invoicesMounted) {
         invoicesMounted = true;
-        const initialInvoiceId = pendingInvoiceToOpen;
-        pendingInvoiceToOpen = "";
-        void mountInvoiceReview(surface.querySelector("[data-invoice-review]"), context, {
-          initialInvoiceId,
+        // One mount per surface lifetime; every opener awaits the same
+        // promise, so a second click while the review is still mounting
+        // still lands on its own draft instead of the full list.
+        invoiceMountPromise = mountInvoiceReview(surface.querySelector("[data-invoice-review]"), context, {
           onInvoicesChanged: (items) => {
             applyInvoiceItems(items);
             renderLedger();
           },
-        }).then((handle) => {
+        });
+        invoiceMountPromise.then((handle) => {
           invoiceReviewApi = handle;
+        }, (error) => {
+          status.textContent = `Could not load forwarded invoices: ${error.message}`;
         });
       }
     }
-    async function openInvoiceReview(invoiceId) {
-      view = "invoices";
-      pendingInvoiceToOpen = invoiceId || "";
-      renderView();
-      syncUrl();
-      if (invoiceReviewApi && invoiceId) {
-        await invoiceReviewApi.openInvoice(invoiceId);
+    // No id: the forwarded-invoice list stands alone, closing a draft left open earlier.
+    async function openMountedInvoice(invoiceId) {
+      try {
+        const handle = invoiceReviewApi || await invoiceMountPromise;
+        if (invoiceId) await handle?.openInvoice(invoiceId); else handle?.closeInvoice();
+      } catch (error) {
+        status.textContent = `Could not open the invoice: ${error.message}`;
       }
+    }
+    async function openInvoiceReview(invoiceId, { push = true } = {}) {
+      view = "invoices";
+      selectedInvoiceId = invoiceId || "";
+      renderView();
+      syncUrl({ push });
+      await openMountedInvoice(selectedInvoiceId);
     }
     function optionList(select, values, allLabel, current) {
       select.innerHTML = [
@@ -361,15 +389,20 @@ export function createBookkeepingSurface(context) {
     function selectedEntry() {
       return entries.find((entry) => entry.id === selectedId) || null;
     }
-    function openTransaction(id) {
+    function openTransaction(id, { push = true } = {}) {
+      if (!id) return;
+      if (id === selectedId && transactionDialog.open) return;
+      // A draft row id opens its invoice draft for review instead of the
+      // transaction dialog; bank-only rows have no line item to open.
+      if (String(id).startsWith("invoice-draft:")) {
+        void openInvoiceReview(String(id).slice("invoice-draft:".length), { push });
+        return;
+      }
       const entry = entries.find((e) => e.id === id);
       if (!entry) return;
       selectedId = id;
-      ledger.querySelectorAll("[data-tx]").forEach((row) => {
-        if (row.dataset.tx === id) row.setAttribute("aria-selected", "true");
-        else row.removeAttribute("aria-selected");
-      });
-      syncUrl();
+      markSelectedLedgerRow(ledger, selectedId);
+      syncUrl({ push });
       transactionModal.render(entry);
     }
     function replaceEntry(saved) {
@@ -581,6 +614,14 @@ export function createBookkeepingSurface(context) {
       invoiceDrafts = (Array.isArray(items) ? items : []).filter((item) => item.status === "pending");
       surface.querySelector("[data-invoices-meta]").textContent = invoiceDrafts.length ? `${invoiceDrafts.length} to review` : "";
     }
+    // The invoice review can publish drafts, so the ledger reloads once it closes.
+    function reloadAfterInvoices() {
+      void Promise.all([api("/transactions"), api("/invoices")]).then(([txResult, invResult]) => {
+        entries = txResult.items || [];
+        applyInvoiceItems(invResult.items || []);
+        renderAll();
+      }).catch(() => {});
+    }
 
     const transactionModal = createBookkeepingTransactionModal({
       dialog: transactionDialog,
@@ -608,7 +649,7 @@ export function createBookkeepingSurface(context) {
       onClose: () => {
         selectedId = "";
         ledger.querySelector('[aria-selected="true"]')?.removeAttribute("aria-selected");
-        syncUrl();
+        if (!router.returnToPrevious()) syncUrl();
       },
     });
 
@@ -637,36 +678,25 @@ export function createBookkeepingSurface(context) {
       }
     });
     ledger.addEventListener("click", (event) => {
-      const documentId = event.target.closest("[data-view-document]")?.dataset.viewDocument;
-      if (documentId) {
+      const action = ledgerClickAction(event.target);
+      if (!action) return;
+      if (action.action === "document") {
         event.preventDefault();
-        safeAction(() => viewDocument(documentId), "Could not open the file");
+        safeAction(() => viewDocument(action.id), "Could not open the file");
         return;
       }
-      if (event.target.closest("[data-clear-filters]")) {
+      if (action.action === "clear-filters") {
         filters = filtersFromParams(new URLSearchParams());
         renderFilterOptions();
         renderLedger();
         syncUrl();
         return;
       }
-      const opener = event.target.closest("button[data-open-tx]");
-      if (opener) {
-        event.preventDefault();
-        openTransaction(opener.dataset.openTx);
-        return;
-      }
-      if (event.target.closest("select, button, input, a[data-deal-link]")) return;
-      const draftLink = event.target.closest("[data-open-invoice-review]") || event.target.closest("[data-pending-invoice]");
-      if (draftLink) {
-        event.preventDefault();
-        void openInvoiceReview(draftLink.dataset.openInvoiceReview || draftLink.dataset.pendingInvoice);
-        return;
-      }
-      const row = event.target.closest("[data-tx]");
-      if (!row) return;
+      // Every line item opens in place: a posted transaction opens its
+      // detail dialog, a pending draft opens that draft for review.
       event.preventDefault();
-      openTransaction(row.dataset.tx);
+      if (action.action === "invoice") void openInvoiceReview(action.id);
+      else openTransaction(action.id);
     });
     ledger.addEventListener("change", (event) => {
       const select = event.target.closest("[data-inline-field]");
@@ -695,21 +725,18 @@ export function createBookkeepingSurface(context) {
       if (more.open && !more.contains(event.target)) more.open = false;
       const link = event.target.closest("[data-view-link]");
       if (!link) return;
+      // The section's ← button returns the way browser Back does.
+      const returned = link.dataset.viewLink === "" && router.returnToPrevious();
       const previousView = view;
       view = link.dataset.viewLink || "";
+      if (view !== "invoices") selectedInvoiceId = ""; else if (!selectedInvoiceId) void openMountedInvoice("");
       renderView();
-      if (view === "" && previousView === "invoices") {
-        void Promise.all([api("/transactions"), api("/invoices")]).then(([txResult, invResult]) => {
-          entries = txResult.items || [];
-          applyInvoiceItems(invResult.items || []);
-          renderAll();
-        }).catch(() => {});
-      }
+      if (view === "" && previousView === "invoices") reloadAfterInvoices();
       if (view === "package") {
         renderPackageReview();
         renderVat();
       }
-      syncUrl();
+      if (!returned) syncUrl({ push: true });
     });
 
     surface
@@ -920,8 +947,7 @@ export function createBookkeepingSurface(context) {
       .querySelector("[data-vat-year]")
       .addEventListener("change", renderVat);
     setupAccountsReady = true;
-
-    // ---- load ------------------------------------------------------------------
+    if (view === "tuition") renderView();
     try {
       const [transactions, invoices] = await Promise.allSettled([api("/transactions"), api("/invoices")]);
       if (transactions.status === "rejected") throw transactions.reason;
@@ -940,13 +966,24 @@ export function createBookkeepingSurface(context) {
         years.map((y) => html`<option>${y}</option>`).join(""),
       );
       vatYears.value = years[0] || "";
-      // Opening a transaction by link: show its month.
-      const linked = selectedEntry();
+      // Opening a line item by link: show its month, then open it without
+      // pushing (the link itself is the history entry).
+      const draftLinked = selectedId && String(selectedId).startsWith("invoice-draft:")
+        ? activePendingDraftEntries().find((e) => e.id === selectedId) || null
+        : null;
+      const linked = selectedEntry() || draftLinked;
       if (linked && !inLens(linked, lens)) lens = monthOf(linked) || lens;
       renderAll();
       await refreshEvidence();
       void loadStatementLinks();
-      if (selectedId) openTransaction(selectedId);
+      if (draftLinked) {
+        const draftId = String(selectedId).slice("invoice-draft:".length);
+        selectedId = "";
+        await openInvoiceReview(draftId, { push: false });
+      } else {
+        if (selectedId) openTransaction(selectedId, { push: false });
+        if (view === "invoices" && selectedInvoiceId) await openMountedInvoice(selectedInvoiceId);
+      }
       if (view === "package") await renderVat();
     } catch (error) {
       ledger.textContent = `Could not load bookkeeping: ${error.message}`;

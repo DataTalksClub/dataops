@@ -6,24 +6,40 @@ export const SPONSOR_PIPELINE_STAGES = Object.freeze([
   { id: 'closed', label: 'Closed' }, { id: 'lost', label: 'Lost' },
 ]);
 
-export function renderSponsorPipelineFilters({ counts = {}, selected = '', escapeHtml }) {
+// A chip shows how many of its deals the current view lists. When the view
+// hides some, it says so ("5 of 18"), so the chips always agree with the list.
+export function pipelineChipCount(counts = {}, viewCounts, id) {
+  const total = counts[id] || 0;
+  const shown = viewCounts ? (viewCounts[id] || 0) : total;
+  return shown === total ? String(total) : `${shown} of ${total}`;
+}
+
+export function renderSponsorPipelineFilters({ counts = {}, viewCounts, selected = '', escapeHtml }) {
   return SPONSOR_PIPELINE_STAGES.map(({ id, label }) => html`<button type="button"
     data-pipeline-status="${id}" aria-pressed="${selected === id}">
-    ${label} <strong>${escapeHtml(counts[id] || 0)}</strong></button>`).join('');
+    ${label} <strong>${escapeHtml(pipelineChipCount(counts, viewCounts, id))}</strong></button>`).join('');
 }
+
+export function pipelineMatchSummary({ total = 0, totalDeals = 0 } = {}) {
+  const matching = `${total} ${total === 1 ? 'matching deal' : 'matching deals'}`;
+  return totalDeals > total ? `${matching} · ${totalDeals} deals in total` : matching;
+}
+
+const COMMITTED_STAGES = ['agreed', 'invoiced', 'running'];
 
 function row(item, { escapeHtml: e, humanSponsorDate: date, ownerName }) {
   const contact = item.primaryContact;
   const task = item.nextTask;
   const review = item.replyReview && (!task || task.deferred);
-  const action = review ? 'Review newer inbound (inferred)' : task ? `${task.deferred ? 'Deferred: ' : ''}${task.description}` : 'No open task';
+  const action = review ? 'Newer inbound to review' : task ? `${task.deferred ? 'Deferred: ' : ''}${task.description}` : 'No open task';
   const when = review ? `Inbound ${date(item.inboundAt)}` : task?.date ? date(task.date) : '';
   const deferred = review && task?.deferred ? `Deferred task: ${task.description}` : '';
   const amount = item.amountEur != null ? new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(item.amountEur) : '—';
   return html`<tr>
     <td><button class="crm-row-link" data-open-deal="${e(item.id)}">${e(item.organizationName)}</button>
       ${item.title ? html`<small>${e(item.title)}</small>` : ''}
-      <small>${contact ? e([contact.name, contact.email].filter(Boolean).join(' · ')) : 'No primary contact'}</small>
+      ${contact ? html`<small>${e([contact.name, contact.email].filter(Boolean).join(' · '))}</small>`
+        : COMMITTED_STAGES.includes(item.stage) ? html`<small class="crm-missing">No primary contact</small>` : ''}
       <small class="crm-phone-stage">${e(item.stage)}</small></td>
     <td>${e(SPONSOR_PIPELINE_STAGES.find(({ id }) => id === item.stage)?.label || item.stage)}</td>
     <td>${task && !review
@@ -72,14 +88,14 @@ export function createSponsorPipelineView({ api, surface, escapeHtml, humanSpons
   const previous = [];
   const root = surface.querySelector('[data-crm-bookings]');
   function draw() {
-    surface.querySelector('[data-crm-pipeline]').setAttribute('aria-label', 'Stage totals reflect search and company; owner, date, view and stage filter the list below');
+    surface.querySelector('[data-crm-pipeline]').setAttribute('aria-label', 'Deals per stage in the current view');
     surface.querySelector('[data-crm-pipeline]').innerHTML = renderSponsorPipelineFilters({
-      counts: result.counts, selected: surface.querySelector('[data-crm-status]').value, escapeHtml,
+      counts: result.counts, viewCounts: result.viewCounts, selected: surface.querySelector('[data-crm-status]').value, escapeHtml,
     });
-    surface.querySelector('[data-booking-count]').textContent = `${result.total} ${result.total === 1 ? 'matching deal' : 'matching deals'}`;
+    surface.querySelector('[data-booking-count]').textContent = pipelineMatchSummary(result);
     const badge = surface.querySelector('[data-crm-filter-badge]');
     if (badge) {
-      const activeFilters = ['[data-crm-status]', '[data-pipeline-owner]', '[data-pipeline-from]', '[data-pipeline-to]']
+      const activeFilters = ['[data-pipeline-owner]', '[data-pipeline-from]', '[data-pipeline-to]']
         .filter((sel) => surface.querySelector(sel)?.value).length;
       badge.textContent = activeFilters ? String(activeFilters) : '';
       badge.hidden = !activeFilters;

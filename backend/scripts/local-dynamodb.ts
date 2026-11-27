@@ -31,6 +31,7 @@ import {
   TABLE_SECRETS,
   TABLE_PEOPLE,
   TABLE_BOOKS,
+  TABLE_MARKETING,
 } from '../src/db/tableNames';
 
 const DATA_DIR = path.join(__dirname, '..', '.data');
@@ -94,6 +95,7 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
     {TableName:TABLE_PODCAST_EPISODES,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'rangeKey',AttributeType:'S' as const},{AttributeName:'dateKey',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-Date',KeySchema:[{AttributeName:'rangeKey',KeyType:'HASH' as const},{AttributeName:'dateKey',KeyType:'RANGE' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
     {TableName:TABLE_PEOPLE,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const}],BillingMode:'PAY_PER_REQUEST' as const},
     {TableName:TABLE_BOOKS,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const}],BillingMode:'PAY_PER_REQUEST' as const},
+    {TableName:TABLE_MARKETING,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'stepId',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-StepId',KeySchema:[{AttributeName:'stepId',KeyType:'HASH' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
     {TableName:TABLE_NEWSLETTER_SLOTS,KeySchema:[{AttributeName:'PK',KeyType:'HASH' as const},{AttributeName:'SK',KeyType:'RANGE' as const}],AttributeDefinitions:[{AttributeName:'PK',AttributeType:'S' as const},{AttributeName:'SK',AttributeType:'S' as const},{AttributeName:'rangeKey',AttributeType:'S' as const},{AttributeName:'publicationKey',AttributeType:'S' as const}],GlobalSecondaryIndexes:[{IndexName:'GSI-Date',KeySchema:[{AttributeName:'rangeKey',KeyType:'HASH' as const},{AttributeName:'publicationKey',KeyType:'RANGE' as const}],Projection:{ProjectionType:'ALL' as const}}],BillingMode:'PAY_PER_REQUEST' as const},
     {
       TableName: TABLE_SPONSOR_CRM,
@@ -389,6 +391,7 @@ async function deleteTables(client: DynamoDBDocumentClient): Promise<void> {
     TABLE_PODCAST_EPISODES,
     TABLE_PEOPLE,
     TABLE_BOOKS,
+    TABLE_MARKETING,
   ];
 
   for (const tableName of tableNames) {
@@ -435,4 +438,5 @@ export {
   TABLE_SECRETS,
   TABLE_PEOPLE,
   TABLE_BOOKS,
+  TABLE_MARKETING,
 };
