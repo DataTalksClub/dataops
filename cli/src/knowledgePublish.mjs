@@ -115,7 +115,7 @@ export function completedMirrorBytes(file, bytes, completeAliases = true) {
   const id = header && /^(id:[ \t]*(?:[a-zA-Z0-9_.-]+|"[a-zA-Z0-9_.-]+"|'[a-zA-Z0-9_.-]+')[ \t]*)$/m.exec(header[1]);
   if (ids?.length > 1) return bytes;
   if (completeAliases && id && !/^[ \t]*["']?aliases["']?[ \t]*:/m.test(header[1])) {
-    const completed = header[0].replace(id[0], id[0] + "\naliases: []");
+    const completed = header[0].replace(/^(id:[^\n]*)$/m, "$1\naliases: []");
     text = completed + text.slice(header[0].length);
   }
   return Buffer.from(text);
