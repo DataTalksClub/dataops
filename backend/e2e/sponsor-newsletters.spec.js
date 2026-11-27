@@ -71,9 +71,10 @@ test.describe("sponsor newsletter catalog", () => {
     await expect(page.locator(".crm-layout")).toBeHidden();
     await expect(page.locator(".crm-leads")).toBeHidden();
     await page.setViewportSize({ width: 390, height: 844 });
-    const newslettersTab = page.locator("[data-crm-nav-tab='newsletters']");
-    await newslettersTab.scrollIntoViewIfNeeded();
-    await expect(newslettersTab).toHaveText("Newsletter sources");
+    const moreTab = page.locator("[data-crm-nav-more-label]");
+    await expect(moreTab).toHaveText("Newsletters");
+    await expect(moreTab).toHaveAttribute("aria-current", "page");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await expect(page.locator(".crm-newsletters")).toBeVisible();
     await page.setViewportSize({ width: 1440, height: 900 });
     const weekly = page.locator(".crm-newsletter-row").filter({ hasText: "Data Engineering Weekly" });
@@ -164,6 +165,8 @@ test.describe("sponsor newsletter catalog", () => {
     await page.locator("[data-crm-nav-more] > summary").click();
     await page.locator("[data-crm-nav-tab='leads']").click();
     await expect(page).toHaveURL(/\/sponsors\/leads$/);
+    // Choosing a More entry closes the menu; reopen it for the next one.
+    await page.locator("[data-crm-nav-more] > summary").click();
     await page.locator("[data-crm-nav-tab='newsletters']").click();
     await expect(page).toHaveURL(/\/sponsors\/newsletters$/);
     await page.goBack();

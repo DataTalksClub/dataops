@@ -1270,7 +1270,7 @@ test("the deal page's next action is the Pipeline row's text and date", () => {
   const cases = [
     ["a due task", { ...pipelineRow }, "Check invoice DEMO-48 is paid by its 15 Nov due date", "16 Nov"],
     ["a deferred task", { ...pipelineRow, nextTask: { ...task, deferred: true } }, "Deferred: Check invoice DEMO-48 is paid by its 15 Nov due date", "16 Nov"],
-    ["a newer inbound to review", { ...pipelineRow, replyReview: true, inboundAt: "2026-11-10T09:00:00Z", nextTask: { ...task, deferred: true } }, "Review newer inbound (inferred)", "Inbound 10 Nov"],
+    ["a newer inbound to review", { ...pipelineRow, replyReview: true, inboundAt: "2026-11-10T09:00:00Z", nextTask: { ...task, deferred: true } }, "Newer inbound to review", "Inbound 10 Nov"],
     ["no open task", { ...pipelineRow, nextTask: null }, "No open task", ""],
   ];
   for (const [name, item, action, when] of cases) {

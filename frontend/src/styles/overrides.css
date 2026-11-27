@@ -491,6 +491,11 @@ body[data-workspace-view] .task-modal-panel button,
    own wrap instead. */
 .invoice-review-section > [data-invoice-review] { min-width: 0; }
 .invoice-review-section [data-invoice-detail] { padding-block: var(--dk-space-6) var(--dk-space-4); }
+/* A draft opened from the ledger is the focus: only its status line and the
+   record stay; the queue heading, readiness and list belong to the menu route. */
+.invoice-review-section [data-invoice-focus] > :not([data-invoice-status]):not([data-invoice-detail]) { display: none; }
+.invoice-review-section [data-invoice-focus] [data-invoice-status]:empty { display: none; }
+.invoice-review-what { margin: var(--dk-space-1) 0 0; color: var(--dk-text-secondary); font-size: var(--dk-text-md); }
 .invoice-review-section [data-invoice-list] { margin-block-end: var(--dk-space-4); }
 .invoice-review-section [data-invoice-list] small { display: block; }
 .invoice-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--dk-space-4); }

@@ -947,8 +947,7 @@ export function createBookkeepingSurface(context) {
       .querySelector("[data-vat-year]")
       .addEventListener("change", renderVat);
     setupAccountsReady = true;
-
-    // ---- load ------------------------------------------------------------------
+    if (view === "tuition") renderView();
     try {
       const [transactions, invoices] = await Promise.allSettled([api("/transactions"), api("/invoices")]);
       if (transactions.status === "rejected") throw transactions.reason;
