@@ -28,6 +28,7 @@
  * "Absent" is a Git-recorded state only where Git deleted the path, or before
  * prod's first version of it.
  */
+import { load as loadYaml } from "js-yaml";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -94,6 +95,58 @@ export function classify(states, known, headSha) {
   if (index === 0) return "publish";
   if (index === -1) return "conflict";
   return (states[index] === ORIGIN ? null : states[index]) === headSha ? "ahead" : "conflict";
+}
+
+/**
+ * The mirror completes missing empty aliases and Python text IO converts CRLF
+ * to LF before committing. Recognize exactly these representation changes;
+ * never ignore authored metadata, whitespace in the body, or binary bytes.
+ */
+export function completedMirrorBytes(file, bytes, completeAliases = true) {
+  if (!file.endsWith(".md") || bytes.includes(0)) return bytes;
+  let text = bytes.toString("utf8");
+  if (!Buffer.from(text).equals(bytes)) return bytes;
+  text = text.replaceAll("\r\n", "\n");
+  const header = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(text);
+  let metadata;
+  try { metadata = header && loadYaml(header[1]); } catch { return bytes; }
+  if (completeAliases && metadata && typeof metadata.id === "string" && !Object.hasOwn(metadata, "aliases")) {
+    const completed = header[0].replace(/^(id:[^\n]*)$/m, "$1\naliases: []");
+    text = completed + text.slice(header[0].length);
+  }
+  return Buffer.from(text);
+}
+
+/**
+ * Raw history hashes remain authoritative. Only use a completed identity after
+ * downloading and verifying the original bytes, and finding those exact
+ * completed bytes in Git. Cache pages because publish and mirror share walks.
+ */
+export function mirrorHistory({ page, version, known }) {
+  const cache = new Map();
+  return (file, cursor) => {
+    const key = JSON.stringify([file, cursor]);
+    if (!cache.has(key)) cache.set(key, (async () => {
+      const result = await page(file, cursor);
+      if (!file.endsWith(".md")) return result;
+      const versions = [];
+      for (const item of result.versions || []) {
+        let state = item;
+        if (!item.deleted && !known(file).has(item.sha256)) {
+          const bytes = await version(file, item.revision);
+          if (!bytes || sha256(bytes) !== item.sha256) {
+            throw new Error(`${file}: history bytes do not match the recorded sha256`);
+          }
+          const completed = sha256(completedMirrorBytes(file, bytes));
+          if (known(file).has(completed)) state = { ...item, sha256: completed };
+        }
+        versions.push(state);
+        if (known(file).has(state.deleted ? null : state.sha256)) break;
+      }
+      return { ...result, versions };
+    })());
+    return cache.get(key);
+  };
 }
 
 /** Run `fn` over `items` with at most `limit` calls in flight; rejects with the first error. */
@@ -328,7 +381,12 @@ export async function planMirror({ files, prod, known, page, version, recordedBy
       } else if (ours.includes(0) || theirs.includes(0)) {
         conflicts.push({ path: file, prod: "differs", reason: "both sides changed this binary file" });
       } else {
-        const merged = threeWayMerge({ ours, baseBytes, theirs });
+        const completeAliases = /^aliases: \[\]$/m.test(baseBytes.toString("utf8"));
+        const merged = threeWayMerge({
+          ours: completedMirrorBytes(file, ours, completeAliases),
+          baseBytes: completedMirrorBytes(file, baseBytes, completeAliases),
+          theirs: completedMirrorBytes(file, theirs, completeAliases),
+        });
         if (merged.conflicts) conflicts.push({ path: file, prod: "differs", reason: "both sides changed the same lines; resolve them by hand" });
         else writes.push({ path: file, bytes: merged.bytes, operation: "edit", merged: true });
       }

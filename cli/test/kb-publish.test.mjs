@@ -272,13 +272,13 @@ describe("kb publish from a Git checkout", () => {
     return fakePortal({
       "GET /knowledge/manifest": () => ({ revision: current, roots: ROOTS, entries: prodOf(prodFiles) }),
       "GET /knowledge/history": ({ query }) => ({
-        versions: (history[query.path] || []).map((body) => ({ sha256: h(body), deleted: body === null })),
+        versions: (history[query.path] || []).map((body) => ({ sha256: h(body), deleted: body === null, revision: h(body) })),
         cursor: null,
       }),
       "GET /knowledge/download": ({ query }) => ({
-        url: `https://portal.test/storage?path=${encodeURIComponent(query.path)}`,
+        url: `https://portal.test/storage?path=${encodeURIComponent(query.path)}&revision=${query.revision || ""}`,
       }),
-      "GET /storage": ({ query }) => new Response(prodFiles[query.path] ?? ""),
+      "GET /storage": ({ query }) => new Response((history[query.path] || []).find((body) => h(body) === query.revision) ?? prodFiles[query.path] ?? ""),
       "POST /knowledge/publish": ({ body }) => {
         if (body.expectedRevision !== current) return { status: 409, body: { error: "Knowledge changed" } };
         current = `${current}+`;
@@ -357,6 +357,19 @@ describe("kb publish from a Git checkout", () => {
       assert.match(io.errors.join("\n"), reason);
       assert.equal(calls.some((call) => call.method === "POST"), false);
     }
+  });
+
+  test("publishes completed snapshot bytes without a false both-sides conflict", async () => {
+    const file = "content/completed.md";
+    const raw = "---\r\nid: example.completed\r\n---\r\nOriginal\r\n";
+    const completed = "---\nid: example.completed\naliases: []\n---\nOriginal\n";
+    write(file, completed);
+    commit("completed portal snapshot");
+    const calls = portal({ [file]: raw }, { [file]: [raw] });
+    const io = captureIo();
+    assert.equal(await run(["kb", "publish", "--repo", repo, "--json"], io), 0, io.errors.join("\n"));
+    const mutation = calls.find((call) => call.method === "POST").body.mutations[0];
+    assert.equal(Buffer.from(mutation.base64, "base64").toString(), completed);
   });
 
   test("repairs files Git restored to an older version, with exact bytes and the commit in the message", async () => {

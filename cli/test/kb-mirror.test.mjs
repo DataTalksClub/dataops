@@ -10,7 +10,7 @@ import { captureIo, fakePortal, isolateConfig } from "./helpers.mjs";
 isolateConfig();
 const realFetch = globalThis.fetch;
 const { run } = await import("../src/cli.mjs");
-const { planMirror, sha256, threeWayMerge, walkLineage } = await import("../src/knowledgePublish.mjs");
+const { completedMirrorBytes, mirrorHistory, planMirror, sha256, threeWayMerge, walkLineage } = await import("../src/knowledgePublish.mjs");
 
 const ROOTS = ["content", "_docs", "workflow-templates", "document-templates"];
 const h = (value) => (value === null ? null : sha256(Buffer.from(value)));
@@ -37,7 +37,7 @@ describe("three-way merge", () => {
 
 describe("mirror planning", () => {
   const fileOf = (files) => new Map(Object.entries(files).map(([file, body]) => [file, { bytes: Buffer.from(body), sha: h(body) }]));
-  const version = (body) => ({ sha256: body === null ? null : h(body), deleted: body === null, revision: `rev-${body}` });
+  const version = (body) => ({ sha256: body === null ? null : h(body), deleted: body === null, revision: h(body) });
 
   test("mirrors prod-ahead edits verbatim: edits, creations and deletions", async () => {
     const bodies = { "content/a.md": "web edit", "content/gone.md": null, "content/web-created.md": "web only" };
@@ -166,6 +166,27 @@ describe("mirror planning", () => {
   });
 });
 
+test("normalization never discards body whitespace, authored aliases, lifecycle or invalid bytes", () => {
+  const file = "content/test.md";
+  for (const body of [
+    "---\nid: test\naliases: [old]\nstatus: active\n---\nBody  \n",
+    "---\nid: one\nid: two\n---\nBody\n",
+    Buffer.from([0xff, 0x00, 0x0d, 0x0a]),
+  ]) {
+    const bytes = Buffer.from(body);
+    assert.deepEqual(completedMirrorBytes(file, bytes), bytes);
+  }
+});
+
+test("history normalization fails closed when downloaded bytes do not match history", async () => {
+  const page = mirrorHistory({
+    known: () => new Set(),
+    page: async () => ({ versions: [{ revision: "r", sha256: h("expected") }], cursor: null }),
+    version: async () => Buffer.from("wrong"),
+  });
+  await assert.rejects(() => page("content/test.md"), /history bytes do not match/);
+});
+
 describe("kb mirror from a Git checkout", () => {
   let repo;
   const git = (...args) => execFileSync("git", ["-C", repo, ...args], { encoding: "utf8" }).trim();
@@ -196,11 +217,11 @@ describe("kb mirror from a Git checkout", () => {
     return fakePortal({
       "GET /knowledge/manifest": () => ({ revision: "rev-current", roots: ROOTS, entries: prodOf(prodFiles) }),
       "GET /knowledge/history": ({ query }) => ({
-        versions: (history[query.path] || []).map((body) => ({ sha256: h(body), deleted: body === null, revision: `rev-${body}` })),
+        versions: (history[query.path] || []).map((body) => ({ sha256: h(body), deleted: body === null, revision: h(body) })),
         cursor: null,
       }),
-      "GET /knowledge/download": ({ query }) => ({ url: `https://portal.test/storage?path=${encodeURIComponent(query.path)}` }),
-      "GET /storage": ({ query }) => new Response(prodFiles[query.path] ?? "", { status: 200, headers: { "content-type": "application/octet-stream" } }),
+      "GET /knowledge/download": ({ query }) => ({ url: `https://portal.test/storage?path=${encodeURIComponent(query.path)}&revision=${query.revision || ""}` }),
+      "GET /storage": ({ query }) => new Response((history[query.path] || []).find((body) => h(body) === query.revision) ?? prodFiles[query.path] ?? "", { status: 200, headers: { "content-type": "application/octet-stream" } }),
     });
   }
 
@@ -244,6 +265,51 @@ describe("kb mirror from a Git checkout", () => {
     ]);
     assert.match(io.errors.join("\n"), /content\/clash\.md/);
     assert.match(io.errors.join("\n"), /the clean mirror was applied to the working tree/);
+  });
+
+  test("recognizes portal bytes after the snapshot completes aliases and line endings", async () => {
+    const file = "content/completed.md";
+    const raw = "---\r\nid: example.completed\r\ntitle: Example\r\n---\r\n\r\nOriginal text.\r\n";
+    const completed = completedMirrorBytes(file, Buffer.from(raw));
+    write(file, completed);
+    commit("snapshot completes portal metadata");
+    portal({ [file]: raw }, { [file]: [raw] });
+    const io = captureIo();
+    assert.equal(await run(["kb", "mirror", "--repo", repo, "--json"], io), 0, io.errors.join("\n"));
+    assert.deepEqual(io.json().applied, []);
+    assert.deepEqual(readFileSync(path.join(repo, file)), completed);
+  });
+
+  test("merges later independent edits against a completed portal history base", async () => {
+    const file = "content/completed.md";
+    const raw = "---\r\nid: example.completed\r\ntitle: Example\r\n---\r\n\r\nTop\r\nMiddle\r\nBottom\r\n";
+    const completed = completedMirrorBytes(file, Buffer.from(raw)).toString();
+    write(file, completed);
+    commit("completed snapshot");
+    write(file, completed.replace("Top", "Git top"));
+    commit("Git edits top");
+    const live = raw.replace("Bottom", "Portal bottom");
+    portal({ [file]: live }, { [file]: [live, raw] });
+    const io = captureIo();
+    assert.equal(await run(["kb", "mirror", "--repo", repo, "--json"], io), 0, io.errors.join("\n"));
+    assert.deepEqual(io.json().applied, [{ path: file, operation: "edit", merged: true }]);
+    assert.equal(read(file), completed.replace("Top", "Git top").replace("Bottom", "Portal bottom"));
+  });
+
+  test("keeps substantive same-line conflicts after a completed snapshot", async () => {
+    const file = "content/completed.md";
+    const raw = "---\r\nid: example.completed\r\n---\r\nOriginal\r\n";
+    const completed = completedMirrorBytes(file, Buffer.from(raw)).toString();
+    write(file, completed);
+    commit("completed snapshot");
+    write(file, completed.replace("Original", "Git edit"));
+    commit("Git edit");
+    const live = raw.replace("Original", "Portal edit");
+    portal({ [file]: live }, { [file]: [live, raw] });
+    const io = captureIo();
+    assert.equal(await run(["kb", "mirror", "--repo", repo, "--json"], io), 5);
+    assert.match(io.errors.join("\n"), /both sides changed the same lines/);
+    assert.equal(read(file), completed.replace("Original", "Git edit"));
   });
 
   test("dry run prints the mirror and writes nothing", async () => {
