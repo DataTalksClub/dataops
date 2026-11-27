@@ -1,6 +1,6 @@
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { manualCalendarPolicy } from './manualCalendarPolicy';
-import { claimGuestSlotAllocator, releaseAllocator } from './guestIntakeAllocator';
+import { claimGuestSlotAllocator, releaseAllocator, allocationDates } from './guestIntakeAllocator';
 import { guestEventSlots } from './guestIntakeSlots';
 import type { GuestIntakeJob } from './guestIntakeStore';
 import { resolveGuestAcceptanceTask } from './guestIntakeCompletion';
@@ -446,6 +446,8 @@ export async function reconcileEventOperation(
 
   // Reload after claiming lease
   current = (await getEventRecord(client, eventId, operationKey))!;
+  const cardSnapshot = await getCardConsistent(client, current.cardId);
+  if (op.transition !== 'release' && (op.desired.endIso !== current.endIso || cardSnapshot?.eventTime?.startIso !== current.startIso)) throw new EventConflictError('Invitation journal differs from the Card event time; reconcile the moved invitation before retrying. The old slot was not replayed.');
   const googleEventKey =
     current.identityGeneration === 1 ? current.id : `${current.id}:gen:${current.identityGeneration}`;
 
@@ -1050,7 +1052,9 @@ async function explicitManualTransition(client: DynamoDBDocumentClient, transiti
   const time = input.time || (input.window ? policy.windows[input.window] : current?.time);
   if (!date || !time) throw new EventInputError('Supply --date and --time for this Calendar-only blocker');
   const owner = `manual-${randomUUID()}`;
-  if (!await claimGuestSlotAllocator(client, owner)) throw new EventConflictError('Another event is reserving a time; retry shortly');
+  const interval = cardEventInterval(`${date} ${time}`, policy.durationMinutes, input.timeZone || policy.timeZone);
+  const dates = allocationDates(new Date(Date.parse(interval.startIso) - policy.guests.leadMinutes * 60000).toISOString(), interval.endIso);
+  if (!await claimGuestSlotAllocator(client, owner, dates)) throw new EventConflictError('Another event is reserving a time; retry shortly');
   try {
     const check = { cardId: card.id, type: 'manual-calendar-blocker', requestedDate: date, requestedTime: time, timeZone: input.timeZone || policy.timeZone } as GuestIntakeJob;
     const slots = await guestEventSlots(client, check, policy, 1).catch(error => { throw new EventInputError((error as Error).message); });
@@ -1058,7 +1062,7 @@ async function explicitManualTransition(client: DynamoDBDocumentClient, transiti
     // Normalize the explicit instant to the persisted policy zone without moving it.
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: policy.timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(slots[0].startIso)).map(p => [p.type,p.value]));
     return await runTransition(client, transition, targetId, { ...input, date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}`, window: undefined, timeZone: policy.timeZone, manualPolicy: policy });
-  } finally { await releaseAllocator(client, owner); }
+  } finally { await releaseAllocator(client, owner, dates); }
 }
 
 export async function proposeEvent(

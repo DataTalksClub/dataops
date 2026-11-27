@@ -1,3 +1,4 @@
+import { withOwnerAvailability } from './helpers/owner-availability';
 import { before, after, describe, it } from "node:test";
 import assert from "node:assert";
 import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
@@ -17,7 +18,7 @@ import { executeEpisodeDeletion } from '../src/podcast/episodeDeletion';
 import { getPodcastEpisode } from '../src/db/podcastEpisodes';
 import { EPISODE_STAGES, statusFromCard } from "../src/podcast/cardStatus";
 import { addDays, isoWeekday, takenRecordingDates } from "../src/podcast/recordingSlots";
-import { berlinToday, setOwnerCalendarProviderClientsForTests } from "../src/calendar/ownerCalendarOverlay";
+import { berlinToday, setOwnerCalendarProviderClientsForTests as setOwnerCalendarClients } from "../src/calendar/ownerCalendarOverlay";
 import { saveCalendarOverlaySettings } from "../src/db/calendar";
 import { loadRecordingOccupancy } from "../src/podcast/resolveRecordingSlot";
 
@@ -480,3 +481,5 @@ describe("podcast episodes", () => {
   });
 
 });
+
+function setOwnerCalendarProviderClientsForTests(value: Parameters<typeof setOwnerCalendarClients>[0]) { setOwnerCalendarClients({ ...value, ...(value.fetch ? { fetch: withOwnerAvailability(value.fetch) } : {}) }); }

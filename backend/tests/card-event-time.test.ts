@@ -1,3 +1,5 @@
+import { installOwnerAvailabilityFixture } from './helpers/owner-availability';
+installOwnerAvailabilityFixture();
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { cardEventInterval } from '../src/calendar/cardEventTime';
@@ -312,6 +314,18 @@ describe('Card-owned invitation lifecycle', () => {
     assert.equal(third.code, 200, third.raw);
     assert.equal(third.data.taskClosure.outcome, 'already_closed');
     assert.equal(third.data.taskClosure.tasks[0].outcome, 'already_closed');
+  });
+
+  test('cards time repairs a mismatched anchor when setting and moving a synced invite', async () => {
+    google();
+    const c = await card('webinar-anchor-repair');
+    const assigned = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2026-11-26 12:30', guestEmails: ['guest@example.test'] });
+    assert.equal(assigned.code, 200, assigned.raw);
+    assert.equal(assigned.data.card.anchorDate, '2026-11-26');
+    const moved = await invoke('POST', `/api/cards/${c.id}/time`, { at: '2027-01-11 12:30', guestEmails: ['guest@example.test'] });
+    assert.equal(moved.code, 200, moved.raw);
+    assert.equal(moved.data.card.anchorDate, '2027-01-11');
+    assert.equal(moved.data.card.eventTime.startIso, '2027-01-11T11:30:00.000Z');
   });
 
   test('allows moving or clearing anchorDate and eventTime when eventTime is phantom (no Event record, no live Google invites) without creating invites', async () => {

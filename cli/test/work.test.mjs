@@ -448,14 +448,37 @@ describe("cards and templates", () => {
   test("guest event creation preserves explicit optional values, skip email and replay key", async () => {
     const calls = fakePortal({
       "GET /api/templates/event-type": { template: { id: "tpl-event", type: "event-type", eventPolicy: {} } },
+      "GET /api/calendar-items/overlays": { items: [] },
+      "GET /api/calendar-items": { items: [], holidays: [] },
       "POST /api/cards": ({ body }) => ({ card: { id: "guest-card", ...body }, tasks: [] }),
     });
-    const command = ["cards", "create", "--template", "event-type", "--guest-email", "guest@example.test", "--guest-name", "Synthetic Guest", "--topic", "Practical workflows", "--date", "2026-12-14", "--skip-email", "--key", "same-explicit-key"];
+    const command = ["cards", "create", "--template", "event-type", "--guest-email", "guest@example.test", "--guest-name", "Synthetic Guest", "--topic", "Practical workflows", "--date", "2026-12-14", "--confirm-day", "--skip-email", "--key", "same-explicit-key"];
     assert.equal(await run(command, captureIo()), 0);
     const sent = calls.at(-1).body;
     assert.deepEqual(sent, { templateId: "tpl-event", guestEmail: "guest@example.test", guestName: "Synthetic Guest", topic: "Practical workflows", anchorDate: "2026-12-14", skipEmail: true, creationKey: "same-explicit-key" });
     assert.equal(await run(command, captureIo()), 0);
     assert.deepEqual(calls.at(-1).body, sent);
+  });
+
+  test("guest creation with a date is confirm-first and refuses a day without a free window", async () => {
+    const day = (items) => ({
+      "GET /api/templates/podcast": { template: { id: "tpl-event", type: "podcast" } },
+      "GET /api/calendar-items/overlays": { items },
+      "GET /api/calendar-items": { items: [], holidays: [] },
+      "POST /api/cards": ({ body }) => ({ card: { id: "guest-card", ...body } }),
+    });
+    const base = ["cards", "create", "--template", "podcast", "--guest-email", "guest@example.test", "--date", "2026-12-03"];
+    let calls = fakePortal(day([]));
+    const io = captureIo();
+    assert.equal(await run(base, io), 2);
+    assert.match(io.errors.join(" "), /Confirm the day first/);
+    assert.ok(!calls.some((call) => call.method === "POST"));
+    assert.equal(await run([...base, "--confirm-day"], captureIo()), 0);
+    assert.equal(calls.at(-1).method, "POST");
+    calls = fakePortal(day([{ provider: "owner-calendar", label: "Summit", startDate: "2026-12-03", endDate: "2026-12-03", slot: "all-day" }]));
+    assert.equal(await run([...base, "--confirm-day"], captureIo()), 2);
+    assert.ok(!calls.some((call) => call.method === "POST"));
+    assert.equal(await run([...base, "--confirm-day", "--allow-busy-day"], captureIo()), 0);
   });
 
   test("saved guest references reuse the private contact without a required date", async () => {

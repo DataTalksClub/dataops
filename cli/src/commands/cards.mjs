@@ -5,6 +5,7 @@ import { calendarLabel, enc, fields, integer, isoDate, linkedCardLabel, list as 
 import { apiFor } from "../session.mjs";
 import { create as createSponsorDoc } from "./sponsorDocs.mjs";
 import { findTemplate } from "./templates.mjs";
+import { day as calendarDay } from "./calendar.mjs";
 
 export const summary = "List, inspect, create (from a Template), and move Cards";
 
@@ -26,14 +27,15 @@ Usage
   dataops cards create --template ID|TYPE|NAME [--date YYYY-MM-DD] [--title T]
       [--end-date YYYY-MM-DD] [--optional-groups a,b] [--count FIELD=N,...] [--stage S] [--description D] [--owner ID] [--tags a,b] [--sponsored true|false]
       [--guest-email EMAIL] [--guest-person ID | --guest-contact ID] [--guest-name NAME] [--topic TOPIC] [--time HH:MM] [--time-zone IANA_ZONE]
-      [--guest-time-zone IANA_ZONE] [--window WINDOW] [--skip-email] [--key KEY]
+      [--guest-time-zone IANA_ZONE] [--window WINDOW] [--agreed-from DATE --agreed-to DATE] [--skip-email] [--key KEY]
                                                 Podcast, webinar and workshop guest Cards send email
-                                                and a [Proposed] calendar invite automatically. Date, title, name and topic are optional.
+                                                and a [Proposed] calendar invite automatically. Record the guest agreement with --agreed-from/--agreed-to.
+                                                No booking is made without that date/window.
                                                 --skip-email prepares its event and form without
                                                 contacting the guest. Reuse --key for a safe retry.
                                                 --sponsored marks the event as sponsored (a deal flag; the
                                                 format and its documents stay unchanged).
-  dataops cards invitation <card-id> [--preview | --send | --send-calendar [--guests EMAIL,EMAIL] [--dry-run] | --retry-pre-send] [--json]
+  dataops cards invitation <card-id> [--preview | --send | --send-calendar [--guests EMAIL,EMAIL] [--dry-run] | --retry-pre-send [--date D [--time HH:MM]]] [--json]
                                                 Read first-invitation status; --preview renders without sending.
                                                 --send sends email AND a [Proposed] calendar invite only
                                                 for a previously skipped first invitation; never a resend.
@@ -270,6 +272,8 @@ export async function create(args, io) {
   }
   const window = optionalString(args, "window");
   if (window !== undefined) body.window = window;
+  if (args.agreedFrom !== undefined) body.agreedFrom = isoDate(args.agreedFrom, 'agreed-from');
+  if (args.agreedTo !== undefined) body.agreedTo = isoDate(args.agreedTo, 'agreed-to');
   const endDate = optionalString(args, "endDate");
   if (endDate !== undefined) body.endDate = isoDate(endDate, "end-date");
   const title = optionalString(args, "title");
@@ -291,6 +295,7 @@ export async function create(args, io) {
     }
     body.sponsored = args.sponsored === true || args.sponsored === "true";
   }
+  if (hasGuest && body.anchorDate && !body.time) await confirmGuestDay(args, io, body);
   const result = await api.post("/api/cards", body);
   if (args.json) return result;
   io.print(`Created Card ${result.card.id} - ${result.card.title} (${result.tasks?.length ?? 0} Tasks).`);
@@ -303,6 +308,30 @@ export async function create(args, io) {
   if (result.eventSlotsError) io.print(`Event Cards incomplete: ${result.eventSlotsError}`);
   return result;
 }
+
+/** Confirm-first assignment: show what the day holds and refuse a day without a free window unless the caller confirms it fits. */
+async function confirmGuestDay(args, io, body) {
+  const window = body.window === "evening" || body.window === "midday" ? body.window : "any";
+  const dayArgs = { ...args, _: [body.anchorDate], date: body.anchorDate, window, json: true, duration: undefined };
+  const day = await calendarDay(dayArgs, { print() {} });
+  const { midday, evening, blockers } = day.slots;
+  const fits = window === "midday" ? midday.available : window === "evening" ? evening.available : midday.available || evening.available;
+  const summary = [`${body.anchorDate} (${window}): midday ${midday.available ? "free" : "busy"}, evening ${evening.available ? "free" : "busy"}${blockers.length ? `, all-day: ${blockers.join(" · ")}` : ""}`,
+    ...(day.timeline || []).map((item) => `  ${item.time}  ${item.title} [${item.tag}]`)].join("\n");
+  if (!fits && !isTrue(args.allowBusyDay)) {
+    throw new UsageError(`The day does not fit this guest event:
+${summary}
+Pick a free day (dataops calendar next-free-day or dataops calendar slots), or pass --allow-busy-day to override.`);
+  }
+  if (!isTrue(args.confirmDay)) {
+    throw new UsageError(`Confirm the day first; this is what ${body.anchorDate} holds:
+${summary}
+Re-run with --confirm-day to assign it.`);
+  }
+  if (!args.json) io.print(`Day confirmed:
+${summary}`);
+}
+const isTrue = (value) => value === true || value === "true";
 
 async function write(args, io, id, change, verb) {
   const api = apiFor(args);
@@ -602,7 +631,8 @@ export async function time(args, io) {
   if (args.guests !== undefined) body.guestEmails = csv(args.guests);
   const result = await apiFor(args).post(`/api/cards/${enc(id)}/time`, body);
   if (!args.json) {
-    io.print(`Event: ${result.card.eventTime.startIso} .. ${result.card.eventTime.endIso} (${result.card.eventTime.timeZone})`);
+    const when = result.card.eventTime || result.event;
+    if (when) io.print(`Event: ${when.startIso} .. ${when.endIso}${when.timeZone ? ` (${when.timeZone})` : ''}`);
     if (result.card.anchorDate) io.print(`Card date: ${result.card.anchorDate}${result.movedTasks ? ` (${result.movedTasks} open Tasks re-dated)` : ''}`);
     if (result.rescheduleTaskId) io.print(`Reschedule checklist Task: ${result.rescheduleTaskId}`);
     for (const invite of result.card.calendarInvites || []) {
@@ -614,6 +644,19 @@ export async function time(args, io) {
   return result;
 }
 
+/** --date/--time re-point a failed invitation that has no event yet, so a rejected slot is not replayed. */
+function retryTarget(args) {
+  const body = {};
+  if (args.date !== undefined) body.date = isoDate(optionalString(args, "date"), "date");
+  if (args.time !== undefined) {
+    const time = optionalString(args, "time");
+    if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(time)) throw new UsageError("--time must be HH:MM.");
+    body.time = time;
+  }
+  if (body.time && !body.date) throw new UsageError("--time requires --date.");
+  return body;
+}
+
 export async function invitation(args, io) {
   const id = positional(args, 0, "dataops cards invitation <card-id> [--preview | --send | --send-calendar [--guests EMAIL,EMAIL] [--dry-run] | --retry-pre-send]");
   const modes = ["preview", "send", "sendCalendar", "retryPreSend"].filter(flag => args[flag] !== undefined && args[flag] !== false && args[flag] !== "false");
@@ -622,14 +665,17 @@ export async function invitation(args, io) {
   if (!modes.includes("sendCalendar") && (args.dryRun !== undefined || args.guests !== undefined)) throw new UsageError("--dry-run and --guests apply only to --send-calendar.");
   const api = apiFor(args);
   const route = `/api/cards/${enc(id)}/guest-intake`;
+  const scheduling = {};
+  for (const flag of ['agreedFrom', 'agreedTo']) if (args[flag] !== undefined) scheduling[flag] = isoDate(args[flag], flag);
+  if (Object.keys(scheduling).length && !modes.some(mode => mode === 'send' || mode === 'retryPreSend')) throw new UsageError('Agreement dates require --send or --retry-pre-send.');
   if (modes.includes("sendCalendar")) {
     const dryRun = flag(args, "dryRun");
     const result = await api.post(`${route}/send-calendar`, { ...(dryRun ? { dryRun: true } : {}), ...(args.guests !== undefined ? { guestEmails: csv(args.guests) } : {}) });
     if (!args.json) printCalendarOnly(result, io);
     return result;
   }
-  const result = args.send === true || args.send === "true" ? await api.post(`${route}/send`, {})
-    : args.retryPreSend === true || args.retryPreSend === "true" ? await api.post(`${route}/retry`, {})
+  const result = args.send === true || args.send === "true" ? await api.post(`${route}/send`, scheduling)
+    : args.retryPreSend === true || args.retryPreSend === "true" ? await api.post(`${route}/retry`, { ...retryTarget(args), ...scheduling })
     : await api.get(route, args.preview === true || args.preview === "true" ? { query: { preview: "1" } } : undefined);
   if (args.json) return result;
   const receipt = result.invitation || result.job || result.card?.guestIntake || result;

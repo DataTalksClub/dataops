@@ -1,3 +1,4 @@
+import { validateGuestAgreement } from './guestAgreement';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { ownerCalendarOverlay, berlinToday } from '../calendar/ownerCalendarOverlay';
 import { cardEventInterval } from '../calendar/cardEventTime';
@@ -15,8 +16,10 @@ export function berlinParts(iso: string) {
 }
 export interface GuestEventSlot { date: string; time: string; window: string; startIso: string; endIso: string; label: string }
 export async function guestEventSlots(db: DynamoDBDocumentClient, job: GuestIntakeJob, policy: EventPolicy, count = 8): Promise<GuestEventSlot[]> {
-  const from = job.requestedDate || addDays(berlinToday(), job.policy?.minimumNoticeDays || 0);
-  const to = job.requestedDate || addDays(from, 59);
+  if (job.policy?.enabled) validateGuestAgreement(job, job.requestedDate);
+  const earliest = addDays(berlinToday(), job.policy?.minimumNoticeDays || 0);
+  const from = job.requestedDate || (job.agreedFrom && job.agreedFrom > earliest ? job.agreedFrom : earliest);
+  const to = job.requestedDate || job.agreedTo || addDays(from, 59);
   const [overlay, busy, holds, cards, episodes] = await Promise.all([
     ownerCalendarOverlay({ client: db, durationMinutes: policy.durationMinutes, window: 'any' }).project(from, to),
     ownerCalendarOverlay({ client: db, includeAll: true, durationMinutes: policy.durationMinutes }).project(addDays(from, -1), addDays(to, 1)),
@@ -31,7 +34,7 @@ export async function guestEventSlots(db: DynamoDBDocumentClient, job: GuestInta
       const interval = cardEventInterval(`${day} ${job.requestedTime || policy.windows[window]}`, policy.durationMinutes, job.requestedTime ? job.timeZone || 'Europe/Berlin' : policy.timeZone);
       const parts = berlinParts(interval.startIso);
       if ([0,6].includes(new Date(`${parts.date}T12:00:00Z`).getUTCDay())) continue;
-      if (job.policy?.weekdays?.length && !job.policy.weekdays.includes(new Date(`${parts.date}T12:00:00Z`).getUTCDay())) continue;
+      if (!job.requestedDate && job.policy?.weekdays?.length && !job.policy.weekdays.includes(new Date(`${parts.date}T12:00:00Z`).getUTCDay())) continue;
       const start = Date.parse(interval.startIso) - policy.guests.leadMinutes * 60000, end = Date.parse(interval.endIso);
       if (start <= Date.now()) continue;
       if (!job.requestedTime && job.type === 'podcast' && !overlay.items.some(i => i.isAvailableSlot && i.startDate === day && i.slot === window)) continue;

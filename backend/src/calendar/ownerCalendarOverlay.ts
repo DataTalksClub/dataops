@@ -1,3 +1,4 @@
+import { readOwnerAvailability, isSoftEvent } from './ownerAvailability';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { CalendarOverlayConnection, CalendarOverlayItem, CalendarOverlayProjection, CalendarOverlayProvider } from './overlays';
 import {
@@ -23,6 +24,7 @@ export interface OwnerCalendarConfig {
   accountId?: string;
   settings?: CalendarOverlaySettings;
   includeAll?: boolean;
+  excludeEventIds?: Record<string, string>;
   /** Berlin date the overlay counts as today; defaults to the current one. */
   today?: string;
   /** Free contiguous block length in minutes. Default 60; workshops use 90. */
@@ -200,6 +202,7 @@ export interface DapierConnectionOption {
   connectionId: string;
   provider: string;
   title: string;
+  accountId?: string;
 }
 
 export interface OwnerCalendarEventContext {
@@ -357,7 +360,7 @@ export function shouldFilterOwnerCalendarEvent(
 
   // Transparent (free/non-blocking) events (unless flights/conferences/vacations)
   if (filterTransparent && context?.transparency === 'transparent') {
-    if (!/(flight|conference|vacation|trip)/i.test(s)) {
+    if (!/(flight|conference|vacation|trip|summit)/i.test(s)) {
       return true;
     }
   }
@@ -416,6 +419,7 @@ export async function fetchDapierConnections(config?: OwnerCalendarConfig): Prom
     ).map((c) => ({
       connectionId: c.connection_id,
       provider: c.provider,
+      accountId: c.verified_account_id,
       title: `${c.connection_id}${c.verified_account_id || c.account_title ? ` (${c.verified_account_id || c.account_title})` : ''}`,
     }));
     return { connections, ...(!connections.length ? { connectionProblem: `No writable Google Calendar connections are available to agent "${config?.agent || DAPIER_AGENT}". A Dapier operator must connect Google Calendar and grant this machine identity and agent the \`use\` operation.` } : {}) };
@@ -449,7 +453,12 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
 
       const brokerUrl = (config?.brokerUrl || DAPIER_BASE_URL).replace(/\/$/, '');
       const agent = config?.agent || DAPIER_AGENT;
-      const connectionId = (config?.connectionId ?? activeSettings.connectionId).trim();
+      let connectionId = (config?.connectionId ?? activeSettings.connectionId).trim();
+      if (!config?.connectionId) {
+        const discovery = await fetchDapierConnections(config);
+        connectionId = discovery.connections.find(c => c.accountId?.toLowerCase() === OWNER_PERSONAL_CALENDAR)?.connectionId || '';
+        if (!connectionId) return blank({ state: 'unavailable', reason: discovery.connectionProblem || 'Alexey’s Google Calendar connection is required to check all his calendars.' });
+      }
       if (!connectionId) return blank({ state: 'not-configured', reason: `No Dapier calendar connection selected. ${CONNECTION_OPERATOR_HINT}` });
       const { credential, problem } = await readDapierCredential(config?.brokerCredential);
 
@@ -482,27 +491,13 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
         return blank({ state: 'unavailable', reason: `Calendar connection "${connectionId}" returned no access token.` });
       }
 
-      // 2. Query Google Calendar API
-      const timeMin = `${from}T00:00:00Z`;
-      const timeMax = `${to}T23:59:59Z`;
-      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(OWNER_PERSONAL_CALENDAR)}/events?timeMin=${encodeURIComponent(timeMin)}&timeMax=${encodeURIComponent(timeMax)}&singleEvents=true&orderBy=startTime&maxResults=2500`;
-
-      let calRes: Response;
+      let events: import('./ownerAvailability').AvailabilityEvent[];
       try {
-        calRes = await fetcher(url, {
-          headers: { Authorization: `Bearer ${tokenData.access_token}` },
-          signal: AbortSignal.timeout(15000),
-        });
-      } catch {
-        return blank({ state: 'unavailable', reason: 'Google Calendar could not be reached.' });
+        events = await readOwnerAvailability(fetcher, tokenData.access_token, from, to);
+      } catch (error) {
+        return blank({ state: 'unavailable', reason: error instanceof Error ? error.message : 'Owner freebusy failed; availability is unknown.' });
       }
-
-      if (!calRes.ok) {
-        return blank({ state: 'unavailable', reason: `Google Calendar returned HTTP ${calRes.status}.` });
-      }
-
-      const calData = (await calRes.json()) as { items?: any[] };
-      const events = calData.items || [];
+      events = events.filter(e => !e.id || !e.calendarId || config?.excludeEventIds?.[e.calendarId] !== e.id);
 
       const includeAll = Boolean(config?.includeAll);
       const effectiveSettings: CalendarOverlaySettings = includeAll
@@ -595,7 +590,10 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
           startIso,
           endIso,
         };
-        if (shouldFilterOwnerCalendarEvent(event.summary, effectiveSettings, context)) continue;
+        // Display preferences cannot weaken scheduling policy. Hard blocks, including
+        // transparent all-day No/conference entries, always close the date.
+        if (isSoftEvent(event)) continue;
+        if (!isAllDay && event.transparency === 'transparent' && !/^no$/i.test(event.summary || '')) continue;
 
         const summary = (event.summary || '').trim() || '(No title)';
         let startDate: string;
@@ -613,6 +611,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
           continue;
         }
 
+        if (startDate > to || endDate < from) continue;
         const slot = determineSlotType(startIso, endIso, isAllDay);
         const isSlotEvent = slot !== 'outside';
 
@@ -644,7 +643,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
 
           result.push({
             provider: 'owner-calendar',
-            id: `owner-calendar:${item.event.id}`,
+            id: `owner-calendar:${item.event.calendarId}:${item.event.id}`,
             startDate: item.startDate,
             endDate: item.endDate,
             label,
@@ -665,7 +664,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
       // are never projected as items. They only decide which slots are open.
       // All-day blockers (vacations, conferences, flights, etc.) close the whole day.
       const allDayBlockers = validEvents.filter(
-        (e) => e.isAllDay || e.slot === 'all-day' || (/vacation|holiday|flight|conference|trip/i.test(e.summary) && e.isSlotEvent),
+        (e) => e.isAllDay || e.slot === 'all-day' || (/vacation|holiday|flight|conference|trip|summit/i.test(e.summary) && e.isSlotEvent),
       );
 
       // Project available slots across all weekdays in the range.
@@ -696,7 +695,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
 
         // Check Midday Slot (operational window 11:30–14:00, preferred start 12:30 Berlin time)
         if (wantMidday) {
-          const busy = busyIntervalsInWindow('midday', dayTimedEvents);
+          const busy = dayTimedEvents.map(e => ({ start: e.startDate < curDate ? '00:00' : formatBerlinTime(e.startIso!), end: e.endDate > curDate || !e.endIso ? '24:00' : formatBerlinTime(e.endIso) }));
           if (isWindowFreeForDuration('midday', busy, durationMinutes)) {
             result.push({
               provider: 'owner-calendar',
@@ -716,7 +715,7 @@ export function ownerCalendarOverlay(config?: OwnerCalendarConfig): CalendarOver
         // preferred start 17:00; 90-min workshop shape anchors at 16:30)
         // Per SOP: offered on Monday and Tuesday only (US guests)
         if (wantEvening && (dayOfWeek === 1 || dayOfWeek === 2)) {
-          const busy = busyIntervalsInWindow('evening', dayTimedEvents);
+          const busy = dayTimedEvents.map(e => ({ start: e.startDate < curDate ? '00:00' : formatBerlinTime(e.startIso!), end: e.endDate > curDate || !e.endIso ? '24:00' : formatBerlinTime(e.endIso) }));
           if (isWindowFreeForDuration('evening', busy, durationMinutes)) {
             result.push({
               provider: 'owner-calendar',

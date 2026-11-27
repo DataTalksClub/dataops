@@ -304,12 +304,14 @@ test.describe("podcast guest materials form", () => {
     const createdCard = await api(`/api/podcast-episodes/${episode.id}/card`, {});
     const cardId = createdCard.card?.id || createdCard.episode?.cardId;
     expect(cardId).toBeTruthy();
-    const timeRes = await fetch(`${server.baseURL}/api/cards/${cardId}/time`, {
-      method: "POST",
+    // Confirm the slot on the Card directly: POST /time now re-checks the owner's
+    // calendar before writing an invite, and this server has no calendar broker.
+    const timeRes = await fetch(`${server.baseURL}/api/cards/${cardId}`, {
+      method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        at: "2026-12-15 18:00",
-        guestEmails: ["confirmed-guest@example.test"],
+        expectedVersion: createdCard.card?.version ?? 1,
+        eventTime: { at: "2026-12-15 18:00" },
       }),
     });
     const timePayload = await timeRes.json();
