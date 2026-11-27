@@ -28,7 +28,7 @@
  * "Absent" is a Git-recorded state only where Git deleted the path, or before
  * prod's first version of it.
  */
-import { load as loadYaml } from "js-yaml";
+import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -108,8 +108,9 @@ export function completedMirrorBytes(file, bytes, completeAliases = true) {
   if (!Buffer.from(text).equals(bytes)) return bytes;
   text = text.replaceAll("\r\n", "\n");
   const header = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(text);
+  const { load } = createRequire(import.meta.url)("js-yaml");
   let metadata;
-  try { metadata = header && loadYaml(header[1]); } catch { return bytes; }
+  try { metadata = header && load(header[1]); } catch { return bytes; }
   if (completeAliases && metadata && typeof metadata.id === "string" && !Object.hasOwn(metadata, "aliases")) {
     const completed = header[0].replace(/^(id:[^\n]*)$/m, "$1\naliases: []");
     text = completed + text.slice(header[0].length);
