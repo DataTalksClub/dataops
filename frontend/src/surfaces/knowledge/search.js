@@ -16,7 +16,6 @@ export function createKnowledgeSearch(context, services) {
     renderOperationsWorkspace,
     request,
     searchInput,
-    tasksFromWorkPayload,
     workApiUrl,
   } = context;
   const {
@@ -209,8 +208,10 @@ export function createKnowledgeSearch(context, services) {
     const definitions = [
       {
         source: "tasks",
-        path: "/api/tasks?startDate=2000-01-01&endDate=2100-12-31",
-        items: tasksFromWorkPayload,
+        // Matched server-side against a light projection: listing every
+        // full Task per keystroke read the whole table each time.
+        path: `/api/tasks/search?q=${encodeURIComponent(query)}`,
+        items: (payload) => (Array.isArray(payload?.tasks) ? payload.tasks : []),
         type: "task",
       },
       {

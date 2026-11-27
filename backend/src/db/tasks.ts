@@ -553,6 +553,40 @@ async function listTasksByCardConsistent(client: DynamoDBDocumentClient, cardId:
   return scanTasksByCardConsistent(client, cardId);
 }
 
+/** The fields global search matches and shows; everything else stays on the full Task. */
+interface TaskSearchRow {
+  id: string;
+  description: string;
+  status: TaskStatus;
+  date: string;
+  cardId?: string;
+  assigneeId?: string;
+}
+
+/**
+ * Every Task as a search row. ProjectionExpression keeps the response (and
+ * any cache of it) to a few fields instead of full rows with inline history;
+ * DynamoDB still bills the Scan by item size, so callers must cache it.
+ */
+async function listTaskSearchRows(client: DynamoDBDocumentClient): Promise<TaskSearchRow[]> {
+  const items = await readAllPages(client, (exclusiveStartKey) => new ScanCommand({
+    TableName: TABLE_TASKS,
+    FilterExpression: 'begins_with(PK, :prefix)',
+    ProjectionExpression: 'id, description, #status, #date, cardId, assigneeId',
+    ExpressionAttributeNames: { '#status': 'status', '#date': 'date' },
+    ExpressionAttributeValues: { ':prefix': 'TASK#' },
+    ExclusiveStartKey: exclusiveStartKey,
+  }));
+  return items.map((item) => ({
+    id: String(item.id),
+    description: typeof item.description === 'string' ? item.description : '',
+    status: item.status as TaskStatus,
+    date: typeof item.date === 'string' ? item.date : '',
+    ...(typeof item.cardId === 'string' && item.cardId ? { cardId: item.cardId } : {}),
+    ...(typeof item.assigneeId === 'string' && item.assigneeId ? { assigneeId: item.assigneeId } : {}),
+  }));
+}
+
 /**
  * List Tasks by owner reference when `owner` is the only supplied filter.
  *
@@ -619,7 +653,8 @@ export {
   listTasksByCardConsistent,
   listTasksByStatus,
   listTasksByOwner,
+  listTaskSearchRows,
   TaskVersionConflictError,
   CardLifecycleConflictError,
 };
-export type { AdditiveTaskPatch, TaskCreationOptions, TaskMutation, TaskPatch };
+export type { AdditiveTaskPatch, TaskCreationOptions, TaskMutation, TaskPatch, TaskSearchRow };
