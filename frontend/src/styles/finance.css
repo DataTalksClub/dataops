@@ -982,6 +982,8 @@ body[data-workspace-view="sponsors"] .document-list {
 [data-person-panel="overview"] .crm-record-overview,
 [data-record-panel="overview"] .crm-record-overview {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
   gap: 12px;
   padding: 12px;
 }
