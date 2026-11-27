@@ -61,6 +61,20 @@ describe("CLI without installed dependencies", () => {
     );
   }
 
+  test("knowledge snapshot completion runs with no dependencies installed", (t) => {
+    const dir = cleanCheckout(t);
+    const { NODE_PATH: _nodePath, ...env } = process.env;
+    void _nodePath;
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", `
+      import assert from "node:assert/strict";
+      import { completedMirrorBytes } from "./src/knowledgePublish.mjs";
+      const raw = Buffer.from("---\\r\\nid: example.completed\\r\\n---\\r\\nBody\\r\\n");
+      assert.equal(completedMirrorBytes("content/test.md", raw).toString(),
+        "---\\nid: example.completed\\naliases: []\\n---\\nBody\\n");
+    `], { cwd: dir, encoding: "utf8", timeout: 30000, env });
+    assert.equal(result.status, 0, result.stderr);
+  });
+
   test("kb help loads with no dependencies installed", async (t) => {
     const dir = cleanCheckout(t);
     const result = runCli(t, dir, ["kb", "--help"]);
