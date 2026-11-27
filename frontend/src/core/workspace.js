@@ -60,10 +60,11 @@ export const WORKSPACE_ROUTE_DEFINITIONS = Object.freeze({
   "/recurring": { view: "tasks", tasksSection: "recurring", params: [] },
   // Annual money in/out, net profit excluding VAT and the VAT position.
   "/finance": { view: "finance", tasksSection: "queue", params: ["year"] },
+  // `invoice` is the forwarded-invoice draft open for review (with view=invoices).
   "/bookkeeping": {
     view: "bookkeeping",
     tasksSection: "queue",
-    params: ["month", "q", "account", "dir", "category", "needs", "tx", "view", "agreement"],
+    params: ["month", "q", "account", "dir", "category", "needs", "tx", "view", "agreement", "invoice"],
   },
   // Inventory is its own top-level surface; its address is the path.
   "/invertory": { view: "inventory", tasksSection: "queue", params: [] },

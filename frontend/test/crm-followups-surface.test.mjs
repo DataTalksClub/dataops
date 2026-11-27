@@ -128,6 +128,10 @@ describe("CRM follow-ups and DNC frontend surface components", () => {
 
     assert.ok(html.includes("22 Oct") && html.includes("20 Oct") && !html.includes("2026-10-22"));
 
+    // Phones stack each row as a card: every cell carries its column label.
+    assert.ok(html.includes("crm-stack-table"));
+    assert.ok(html.includes('<td data-label="Note">revisit</td>'));
+
     const empty = followupsTablesMarkup({ items: [], records: [] }, {});
     assert.ok(empty.includes("No open follow-ups."));
   });

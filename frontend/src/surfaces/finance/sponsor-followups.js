@@ -26,12 +26,13 @@ export function followupsTablesMarkup({ items = [], records = [] } = {}) {
         ? "status-label status-label--due"
         : "";
     return html`<tr>
-      <td><span class="${dueClass}">${escape(followupDate(task.date))}</span></td>
-      <td><span class="status-label">${escape(task.status)}</span></td>
-      <td><span class="status-label">${escape(item.subjectType.replace("sponsor-", ""))}</span></td>
-      <td><a href="${escape(subjectHref)}" data-open-${item.subjectType.replace("sponsor-", "")}="${escape(item.subjectId)}">${escape(item.subjectName)}</a></td>
-      <td>${escape(followupNoteText(task.description || task.title))}</td>
-      <td><a href="/?taskId=${encodeURIComponent(task.id)}" class="button button--secondary button--sm">Open task</a></td>
+      <td data-label="Due"><span class="${dueClass}">${escape(followupDate(task.date))}</span></td>
+      <td data-label="Status"><span class="status-label">${escape(task.status)}</span></td>
+      <td data-label="Kind"><span class="status-label">${escape(item.subjectType.replace("sponsor-", ""))}</span></td>
+      <td data-label="Record"><a href="${escape(subjectHref)}"
+        data-open-${item.subjectType.replace("sponsor-", "")}="${escape(item.subjectId)}">${escape(item.subjectName)}</a></td>
+      <td data-label="Note">${escape(followupNoteText(task.description || task.title))}</td>
+      <td data-label="Action"><a href="/?taskId=${encodeURIComponent(task.id)}" class="button button--secondary button--sm">Open task</a></td>
     </tr>`;
   }).join("");
   const recordRows = records.map((record) => {
@@ -44,17 +45,17 @@ export function followupsTablesMarkup({ items = [], records = [] } = {}) {
         ? "status-label status-label--due"
         : "";
     return html`<tr>
-      <td><span class="${dueClass}">${escape(followupDate(record.follow_up_at))}</span></td>
-      <td><span class="status-label">${escape(record.follow_up_status || "open")}</span></td>
-      <td><span class="status-label">${escape(record.kind)}</span></td>
-      <td><a href="${escape(subjectHref)}" data-open-${record.kind === "company" ? "company" : "person"}="${escape(record.id)}">${escape(record.name)}</a></td>
-      <td>${escape(followupNoteText(record.follow_up_note))}</td>
-      <td><a href="${escape(subjectHref)}" class="button button--secondary button--sm">Open record</a></td>
+      <td data-label="Due"><span class="${dueClass}">${escape(followupDate(record.follow_up_at))}</span></td>
+      <td data-label="Status"><span class="status-label">${escape(record.follow_up_status || "open")}</span></td>
+      <td data-label="Kind"><span class="status-label">${escape(record.kind)}</span></td>
+      <td data-label="Record"><a href="${escape(subjectHref)}" data-open-${record.kind === "company" ? "company" : "person"}="${escape(record.id)}">${escape(record.name)}</a></td>
+      <td data-label="Note">${escape(followupNoteText(record.follow_up_note))}</td>
+      <td data-label="Action"><a href="${escape(subjectHref)}" class="button button--secondary button--sm">Open record</a></td>
     </tr>`;
   }).join("");
   if (!taskRows && !recordRows) return '<p class="crm-empty">No open follow-ups.</p>';
   return html`${recordRows ? html`<h4>Contact and company follow-ups</h4>
-    <table class="crm-table">
+    <table class="crm-table crm-stack-table">
       <thead>
         <tr>
           <th>Due</th>
@@ -70,7 +71,7 @@ export function followupsTablesMarkup({ items = [], records = [] } = {}) {
       </tbody>
     </table>` : ""}
     ${taskRows ? html`<h4>Follow-up tasks</h4>
-    <table class="crm-table">
+    <table class="crm-table crm-stack-table">
       <thead>
         <tr>
           <th>Due</th>

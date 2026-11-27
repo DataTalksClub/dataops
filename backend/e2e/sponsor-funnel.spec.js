@@ -36,10 +36,10 @@ test('funnel stays bounded, loads details on demand and edits a company person',
   await expect(page.locator('.crm-funnel-pages')).toContainText('31–60 of 64');
   await page.getByRole('button', { name: 'Next', exact: true }).click();
   await expect(page.locator('.crm-funnel-table tbody tr')).toHaveCount(4);
-  await page.locator('[data-pipeline-view]').selectOption('closed');
+  await page.locator('[data-views-bar="pipeline"] [data-views-select]').selectOption('builtin:pipeline:closed');
   await expect(page.locator('.crm-funnel-table tbody tr')).toHaveCount(1);
   await expect(page.locator('.crm-funnel-table')).toContainText('Lost');
-  await page.locator('[data-pipeline-view]').selectOption('active');
+  await page.locator('[data-views-bar="pipeline"] [data-views-select]').selectOption('builtin:pipeline:active');
   await expect(page.locator('.crm-funnel-table tbody tr')).toHaveCount(30);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => globalThis.dakitShell?.toggleDrawer(document.querySelector('.dk-shell'), false));

@@ -14,8 +14,8 @@ export const CRM_PRIMARY_TABS = Object.freeze([
 
 export const CRM_MORE_LINKS = Object.freeze([
   Object.freeze({ id: "followups", label: "Follow-ups" }),
-  Object.freeze({ id: "leads", label: "Lead discovery" }),
-  Object.freeze({ id: "newsletters", label: "Newsletter sources" }),
+  Object.freeze({ id: "leads", label: "Potential leads" }),
+  Object.freeze({ id: "newsletters", label: "Newsletters" }),
   Object.freeze({ id: "money", label: "Money" }),
 ]);
 
@@ -32,11 +32,12 @@ export function crmNavModel(currentTab) {
     primary,
     more,
     moreCurrent: more.some((entry) => entry.current),
+    moreLabel: more.find((entry) => entry.current)?.label || "More",
   };
 }
 
 // dakit tabs for the primary row; a native <details> disclosure for More so
-// Lead discovery / Newsletter sources / Money stay one click away without
+// Potential leads / Newsletters / Money stay one click away without
 // crowding narrow screens. Tabs are links: modified clicks open in a new tab.
 export function renderCrmNav(model, { escapeHtml }) {
   const tab = ({ id, label, href, current }) => html`<a
@@ -45,8 +46,10 @@ export function renderCrmNav(model, { escapeHtml }) {
   }>${escapeHtml(label)}</a>`;
   return html`<nav class="dk-tabs crm-views" data-crm-nav aria-label="CRM">
     ${model.primary.map(tab).join("")}
-    <details class="crm-more" data-crm-nav-more${model.moreCurrent ? " open" : ""}>
-      <summary aria-label="More CRM views">More</summary>
+    <details class="crm-more" data-crm-nav-more>
+      <summary class="dk-tab" data-crm-nav-more-label aria-label="More CRM views"${
+    model.moreCurrent ? ' aria-current="page"' : ""
+  }>${escapeHtml(model.moreLabel)}</summary>
       <div class="crm-more__menu">${model.more
         .map(
           ({ id, label, href, current }) => html`<a

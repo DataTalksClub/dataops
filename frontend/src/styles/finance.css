@@ -982,6 +982,8 @@ body[data-workspace-view="sponsors"] .document-list {
 [data-person-panel="overview"] .crm-record-overview,
 [data-record-panel="overview"] .crm-record-overview {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
   gap: 12px;
   padding: 12px;
 }
@@ -1382,7 +1384,7 @@ body[data-workspace-view="sponsors"] .document-list {
   .crm-list-head { gap: var(--dk-space-2); padding: var(--dk-space-3); }
   .crm-funnel-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: var(--dk-space-2) var(--dk-space-3); gap: var(--dk-space-2); }
   .crm-search-field { grid-column: 1 / -1; min-width: 0; }
-  .crm-funnel-controls label { font-size: var(--dk-text-sm); min-width: 0; }
+  .crm-funnel-controls label { font-size: var(--dk-text-sm); min-width: 0; flex-direction: column; align-items: stretch; gap: var(--dk-space-1); }
   .crm-funnel-controls select { min-width: 0; width: 100%; }
   .crm-filter-disclosure > summary { padding: var(--dk-space-1) var(--dk-space-3) var(--dk-space-2); }
   .crm-filter-disclosure .crm-filters { padding: var(--dk-space-2) var(--dk-space-3); grid-template-columns: 1fr; }
@@ -1427,12 +1429,18 @@ body[data-workspace-view="sponsors"] .document-list {
 .crm-views-modified { color: var(--dk-text-muted); font-size: var(--dk-text-sm); }
 .crm-views-manage { list-style: none; margin: 0; padding: 0; }
 .crm-views-manage li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--dk-space-2); padding: var(--dk-space-2) 0; border-bottom: 1px solid var(--dk-border-default); }
-/* Secondary CRM navigation: native disclosure inside the tab row. The menu
-closes on every tab switch (see setView), so it never covers list content. */
-.crm-more { display: inline-flex; }
-.crm-more > summary { cursor: pointer; padding: var(--dk-space-2) var(--dk-space-3); color: var(--dk-text-muted); }
-.crm-more__menu { min-width: 12rem; }
-.crm-more__menu a { display: block; padding: var(--dk-space-1) var(--dk-space-3); overflow-wrap: anywhere; }
+/* Secondary CRM navigation: a dropdown that overlays the content under the
+tab row (it never grows the tab bar) and closes on selection or outside click.
+The summary is a tab and carries the active page's name. */
+/* dakit tabs scroll sideways (overflow-x:auto), which also clips vertically; the More dropdown must overlay the page. */
+.crm-views { overflow: visible; }
+.crm-more { position: relative; display: inline-flex; }
+.crm-more > summary { cursor: pointer; list-style: none; }
+.crm-more > summary::-webkit-details-marker { display: none; }
+.crm-more > summary::after { content: " \25BE"; }
+.crm-more__menu { position: absolute; top: 100%; right: 0; z-index: 20; min-width: 12rem; max-width: calc(100vw - 2 * var(--dk-space-3)); background: var(--dk-bg-raised); border: 1px solid var(--dk-border-default); border-radius: var(--dk-radius-md); box-shadow: var(--dk-shadow-overlay); padding: var(--dk-space-1) 0; }
+.crm-more__menu a { display: block; padding: var(--dk-space-2) var(--dk-space-3); overflow-wrap: anywhere; }
+.crm-more__menu a[aria-current="page"] { font-weight: 600; }
 .crm-pipeline { overflow-x: auto; }
 /* Interim person record until F's person module lands on the same mount. */
 .crm-person-pane { padding: var(--dk-space-4); overflow-wrap: anywhere; }
@@ -1460,7 +1468,7 @@ closes on every tab switch (see setView), so it never covers list content. */
 }
 .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master { display: block; overflow: visible; }
 .sponsor-crm-surface.is-pipeline:not(.has-booking-detail) .crm-master [data-crm-list-scroll] { overflow: visible; }
-.crm-funnel-table small { font-size: max(var(--dk-text-xs), 12px); }
+.crm-funnel-table small { font-size: var(--dk-text-sm); }
 @media (max-width: 820px) {
   .dk-main.page-shell:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
   #library-view:has(.sponsor-crm-surface.is-pipeline:not(.has-booking-detail)),
@@ -1894,5 +1902,36 @@ closes on every tab switch (see setView), so it never covers list content. */
 @media (max-width: 640px) {
   .crm-deal-facts {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .crm-stack-table,
+  .crm-stack-table tbody,
+  .crm-stack-table tr,
+  .crm-stack-table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .crm-stack-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .crm-stack-table tr {
+    padding: var(--dk-space-3, 12px) 0;
+    border-bottom: 1px solid var(--dk-border-default);
+  }
+  .crm-stack-table td {
+    padding: var(--dk-space-1) 0;
+    overflow-wrap: anywhere;
+  }
+  .crm-stack-table td[data-label="Status"],
+  .crm-stack-table td[data-label="Kind"] {
+    display: inline-block;
+    width: auto;
+    margin-right: var(--dk-space-2, 8px);
   }
 }

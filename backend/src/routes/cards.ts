@@ -1,5 +1,6 @@
 import { validateGuestAgreement } from '../events/guestAgreement';
 import { berlinParts } from '../events/guestIntakeSlots';
+import { checkTitle } from '../events/titleQuality';
 import { getSponsorDocWithAuthMaterial, decryptSponsorDocAccessCode } from '../db/sponsorDocs';
 import { GuestInviteValidationError } from '../calendar/guestInvite';
 import { getEventRecord } from '../events/store';
@@ -647,7 +648,7 @@ async function handleCollection(
     const templateIdByType = await getTemplateIdByType(client);
     const tasks = slots.eventSlots.length ? await listTasksByCardConsistent(client, created.card.id) : created.tasks;
     const card = await projectCard(new TeamDirectory(client), created.card, tasks, templateIdByType);
-    return json(201, { card, tasks, ...slots });
+    return json(201, { card, tasks, ...slots, titleQuality: checkTitle(created.card.title, created.card.people) });
   }
 
   // Method not allowed
@@ -942,7 +943,7 @@ async function handleSingle(
     }
     const withQna = card.anchorDate && !card.qna ? await ensureCardQnaForDatedEvent(client, card) : card;
     const templateIdByType = await getTemplateIdByType(client);
-    return json(200, { card: await projectCard(new TeamDirectory(client), withQna, undefined, templateIdByType) });
+    return json(200, { card: await projectCard(new TeamDirectory(client), withQna, undefined, templateIdByType), ...(body.title !== undefined ? { titleQuality: checkTitle(body.title, card.people) } : {}) });
   }
 
   if (method === 'DELETE') {
