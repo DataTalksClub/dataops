@@ -53,7 +53,7 @@ import {
   validateCardRefs,
 } from '../cards/createCard';
 import { resolveTemplateConditionalValidation } from '../cards/conditionalRequired';
-import { listAllTasks, listTasksByCard, listTasksByCardConsistent } from '../db/tasks';
+import { listTasksByCard, listTasksByCardConsistent } from '../db/tasks';
 import {
   ensureEventRescheduleTask,
   EVENT_RESCHEDULE_CHECKLIST_ID,

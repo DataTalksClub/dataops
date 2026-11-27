@@ -37,7 +37,6 @@ function pagedClient(calls: RecordedCall[]): DynamoDBDocumentClient {
 const listings: Array<[string, string, (client: DynamoDBDocumentClient) => Promise<Array<{ id: string }>>]> = [
   ['status', 'QueryCommand', (client) => listTasksByStatus(client, 'todo')],
   ['date', 'QueryCommand', (client) => listTasksByDate(client, '2026-10-15')],
-  ['date range', 'ScanCommand', (client) => listTasksByDateRange(client, '2026-10-01', '2026-10-31')],
   ['card', 'QueryCommand', (client) => listTasksByCard(client, 'card-1')],
 ];
 
@@ -55,4 +54,24 @@ describe('Task listings read every DynamoDB page', () => {
       assert.deepStrictEqual(calls[2].input.ExclusiveStartKey, { PK: 'TASK#x', SK: 'TASK#x' });
     });
   }
+});
+
+describe('Date-range listing', () => {
+  it('runs one ranged GSI-Status Query per status instead of a table Scan', async () => {
+    const calls: RecordedCall[] = [];
+    const client = {
+      async send(command: { constructor: Function; input: Record<string, unknown> }) {
+        calls.push({ name: command.constructor.name, input: command.input });
+        const status = (command.input.ExpressionAttributeValues as Record<string, string>)[':status'];
+        return { Items: [{ PK: `TASK#${status}`, SK: `TASK#${status}`, id: status, status, version: 1, taskHistory: [] }] };
+      },
+    } as unknown as DynamoDBDocumentClient;
+
+    const tasks = await listTasksByDateRange(client, '2026-10-01', '2026-10-31');
+
+    assert.deepStrictEqual(tasks.map((task) => task.id).sort(), ['done', 'skipped', 'todo', 'waiting']);
+    assert.ok(calls.every((call) => call.name === 'QueryCommand' && call.input.IndexName === 'GSI-Status'));
+    assert.ok(calls.every((call) => /BETWEEN :start AND :end/.test(String(call.input.KeyConditionExpression))));
+    assert.ok(calls.every((call) => !call.input.ConsistentRead));
+  });
 });

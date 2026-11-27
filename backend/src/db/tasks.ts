@@ -11,7 +11,7 @@ import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { readAllPages } from './readAllPages';
 import { TABLE_CARDS, TABLE_TASKS } from './tableNames';
-import type { Task, TaskHistoryEvent } from '../types';
+import type { Task, TaskHistoryEvent, TaskStatus } from '../types';
 import {
   CardLifecycleConflictError,
   TaskCardTransactionConflictError,
@@ -430,17 +430,20 @@ function listTasksByDate(client: DynamoDBDocumentClient, date: string): Promise<
   }));
 }
 
+/** Every Task status; a Record so a new TaskStatus cannot be left out. */
+const TASK_STATUS_KEYS: Record<TaskStatus, true> = { todo: true, waiting: true, done: true, skipped: true };
+const TASK_STATUSES = Object.keys(TASK_STATUS_KEYS) as TaskStatus[];
+
 /**
- * List tasks within a date range. Uses a Scan with a FilterExpression since
- * date is the partition key on GSI-Date and range queries require sort key.
+ * List tasks within a date range. GSI-Date is keyed by a single date, but
+ * GSI-Status sorts by date within each status, so one ranged Query per status
+ * reads only the Tasks in the range instead of scanning the whole table.
  */
-function listTasksByDateRange(client: DynamoDBDocumentClient, startDate: string, endDate: string): Promise<Task[]> {
-  return scanTasks(
-    client,
-    ['#d BETWEEN :start AND :end', 'begins_with(PK, :prefix)'],
-    { ':start': startDate, ':end': endDate, ':prefix': 'TASK#' },
-    { '#d': 'date' },
+async function listTasksByDateRange(client: DynamoDBDocumentClient, startDate: string, endDate: string): Promise<Task[]> {
+  const perStatus = await Promise.all(
+    TASK_STATUSES.map((status) => listTasksByStatus(client, status, { startDate, endDate })),
   );
+  return perStatus.flat();
 }
 
 /**
@@ -551,14 +554,6 @@ async function listTasksByCardConsistent(client: DynamoDBDocumentClient, cardId:
 }
 
 /**
- * List every canonical Task with bounded pagination. Collection projections
- * use this one read instead of issuing a Task query for each Card.
- */
-function listAllTasks(client: DynamoDBDocumentClient): Promise<Task[]> {
-  return scanTasks(client, ['begins_with(PK, :prefix)'], { ':prefix': 'TASK#' });
-}
-
-/**
  * List Tasks by owner reference when `owner` is the only supplied filter.
  *
  * There is no assignee index, and this change may not add one: DynamoDB index
@@ -622,7 +617,6 @@ export {
   listTasksByDateRange,
   listTasksByCard,
   listTasksByCardConsistent,
-  listAllTasks,
   listTasksByStatus,
   listTasksByOwner,
   TaskVersionConflictError,

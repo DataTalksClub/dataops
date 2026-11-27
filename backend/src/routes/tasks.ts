@@ -111,6 +111,48 @@ export const MAX_TASKS_LIST_BYTES = 4 * 1024 * 1024;
 /** Headroom in the budget for the response envelope: cursor token and owner reference. */
 const RESPONSE_ENVELOPE_RESERVE_BYTES = 16 * 1024;
 /**
+ * Continuation pages of one listing reuse the matching Tasks its first page
+ * read, instead of re-reading the whole source table for every page (the
+ * workspace follows up to 20 cursors, and an offset cursor used to re-run
+ * the full Query or Scan each time). The first page always reads fresh, so
+ * read-after-write holds where callers look; later pages read a snapshot at
+ * most LIST_SNAPSHOT_TTL_MS old, which also keeps offsets stable while the
+ * client pages. A snapshot lives in this Lambda container only: a cursor
+ * that lands on another container, or after expiry, re-reads the source as
+ * before.
+ */
+const LIST_SNAPSHOT_TTL_MS = 60_000;
+const LIST_SNAPSHOT_MAX = 8;
+
+interface ListSnapshot {
+  binding: string;
+  expiresAt: number;
+  tasks: Task[];
+  prereqsAttached: boolean;
+}
+
+const listSnapshots = new Map<string, ListSnapshot>();
+
+function takeListSnapshot(id: string | undefined, binding: string): ListSnapshot | null {
+  const now = Date.now();
+  for (const [key, snapshot] of listSnapshots) {
+    if (snapshot.expiresAt <= now) listSnapshots.delete(key);
+  }
+  if (!id) return null;
+  const snapshot = listSnapshots.get(id);
+  return snapshot && snapshot.binding === binding ? snapshot : null;
+}
+
+function storeListSnapshot(snapshot: Omit<ListSnapshot, 'expiresAt'>): string {
+  while (listSnapshots.size >= LIST_SNAPSHOT_MAX) {
+    listSnapshots.delete(listSnapshots.keys().next().value as string);
+  }
+  const id = crypto.randomUUID();
+  listSnapshots.set(id, { ...snapshot, expiresAt: Date.now() + LIST_SNAPSHOT_TTL_MS });
+  return id;
+}
+
+/**
  * List rows are summaries: append-only transition history stays complete
  * behind GET /api/tasks/:id, and a list row keeps only its most recent
  * events so one aged Task cannot bloat a whole page.
@@ -589,10 +631,12 @@ export async function handleTaskRoutes(
     };
 
     let offset = 0;
+    let snapshotId: string | undefined;
     if (params.cursor !== undefined) {
       try {
         const decoded = await decodeCollectionCursor(binding, params.cursor);
         offset = Number(decoded.offset ?? 0);
+        snapshotId = typeof decoded.snapshot === 'string' ? decoded.snapshot : undefined;
         if (!Number.isSafeInteger(offset) || offset < 0) {
           return jsonResponse(400, { error: 'Invalid pagination input', code: 'invalid_pagination_input' });
         }
@@ -608,7 +652,14 @@ export async function handleTaskRoutes(
     await directory.loadAll();
     const activeMemberIds = await directory.activeMemberIds();
 
-    async function ownerListResponse(tasks: Task[]): Promise<LambdaResponse> {
+    const snapshotBinding = JSON.stringify(binding);
+    async function ownerListResponse(loadSource: () => Promise<Task[]>): Promise<LambdaResponse> {
+      const snapshot = takeListSnapshot(snapshotId, snapshotBinding);
+      const { tasks: matchingTasks, prereqsAttached } = snapshot || await matchingListTasks(await loadSource());
+      return listPageResponse(matchingTasks, prereqsAttached, snapshot ? snapshotId : undefined);
+    }
+
+    async function matchingListTasks(tasks: Task[]): Promise<{ tasks: Task[]; prereqsAttached: boolean }> {
       const hasMarketingFilter = ['target_url', 'primary_keyword', 'done_criteria'].some((key) => params[key]);
       const matchingSteps = hasMarketingFilter ? filterMarketingSteps(await listMarketingSteps(client), Object.fromEntries(['target_url', 'primary_keyword', 'done_criteria'].map(key => [key, params[key]]))) : null;
       const marketingTaskIds = new Set(matchingSteps?.map((step) => step.taskId).filter(Boolean));
@@ -653,11 +704,19 @@ export async function handleTaskRoutes(
         return String(left.id || '').localeCompare(String(right.id || ''));
       });
 
+      return { tasks: matchingTasks, prereqsAttached };
+    }
+
+    async function listPageResponse(
+      matchingTasks: Task[],
+      prereqsAttached: boolean,
+      reusedSnapshotId: string | undefined,
+    ): Promise<LambdaResponse> {
       const totalMatching = matchingTasks.length;
       const pageSlice = matchingTasks.slice(offset, offset + limit);
 
       const pageWithPrereqs = prereqsAttached
-        ? (pageSlice as typeof withPrereqs)
+        ? (pageSlice as Awaited<ReturnType<typeof attachPrerequisites<Task>>>)
         : await attachPrerequisites(client, pageSlice);
 
       const projected = await projectTasks(
@@ -686,7 +745,9 @@ export async function handleTaskRoutes(
       const responseBody: Record<string, unknown> = { tasks: listTasks.slice(0, take) };
       const nextOffset = offset + take;
       if (nextOffset < totalMatching) {
-        responseBody.nextCursor = await encodeCollectionCursor(binding, { offset: nextOffset });
+        const nextSnapshotId = reusedSnapshotId
+          || storeListSnapshot({ binding: snapshotBinding, tasks: matchingTasks, prereqsAttached });
+        responseBody.nextCursor = await encodeCollectionCursor(binding, { offset: nextOffset, snapshot: nextSnapshotId });
       }
 
       const ownerReference = ownerFilterUserId(ownerFilter);
@@ -699,40 +760,40 @@ export async function handleTaskRoutes(
 
     // Pick a query source, then intersect every supplied filter above.
     if (status && (startDate || endDate)) {
-      return await ownerListResponse(await listTasksByStatus(client, status, { startDate, endDate }));
+      return await ownerListResponse(() => listTasksByStatus(client, status, { startDate, endDate }));
     }
 
     if (date) {
-      return await ownerListResponse(await listTasksByDate(client, date));
+      return await ownerListResponse(() => listTasksByDate(client, date!));
     }
 
     if (startDate || endDate) {
-      return await ownerListResponse(await listTasksByDateRange(client, startDate!, endDate!));
+      return await ownerListResponse(() => listTasksByDateRange(client, startDate!, endDate!));
     }
 
     if (cardId) {
-      return await ownerListResponse(await listTasksByCard(client, cardId));
+      return await ownerListResponse(() => listTasksByCard(client, cardId!));
     }
 
     if (cardIds) {
-      const perCard = await Promise.all(cardIds.map((id) => listTasksByCard(client, id)));
-      return await ownerListResponse(perCard.flat());
+      return await ownerListResponse(async () => (
+        await Promise.all(cardIds.map((id) => listTasksByCard(client, id)))
+      ).flat());
     }
 
     if (status) {
-      return await ownerListResponse(await listTasksByStatus(client, status));
+      return await ownerListResponse(() => listTasksByStatus(client, status!));
     }
 
     if (ownerFilter) {
-      const owned = await listTasksByOwner(
+      return await ownerListResponse(() => listTasksByOwner(
         client,
         ownerFilter.kind === 'unassigned'
           ? { kind: 'unassigned' }
           : ownerFilter.kind === 'team'
             ? { kind: 'any' }
             : { kind: 'user', userId: ownerFilter.userId },
-      );
-      return await ownerListResponse(owned);
+      ));
     }
   }
 
