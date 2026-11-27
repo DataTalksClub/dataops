@@ -26,6 +26,8 @@ import {
   financeKey,
   digest,
   realDate,
+  INVOICE_TASK_SOURCE,
+  INVOICE_TASK_TAG,
 } from './core';
 import {
   adminCheck,
@@ -53,7 +55,10 @@ const OPEN_STATUSES = new Set(['todo', 'waiting']);
 
 export const PAYMENT_FOLLOW_UP_SOURCE = 'sponsor-finance';
 export const PAYMENT_FOLLOW_UP_TAG = 'payment-follow-up';
-const isFinanceTask = (task: Task) => task.source === PAYMENT_FOLLOW_UP_SOURCE || task.tags?.includes(PAYMENT_FOLLOW_UP_TAG);
+// The deal's invoice action (invoiceTask.ts) is finance work on the same money:
+// it is listed with the follow-ups and stops a second Task for the invoice step.
+const isFinanceTask = (task: Task) => task.source === PAYMENT_FOLLOW_UP_SOURCE || task.tags?.includes(PAYMENT_FOLLOW_UP_TAG)
+  || task.source === INVOICE_TASK_SOURCE || task.tags?.includes(INVOICE_TASK_TAG);
 
 /** The facts a payment follow-up decision is made from, derived with the canonical derivation code. */
 export type PaymentFollowUpDecision = {
