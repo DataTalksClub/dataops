@@ -59,6 +59,8 @@ import { recordRequestError } from '../requestErrorLog';
 import { createNotification } from '../db/notifications';
 import { newsletterSyncForDoc, summarizeSyncResults, syncSponsorDoc } from '../newsletter/sponsorBlocks';
 import { dataImageHost } from './newsletterDraft';
+import { BlocksError } from '../newsletter/blocksErrors';
+import { scheduledIssuesForDoc, unscheduleDraftsForDocSave } from '../newsletter/docUnschedule';
 import { FileStorageError } from '../storage';
 import { assertGuestPhotoBytes, assertHostedGuestPhoto, GuestPhotoError } from '../guestPhoto';
 import { savePublicImage } from '../publicImages';
@@ -209,6 +211,15 @@ function templateHasGuestPhoto(template: string): boolean {
 }
 
 /** A guest form save that points the photo at a newly hosted image must meet the guest photo rule. */
+/** Whether a save would change what a newsletter draft stages from the doc (content, title or template). */
+function docSaveChangesContent(doc: { template: string; title?: string; content?: Record<string, unknown> }, body: Record<string, unknown>): boolean {
+  if (body.template !== undefined && body.template !== doc.template) return true;
+  if (typeof body.title === 'string' && body.title !== doc.title) return true;
+  if (!body.content || typeof body.content !== 'object') return false;
+  const before = doc.content || {};
+  return Object.entries(body.content as Record<string, unknown>).some(([key, value]) => String(value ?? '') !== String(before[key] ?? ''));
+}
+
 async function assertChangedGuestPhoto(template: string, before: Record<string, string> | undefined, content: unknown): Promise<void> {
   if (!content || typeof content !== 'object' || !Object.hasOwn(content, 'photoUrl') || !templateHasGuestPhoto(template)) return;
   const next = String((content as Record<string, unknown>).photoUrl ?? '').trim();
@@ -1494,6 +1505,15 @@ export async function handleSponsorDocRoutes(
             }
           }
           await assertChangedGuestPhoto(String(body.template ?? loaded.doc.template), loaded.doc.content, body.content);
+          if (String(loaded.doc.template).startsWith('newsletter-') && docSaveChangesContent(loaded.doc, body)) {
+            // A scheduled issue goes back to draft (verified in Relay) before the doc changes; if that fails, nothing is saved.
+            try {
+              await unscheduleDraftsForDocSave(client, loaded.doc, { id: access.staffActorId || 'staff', name: access.staffActorName || 'DataOps Staff' });
+            } catch (error) {
+              if (error instanceof BlocksError) return json(error.status, { error: `${error.message} The sponsor document was not saved.`, code: error.code });
+              throw error;
+            }
+          }
           const updated = await updateSponsorDoc(client, docId, {
             template: body.template as SponsorDocTemplateKey | undefined,
             title: typeof body.title === 'string' ? body.title : undefined,
@@ -1536,6 +1556,14 @@ export async function handleSponsorDocRoutes(
         if (!verified.ok) return verified.response;
 
         await assertChangedGuestPhoto(verified.doc.template, verified.doc.content, body.content);
+        if (String(verified.doc.template).startsWith('newsletter-') && docSaveChangesContent(verified.doc, body)
+          && (await scheduledIssuesForDoc(client, verified.doc)).length) {
+          // A sponsor cannot unschedule DataTalks.Club's email; the newsletter team changes a scheduled issue.
+          return json(409, {
+            error: 'This newsletter issue is already scheduled to send, so the document is locked. Contact DataTalks.Club to change it.',
+            code: 'newsletter_scheduled',
+          });
+        }
         const updated = await updateSponsorDoc(client, docId, {
           content: body.content as Record<string, unknown> | undefined,
           status: body.status as SponsorDocStatus | undefined,

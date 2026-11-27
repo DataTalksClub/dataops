@@ -226,6 +226,30 @@ export interface DraftApproval {
   note?: string;
 }
 
+/** The owner received the test email of an approval and accepted it (see ./relayTransport.ts). */
+export interface DraftTestReceipt {
+  /** The approval's `draftVersion` and payload hash the received test email carried. */
+  approvedVersion: number;
+  payloadHash: string;
+  /** The test send whose email arrived, and the Relay campaign it went through. */
+  testRequestId: string;
+  campaignKey: string;
+  recipient: string;
+  receivedAt: string;
+  receivedBy: string;
+  receivedByName: string | null;
+}
+
+/** The newest test send of the draft, which the owner confirms after it arrives. */
+export interface DraftLastTest {
+  requestId: string;
+  payloadHash: string;
+  approvedVersion: number;
+  recipient: string;
+  status: string;
+  at: string;
+}
+
 /** Where the approved payload went in Relay (see ./relayTransport.ts). */
 export interface DraftDelivery {
   state: 'scheduling' | 'scheduled' | 'failed' | 'cancelled';
@@ -257,6 +281,9 @@ export interface IssueBlockSet {
   /** Unguessable id of the public "View this email in your browser" page. */
   webViewToken: string;
   approval?: DraftApproval | null;
+  /** Required before scheduling: the owner got the test email of the current approval. */
+  testReceipt?: DraftTestReceipt | null;
+  lastTest?: DraftLastTest | null;
   delivery?: DraftDelivery | null;
   /** Held while a test send rewrites the Relay draft campaign; a schedule waits for it. */
   testLock?: { requestId: string; at: string } | null;

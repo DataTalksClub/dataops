@@ -182,7 +182,7 @@ test("a doc-owned sponsor block is read-only with a link to its sponsor doc", as
   assert.ok(!form.querySelector('[data-action="delete"]'));
 });
 
-test("saving after approval says the approval was withdrawn; a scheduled draft is locked", async () => {
+test("saving after approval says the approval was withdrawn; a scheduled draft stays editable and says an edit unschedules it", async () => {
   const approved = draftOf({ approval: { state: "current", approvedByName: "Alexey" } });
   const { editor, flush, container } = setup({
     [`GET ${BASE}`]: () => ({ draft: approved }),
@@ -196,13 +196,14 @@ test("saving after approval says the approval was withdrawn; a scheduled draft i
   assert.match(container.querySelector("[data-editor-status]").textContent, /approval was withdrawn/);
 
   const locked = setup({
-    [`GET ${BASE}`]: () => ({ draft: draftOf({ locked: true, delivery: { state: "scheduled", scheduledAt: "2027-03-04T08:00:00.000Z", campaignKey: "k" }, blocks: draftOf().blocks.map((b) => ({ ...b, readOnly: true, canMove: false, canDelete: false })) }) }),
+    [`GET ${BASE}`]: () => ({ draft: draftOf({ locked: true, delivery: { state: "scheduled", scheduledAt: "2027-03-04T08:00:00.000Z", campaignKey: "k" } }) }),
     [`POST ${BASE}/preview`]: preview(),
   });
   await locked.editor.mount(locked.container, "iss");
   await locked.flush();
-  assert.ok(locked.container.querySelector("[data-draft-locked]"));
-  assert.ok(!locked.container.querySelector("[data-add-block]"));
+  assert.match(locked.container.querySelector("[data-draft-locked]").textContent, /Saving any change first cancels that schedule/);
+  assert.ok(locked.container.querySelector("[data-add-block]"), "blocks can still be added; the save unschedules first");
+  assert.equal(locked.container.querySelector('[data-envelope-form] [data-action="save-envelope"]')?.disabled ?? false, false);
 });
 
 test("opening a block keeps the live preview on screen", async () => {

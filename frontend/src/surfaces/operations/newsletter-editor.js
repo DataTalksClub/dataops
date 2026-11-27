@@ -80,11 +80,13 @@ export function createNewsletterEditor({
 
     function setDraft(next, message, tone = "success") {
       const hadApproval = draft?.approval?.state === "current";
+      const wasScheduled = Boolean(draft?.locked);
       draft = next;
       render();
       if (message) {
+        const unscheduled = wasScheduled && !draft.locked ? " The Relay schedule was cancelled first (confirmed by Relay)." : "";
         const withdrawn = hadApproval && draft.approval?.state !== "current" ? " The owner's approval was withdrawn; review again before sending." : "";
-        say(`${message}${withdrawn}`, tone);
+        say(`${message}${unscheduled}${withdrawn}`, tone);
       }
       schedulePreview(0);
     }
@@ -168,10 +170,8 @@ export function createNewsletterEditor({
       const preview = fieldControl(dom, { name: "previewText", label: "Inbox preview text", kind: "text", required: false, default: "" }, draft.previewText);
       const save = button("Save subject", "secondary", "save-envelope");
       save.type = "submit";
-      save.disabled = draft.locked;
       form.append(subject, preview, save);
       for (const input of [subject, preview].map((wrap) => wrap.querySelector("[data-block-field]"))) {
-        input.disabled = draft.locked;
         input.addEventListener("input", () => schedulePreview());
       }
       form.addEventListener("submit", async (event) => {
@@ -389,7 +389,11 @@ export function createNewsletterEditor({
       left.dataset.editorLeft = "";
       if (draft.locked) {
         const when = formatWhen(draft.delivery?.scheduledAt);
-        const lock = el("p", "newsletter-editor__locked", `Scheduled in Relay for ${when}. The draft is locked; cancel the schedule on the full email page to edit it.`);
+        const lock = el(
+          "p",
+          "newsletter-editor__locked",
+          `Scheduled in Relay for ${when}. Saving any change first cancels that schedule (checked with Relay); then the email needs a new approval, test and schedule.`,
+        );
         lock.dataset.draftLocked = "";
         left.append(lock);
       }
@@ -405,7 +409,7 @@ export function createNewsletterEditor({
       list.dataset.blockList = "";
       draft.blocks.forEach((block, index) => list.append(renderBlock(block, index)));
       left.append(list);
-      if (!draft.locked) {
+      {
         const add = button(pickerOpen ? "Close block types" : "Add block", "primary", "add");
         add.dataset.addBlock = "";
         const pickerBox = el("div", "newsletter-editor__add");

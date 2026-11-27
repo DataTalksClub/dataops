@@ -306,7 +306,7 @@ export async function run(argv, io = console) {
       print(sponsorDocs.newsletterDocHelp);
       return EXIT.ok;
     }
-    if (commandName === "newsletter" && ["draft", "block", "block-types", "render", "sponsor-sync", "revisions", "approve", "test-send", "schedule", "cancel-schedule", "delivery"].includes(rest[0])) {
+    if (commandName === "newsletter" && ["draft", "block", "block-types", "render", "sponsor-sync", "revisions", "approve", "test-send", "test-receipt", "schedule", "cancel-schedule", "delivery"].includes(rest[0])) {
       print(newsletter.draftHelp);
       return EXIT.ok;
     }
