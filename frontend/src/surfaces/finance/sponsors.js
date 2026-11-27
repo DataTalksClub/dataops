@@ -10,7 +10,7 @@ import { createSponsorMoney } from "./sponsor-money.js";
 import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { createSponsorCompanyDetail } from "./sponsor-company-detail.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
-import { SPONSOR_PIPELINE_STAGES, createSponsorPipelineView } from "./sponsor-pipeline.js";
+import { createSponsorPipelineView } from "./sponsor-pipeline.js";
 import { createCollectionLoader } from "../../core/collection-loader.js";
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
@@ -123,9 +123,6 @@ export function createSponsorCrmSurface(context) {
     });
     documentList.append(surface);
     surface.querySelector("[data-crm-bookings]").classList.add("crm-funnel");
-    surface.querySelector("[data-crm-status]").innerHTML = html`<option value="">All stages</option>${
-      SPONSOR_PIPELINE_STAGES.map(({ id, label }) => html`<option value="${id}">${label}</option>`).join("")
-    }`;
     setRouteTitle("CRM");
     const api = (path, options = {}) =>
         request(workApiUrl(`/api/sponsor-crm${path}`), {

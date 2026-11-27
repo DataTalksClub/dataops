@@ -1,15 +1,15 @@
-// The selected Show label ("Needs attention") must fit inside its select with
-// clear space before the chevron, with Show and Sort both visible and no
-// horizontal overflow, on the narrowest phones.
+// The selected View label must fit inside its select with clear space before
+// the chevron, with the view selector and Sort both visible and no horizontal
+// overflow, on the narrowest phones.
 const { test, expect } = require('@playwright/test');
 const { setupPageWithAuth } = require('./helpers/auth');
 
 for (const width of [375, 390]) {
-  test(`/sponsors/pipeline: Show filter label clears the chevron at ${width}px`, async ({ page }, testInfo) => {
+  test(`/sponsors/pipeline: View selector label clears the chevron at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 844 });
     await setupPageWithAuth(page);
     await page.goto('/sponsors/pipeline');
-    const show = page.locator('[data-pipeline-view]');
+    const show = page.locator('[data-views-bar="pipeline"] [data-views-select]');
     const sort = page.locator('[data-pipeline-sort]');
     await expect(show).toBeVisible();
     await expect(sort).toBeVisible();
