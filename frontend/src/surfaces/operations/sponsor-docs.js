@@ -732,7 +732,7 @@ export function createSponsorDocPage({
 
           const imageOnly = isImageOnlyVisualField(fieldDef);
           const isMultiline = !imageOnly && (fieldDef.type === "textarea" || Boolean(fieldDef.multiline));
-          const control = isMultiline ? el("textarea", "sponsor-doc-textarea") : el("input", "dk-input");
+          const control = isMultiline ? el("textarea", "dk-textarea sponsor-doc-textarea") : el("input", "dk-input");
           if (isMultiline) control.rows = fieldDef.rows || 5;
           else control.type = imageOnly ? "hidden" : "text";
           // Image fields show the image and an Upload/Replace button; the URL

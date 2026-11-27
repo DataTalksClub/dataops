@@ -234,6 +234,9 @@ test("renders card-as-email layout (opening -> bullets -> closing -> CTA button)
     .querySelectorAll("[data-sponsor-email-step]")
     .map((node) => node.dataset.sponsorEmailStep);
   assert.deepEqual(editorSteps, ["opening", "bullets", "closing", "cta"]);
+  // Closing shares the inputs' surface: dakit's .dk-textarea, like the bullet and CTA .dk-input fields.
+  assert.ok(h.root.querySelector("#sponsor-field-closing").classList.contains("dk-textarea"));
+  assert.ok(h.root.querySelector("#sponsor-field-ctaText").classList.contains("dk-input"));
 
   // 2. Preview shows the same ordered flow: opening -> bullets -> closing (the CTA appears once it has a label)
   const preview = h.root.querySelector("[data-sponsor-live-preview]");

@@ -247,20 +247,21 @@
   min-width: 0;
 }
 
+/* Surface, border, placeholder, hover and focus come from dakit's shared
+   .dk-textarea, so Closing/Intro match the Bullet and CTA inputs (.dk-input)
+   in both themes; only the sizing is the doc's own. */
 .sponsor-doc-textarea {
-  width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   min-height: var(--dk-size-control-lg);
-  padding: var(--dk-space-3);
-  border: 1px solid var(--dk-border-default);
-  border-radius: var(--dk-radius-md);
-  background-color: var(--dk-bg-surface);
-  color: var(--dk-text-primary);
   font-family: var(--dk-font-sans);
   font-size: var(--dk-text-body);
   line-height: var(--dk-leading-normal);
-  resize: vertical;
+}
+
+.sponsor-doc-card .dk-input[aria-invalid="true"],
+.sponsor-doc-textarea[aria-invalid="true"] {
+  border-color: var(--dk-border-strong);
 }
 
 .sponsor-doc-card .dk-input,
@@ -363,11 +364,6 @@
 
 .sponsor-doc-details[open] .sponsor-doc-details__hint {
   display: none;
-}
-
-.sponsor-doc-textarea:focus {
-  outline: none;
-  border-color: var(--dk-border-strong);
 }
 
 .sponsor-doc-actions {
