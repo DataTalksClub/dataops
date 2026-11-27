@@ -1,4 +1,4 @@
-import { assertOwnerAvailable, OwnerAvailabilityError } from './assertOwnerAvailable';
+import { assertOwnerAvailable, OwnerAvailabilityError, type OwnerAvailabilityClock } from './assertOwnerAvailable';
 /**
  * Google mirroring for calendar holds, per SOP
  * `sop.events.calendar.creating-tentative-event-on-google-calendar`.
@@ -53,6 +53,8 @@ export interface HoldGoogleDeps {
   calendarIds?: string[];
   /** Override Google sendUpdates on organizer cancellation (e.g. 'none' on tentative TTL expiry so no guest email is ever sent). */
   sendUpdates?: 'all' | 'none';
+  /** Pinned clock for the owner-availability check (tests); defaults to the current day. */
+  clock?: OwnerAvailabilityClock;
 }
 
 export type HoldGoogleResult =
@@ -208,7 +210,7 @@ async function syncEvents(
     if (calendars.includes('primary') || calendars.includes(HOLD_ORGANIZER)) {
       return deferred('Hold calendars must name personal calendars explicitly; primary is the Orin organizer calendar.');
     }
-    await assertOwnerAvailable(undefined, event.startIso, event.endIso, eventIds);
+    await assertOwnerAvailable(undefined, event.startIso, event.endIso, eventIds, deps.clock);
     // Stable opaque UID enables recovery after partial writes without leaking the hold id.
     const uid = `${createHash('sha256').update(event.eventKey).digest('hex')}@google.com`;
     const body = eventBody(event);

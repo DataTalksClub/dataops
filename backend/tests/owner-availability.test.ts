@@ -14,6 +14,9 @@ import type { EventPolicy } from '../src/events/policy';
 import type { Template } from '../src/types';
 
 const lunch = { id: 'lunch', summary: 'Lunch', start: { dateTime: '2026-11-26T12:00:00+01:00' }, end: { dateTime: '2026-11-26T13:00:00+01:00' } };
+// The owner calendar is read only from today onward, so the fixture days below
+// must stay ahead of a pinned today, never of the wall clock.
+const clock = { today: '2026-11-24', now: new Date('2026-11-24T12:00:00Z') };
 function fixture(events: Record<string, any[]>, options: { timeout?: boolean; freebusy?: any; paginate?: boolean } = {}) {
   const calls: string[] = [];
   const run: typeof fetch = async (input, init) => {
@@ -41,32 +44,32 @@ afterEach(() => setOwnerCalendarProviderClientsForTests({}));
 test('named lunch on a second owner calendar blocks 12:25 booking and midday listing; bare Lunch alone is soft', async () => {
   const realLunch = { ...lunch, id: 'meeting', summary: 'Lunch with Guest' };
   fixture({ [OWNER]: [lunch], secondary: [realLunch] }, { paginate: true });
-  const slots = await ownerCalendarOverlay({ today: '2026-11-24' }).project('2026-11-26','2026-11-26');
+  const slots = await ownerCalendarOverlay(clock).project('2026-11-26','2026-11-26');
   assert.equal(slots.connection.state, 'connected'); assert.equal(slots.items.length, 0);
-  await assert.rejects(assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z'), /owner calendar conflict.*Lunch with Guest/);
+  await assert.rejects(assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z', {}, clock), /owner calendar conflict.*Lunch with Guest/);
   fixture({ [OWNER]: [lunch] }, { freebusy: { calendars: { [OWNER]: { busy: [{ start: lunch.start.dateTime, end: lunch.end.dateTime }] } } } });
-  const available = await ownerCalendarOverlay({ today: '2026-11-24' }).project('2026-11-26','2026-11-26');
+  const available = await ownerCalendarOverlay(clock).project('2026-11-26','2026-11-26');
   assert.ok(available.items.some(i => i.isAvailableSlot));
-  await assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z');
+  await assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z', {}, clock);
   assert.equal(isSoftEvent({ summary: 'Morning no' }), false);
   assert.equal(isSoftEvent({ summary: 'No' }), false);
 });
 
 test('transparent all-day summit closes December 3 in both listing and booking', async () => {
   fixture({ [OWNER]: [{ id: 'summit', summary: 'Summit', transparency: 'transparent', start: { date: '2026-12-03' }, end: { date: '2026-12-04' } }] });
-  const slots = await ownerCalendarOverlay().project('2026-12-03','2026-12-03');
+  const slots = await ownerCalendarOverlay(clock).project('2026-12-03','2026-12-03');
   assert.equal(slots.items.length, 0);
-  const day = await ownerCalendarOverlay({ includeAll: true }).project('2026-12-03','2026-12-03');
+  const day = await ownerCalendarOverlay({ includeAll: true, ...clock }).project('2026-12-03','2026-12-03');
   assert.equal(day.items[0].slot, 'all-day');
-  await assert.rejects(assertOwnerAvailable(undefined, '2026-12-03T11:25:00Z', '2026-12-03T12:30:00Z'), /Summit/);
+  await assert.rejects(assertOwnerAvailable(undefined, '2026-12-03T11:25:00Z', '2026-12-03T12:30:00Z', {}, clock), /Summit/);
 });
 
 test('booking refreshes freebusy after an earlier free listing; conflict sends no write', async () => {
   fixture({ [OWNER]: [] });
-  assert.ok((await ownerCalendarOverlay().project('2026-11-26','2026-11-26')).items.length);
+  assert.ok((await ownerCalendarOverlay(clock).project('2026-11-26','2026-11-26')).items.length);
   const { calls } = fixture({ [OWNER]: [{ ...lunch, summary: 'New meeting' }] });
   const writerCalls: string[] = [];
-  await assert.rejects(createHoldGoogleEvents({ eventKey: 'synthetic', summary: 'Guest', description: '', startIso: '2026-11-26T11:25:00Z', endIso: '2026-11-26T12:30:00Z', timeZone: 'Europe/Berlin' }, { credential: 'synthetic', connectionId: 'organizer', fetchImpl: async (input, init) => {
+  await assert.rejects(createHoldGoogleEvents({ eventKey: 'synthetic', summary: 'Guest', description: '', startIso: '2026-11-26T11:25:00Z', endIso: '2026-11-26T12:30:00Z', timeZone: 'Europe/Berlin' }, { credential: 'synthetic', connectionId: 'organizer', clock, fetchImpl: async (input, init) => {
     writerCalls.push(`${init?.method || 'GET'} ${String(input)}`);
     return Response.json(String(input).endsWith('/api/agent/token') ? { access_token: 'writer' } : { id: HOLD_ORGANIZER });
   } }), /Cannot book/);
@@ -76,13 +79,13 @@ test('booking refreshes freebusy after an earlier free listing; conflict sends n
 
 test('unknown freebusy, timeout and per-calendar errors fail closed; an own invite is excluded only by calendar and id', async () => {
   fixture({ [OWNER]: [] }, { timeout: true });
-  await assert.rejects(assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z'), /freebusy unavailable/);
+  await assert.rejects(assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z', {}, clock), /freebusy unavailable/);
   let f = fixture({ [OWNER]: [] }, { freebusy: { calendars: { [OWNER]: { errors: [{ reason: 'forbidden' }] } } } });
   await assert.rejects(readOwnerAvailability(f.run,'synthetic','2026-11-26','2026-11-26'), /incomplete/);
   fixture({ [OWNER]: [] }, { freebusy: { calendars: { [OWNER]: { busy: [{ start: '2026-11-26T11:00:00Z', end: '2026-11-26T12:00:00Z' }] } } } });
-  await assert.rejects(assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z'), /Busy \(freebusy\)/);
+  await assert.rejects(assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z', {}, clock), /Busy \(freebusy\)/);
   fixture({ [OWNER]: [{ ...lunch, summary: 'Own invite' }] });
-  await assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z', { [OWNER]: 'lunch' });
+  await assertOwnerAvailable(undefined, '2026-11-26T11:25:00Z', '2026-11-26T12:30:00Z', { [OWNER]: 'lunch' }, clock);
 });
 
 test('missing agreement and November selection outside a January agreement fail before any data/calendar access', async () => {
