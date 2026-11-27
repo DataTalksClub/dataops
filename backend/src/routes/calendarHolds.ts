@@ -1,3 +1,4 @@
+import { checkTitle } from '../events/titleQuality';
 import { linkConfirmedHold, HoldLinkError } from '../calendar/linkConfirmedHold';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { LambdaEvent, LambdaResponse } from '../types';
@@ -111,7 +112,7 @@ async function createRoute(event: LambdaEvent, client: DynamoDBDocumentClient): 
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(201, { hold: stored });
+  return json(201, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 function rangeQuery(event: LambdaEvent): { from?: string; to?: string } | null {
@@ -268,7 +269,7 @@ async function confirmRoute(id: string, event: LambdaEvent, client: DynamoDBDocu
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(200, { hold: stored });
+  return json(200, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 async function releaseRoute(
@@ -298,7 +299,7 @@ async function releaseRoute(
       : { googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(200, { hold: stored });
+  return json(200, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 async function moveRoute(
@@ -334,6 +335,7 @@ async function moveRoute(
         actor: actor(event),
       });
       return json(200, {
+        titleQuality: checkTitle(result.event.renderValues.topic || result.event.renderValues.title),
         hold: toCalendarHoldView(result),
         event: result.event,
         card: result.card,
@@ -396,7 +398,7 @@ async function moveRoute(
       : { googleEventIds: sync.eventIds, googleSync: { state: 'deferred' as const, reason: sync.reason } }),
   };
   await putCalendarHold(client, stored);
-  return json(200, { hold: stored });
+  return json(200, { hold: stored, titleQuality: checkTitle(stored.topic || stored.title) });
 }
 
 async function expireRoute(event: LambdaEvent, client: DynamoDBDocumentClient): Promise<LambdaResponse> {
