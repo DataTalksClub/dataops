@@ -578,3 +578,9 @@ test("pipeline date bounds validate as inclusive absolute days, reversed rejecte
     /actionable, active, early, overdue, reply/,
   );
 });
+
+test("the CRM tab bar does not clip the More dropdown that overlays the page", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../src/styles/finance.css", import.meta.url), "utf8");
+  assert.match(css, /\.crm-views\s*\{\s*overflow:\s*visible;\s*\}/);
+});
