@@ -17,6 +17,7 @@ import {
   revisions,
   schedule,
   sponsorSync,
+  testReceipt,
   testSend,
 } from "./newsletterDraft.mjs";
 import { domainDocCommand } from "./sponsorDocs.mjs";
@@ -86,7 +87,8 @@ Usage
   dataops newsletter sponsor-sync <issue> --slot primary|secondary [--dry-run]
   dataops newsletter revisions <issue> [--block <id>] [--diff] [--rev N]
   dataops newsletter approve <issue> --version N --hash <payload-sha256>        (owner)
-  dataops newsletter test-send <issue> --to <email>                             (owner)
+  dataops newsletter test-send <issue>                                          (owner; to the owner's mailbox)
+  dataops newsletter test-receipt <issue> --test <id> --version N --hash <sha>  (owner; the test arrived)
   dataops newsletter schedule <issue> --at <ISO> --version N --hash <sha> --yes (owner)
   dataops newsletter cancel-schedule <issue> --yes | delivery <issue> [--refresh]
                                   The issue's email, built block by block in DataOps and
@@ -949,6 +951,7 @@ export const commands = {
   revisions,
   approve,
   "test-send": testSend,
+  "test-receipt": testReceipt,
   schedule,
   "cancel-schedule": cancelSchedule,
   delivery,

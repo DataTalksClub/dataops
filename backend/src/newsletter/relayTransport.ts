@@ -27,8 +27,9 @@ import { createHash } from 'crypto';
 import { GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
+import { OWNER_WORK_EMAIL } from '../identity/operatingIdentities';
 import { readRuntimeSecret } from '../secrets/reader';
-import type { DraftDelivery, IssueBlockSet } from './blocks';
+import type { DraftDelivery, DraftLastTest, DraftTestReceipt, IssueBlockSet } from './blocks';
 import { BlocksError } from './blocksErrors';
 import {
   appendBlockRevisions,
@@ -37,10 +38,11 @@ import {
   getFrozenPayload,
   putBlockSet,
   putWebView,
+  requireBlockSet,
   type FrozenPayload,
 } from './blocksStore';
-import { requireBlockSet, type BlockActor } from './blocksEdit';
-import { approvalState, payloadHashOf, renderDraft } from './draftApproval';
+import type { BlockActor } from './blocksEdit';
+import { approvalState, LOCKED_DELIVERY, payloadHashOf, renderDraft, testReceiptState } from './draftApproval';
 
 export type RelayTarget = 'production' | 'dev';
 
@@ -54,8 +56,8 @@ export const RELAY_TARGET_CONFIG: Record<RelayTarget, { url: string; secret: str
 export const RELAY_CLIENT = 'dtc-newsletter';
 export const DEFAULT_RELAY_AUDIENCE = 'dtc';
 export const RELAY_TIMEOUT_MS = 20_000;
-/** Relay test sends accept at most two addresses per request. */
-export const MAX_TEST_RECIPIENTS = 2;
+/** The only test recipient: the owner's own mailbox, fixed on the server. */
+export const TEST_RECIPIENT = OWNER_WORK_EMAIL;
 /** A schedule must leave Relay time to treat it as future, never as "send now". */
 export const MIN_SCHEDULE_LEAD_MS = 15 * 60_000;
 export const MAX_SCHEDULE_AHEAD_MS = 60 * 86_400_000;
@@ -295,12 +297,13 @@ function testLocked(set: IssueBlockSet): boolean {
   return Boolean(set.testLock && Date.now() - Date.parse(set.testLock.at) < TEST_LOCK_MS);
 }
 
-async function releaseTestLock(client: DynamoDBDocumentClient, issueId: string, requestId: string): Promise<void> {
+/** Release the test lock and remember the outcome, so the review page can ask the owner to confirm that test. */
+async function releaseTestLock(client: DynamoDBDocumentClient, issueId: string, requestId: string, lastTest: DraftLastTest): Promise<void> {
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const set = await requireBlockSet(client, issueId);
     if (set.testLock?.requestId !== requestId) return;
     try {
-      await putBlockSet(client, { ...set, testLock: null, version: set.version + 1 }, set.version);
+      await putBlockSet(client, { ...set, testLock: null, lastTest, version: set.version + 1 }, set.version);
       return;
     } catch (error) {
       if (!(error instanceof BlockSetVersionConflict)) throw error;
@@ -311,6 +314,7 @@ async function releaseTestLock(client: DynamoDBDocumentClient, issueId: string, 
 const testKey = (issueId: string, requestId: string) => ({ PK: `NL_DELIVERY#${issueId}`, SK: `TEST#${requestId}` });
 
 export interface TestSendOutcome {
+  requestId: string;
   campaignKey: string;
   emails: string[];
   status: string;
@@ -319,14 +323,17 @@ export interface TestSendOutcome {
   detail: TestSendResult | null;
 }
 
-function cleanEmails(input: unknown): string[] {
-  if (!Array.isArray(input) || !input.length) throw new BlocksError('Give one or two test addresses.', 400, 'test_recipients_missing');
-  const emails = [...new Set(input.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean))];
-  if (!emails.length) throw new BlocksError('Give one or two test addresses.', 400, 'test_recipients_missing');
-  if (emails.length > MAX_TEST_RECIPIENTS) throw new BlocksError(`Relay test sends take at most ${MAX_TEST_RECIPIENTS} addresses.`, 400, 'test_recipients_too_many');
-  const bad = emails.find((email) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email));
-  if (bad) throw new BlocksError(`${bad} is not an email address.`, 400, 'test_recipients_invalid');
-  return emails;
+/**
+ * A test email goes to the owner's mailbox only; the recipient is not the
+ * caller's choice. A request naming any other address is refused.
+ */
+function ownerRecipients(input: unknown): string[] {
+  if (input === undefined || input === null) return [TEST_RECIPIENT];
+  const given = Array.isArray(input) ? input.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean) : null;
+  if (!given || given.some((email) => email !== TEST_RECIPIENT)) {
+    throw new BlocksError(`Test emails go only to the owner's mailbox (${TEST_RECIPIENT}); leave out "emails".`, 400, 'test_recipient_not_owner');
+  }
+  return [TEST_RECIPIENT];
 }
 
 function cleanRequestId(input: unknown): string {
@@ -336,9 +343,9 @@ function cleanRequestId(input: unknown): string {
 }
 
 /**
- * Send the approved payload to one or two allow-listed test addresses through
- * Relay. The draft campaign it needs is created (or refreshed) with exactly the
- * approved bytes; nothing is queued.
+ * Send the approved payload to the owner's mailbox through Relay. The draft
+ * campaign it needs is created (or refreshed) with exactly the approved bytes;
+ * nothing is queued.
  */
 export async function testSendApproved(
   client: DynamoDBDocumentClient,
@@ -346,7 +353,7 @@ export async function testSendApproved(
   input: { emails: unknown; requestId: unknown },
   actor: BlockActor,
 ): Promise<TestSendOutcome> {
-  const emails = cleanEmails(input.emails);
+  const emails = ownerRecipients(input.emails);
   const requestId = cleanRequestId(input.requestId);
   const set = await requireBlockSet(client, issue.id);
   if (set.delivery && (set.delivery.state === 'scheduling' || set.delivery.state === 'scheduled')) {
@@ -369,13 +376,23 @@ export async function testSendApproved(
   try {
     await client.send(new PutCommand({
       TableName: TABLE_ARTIFACTS,
-      Item: { ...testKey(issue.id, requestId), state: 'sending', campaignKey, emails, payloadHash: payload.payloadHash, requestedAt: now, requestedBy: actor.id },
+      Item: {
+        ...testKey(issue.id, requestId),
+        state: 'sending',
+        campaignKey,
+        emails,
+        payloadHash: payload.payloadHash,
+        approvedVersion: set.approval?.draftVersion,
+        requestedAt: now,
+        requestedBy: actor.id,
+      },
       ConditionExpression: 'attribute_not_exists(PK)',
     }));
   } catch (error) {
     if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') throw error;
     const recorded = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: testKey(issue.id, requestId), ConsistentRead: true }))).Item || {};
     return {
+      requestId,
       campaignKey: String(recorded.campaignKey || campaignKey),
       emails: (recorded.emails as string[]) || emails,
       status: String(recorded.state || 'unknown'),
@@ -401,8 +418,15 @@ export async function testSendApproved(
     error = (failure as Error).message;
     throw failure;
   } finally {
-    await releaseTestLock(client, issue.id, requestId);
     const done = new Date().toISOString();
+    await releaseTestLock(client, issue.id, requestId, {
+      requestId,
+      payloadHash: payload.payloadHash,
+      approvedVersion: set.approval?.draftVersion || 0,
+      recipient: emails[0],
+      status: error ? 'failed' : status,
+      at: done,
+    });
     await client.send(new UpdateCommand({
       TableName: TABLE_ARTIFACTS,
       Key: testKey(issue.id, requestId),
@@ -424,7 +448,83 @@ export async function testSendApproved(
       after: null,
     }]).catch(() => undefined);
   }
-  return { campaignKey, emails, status, sentCount: detail?.sent_count || 0, replayed: false, detail };
+  return { requestId, campaignKey, emails, status, sentCount: detail?.sent_count || 0, replayed: false, detail };
+}
+
+// ------------------------------------------------------------------ test receipt
+
+/**
+ * Record that the owner received the test email of the current approval and
+ * accepted it. Scheduling needs this receipt for the exact approved version
+ * and payload hash; any later edit clears it.
+ */
+export async function recordTestReceipt(
+  client: DynamoDBDocumentClient,
+  issue: { id: string },
+  input: { version: unknown; payloadHash: unknown; testRequestId: unknown },
+  actor: BlockActor,
+): Promise<{ set: IssueBlockSet; receipt: DraftTestReceipt }> {
+  const testRequestId = cleanRequestId(input.testRequestId);
+  for (let attempt = 0; ; attempt += 1) {
+    const set = await requireBlockSet(client, issue.id);
+    const approval = set.approval;
+    if (!approval || approvalState(set) !== 'current') {
+      throw new BlocksError('The draft has no current owner approval; approve the current email and send a test first.', 409, 'approval_required');
+    }
+    if (input.version !== approval.draftVersion || input.payloadHash !== approval.payloadHash) {
+      throw new BlocksError(
+        `The approval is now for version ${approval.draftVersion}; confirm the test email of the current approval.`,
+        409,
+        'draft_changed',
+        { approvedVersion: approval.draftVersion, payloadHash: approval.payloadHash },
+      );
+    }
+    const test = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: testKey(issue.id, testRequestId), ConsistentRead: true }))).Item;
+    const recipients = (test?.emails as string[] | undefined) || [];
+    if (!test || test.state !== 'provider_accepted' || test.payloadHash !== approval.payloadHash || test.approvedVersion !== approval.draftVersion
+      || recipients.length !== 1 || recipients[0] !== TEST_RECIPIENT) {
+      throw new BlocksError(
+        'No accepted test send of the current approval to the owner matches this request; send a test of the current email first.',
+        409,
+        'test_send_required',
+      );
+    }
+    const now = new Date().toISOString();
+    const receipt: DraftTestReceipt = {
+      approvedVersion: approval.draftVersion,
+      payloadHash: approval.payloadHash,
+      testRequestId,
+      campaignKey: String(test.campaignKey || ''),
+      recipient: TEST_RECIPIENT,
+      receivedAt: now,
+      receivedBy: actor.id,
+      receivedByName: actor.name,
+    };
+    try {
+      await putBlockSet(client, { ...set, testReceipt: receipt, version: set.version + 1, updatedAt: now }, set.version);
+    } catch (error) {
+      if (error instanceof BlockSetVersionConflict && attempt < 5) continue;
+      throw error;
+    }
+    await client.send(new UpdateCommand({
+      TableName: TABLE_ARTIFACTS,
+      Key: testKey(issue.id, testRequestId),
+      UpdateExpression: 'SET receivedAt = :at, receivedBy = :by',
+      ExpressionAttributeValues: { ':at': now, ':by': actor.id },
+    }));
+    await appendBlockRevisions(client, issue.id, [{
+      blockId: '',
+      blockType: 'draft',
+      origin: 'test-receipt',
+      createdAt: now,
+      actorUserId: actor.id,
+      actorName: actor.name,
+      detail: `owner received the test email of approved version ${approval.draftVersion} (payload ${approval.payloadHash.slice(0, 12)}, test ${testRequestId}) and accepted it`,
+      before: null,
+      after: null,
+    }]);
+    return { set: { ...set, testReceipt: receipt, version: set.version + 1, updatedAt: now }, receipt };
+  }
 }
 
 // ------------------------------------------------------------------ schedule / cancel
@@ -478,6 +578,13 @@ export async function scheduleApproved(
   const payload = await approvedPayload(client, set);
   if (input.payloadHash !== payload.payloadHash) {
     throw new BlocksError('The confirmed payload is not the approved one; review the approved email again.', 409, 'payload_not_confirmed');
+  }
+  if (testReceiptState(set) !== 'current') {
+    throw new BlocksError(
+      'Send a test of the approved email to yourself and confirm you received it before scheduling; the receipt must be for this exact approval.',
+      409,
+      'test_receipt_required',
+    );
   }
   let attempt = currentAttempt(set);
   let campaignKey = campaignKeyFor(set, issue.issueNumber, attempt);
@@ -629,8 +736,17 @@ export async function cancelScheduled(
   }
   const relay = await relayCampaignClient();
   const existing = await relay.getCampaign(delivery.campaignKey);
-  let relayStatus = existing?.status || 'missing';
-  if (existing && existing.status !== 'cancelled') {
+  if (!existing) {
+    // A 404 does not prove nothing is pending (another scope, or a credential
+    // that cannot see it): keep the delivery as it is rather than unlock it.
+    throw new RelayError(
+      `Relay does not show campaign ${delivery.campaignKey} to DataOps (HTTP 404), so DataOps cannot confirm it is cancelled; the delivery was not changed. Check the campaign in Relay.`,
+      409,
+      'relay_campaign_missing',
+    );
+  }
+  let relayStatus = existing.status;
+  if (existing.status !== 'cancelled') {
     const result = await relay.cancel(delivery.campaignKey);
     relayStatus = result.campaign?.status || relayStatus;
     if (relayStatus !== 'cancelled') {
@@ -647,11 +763,102 @@ export async function cancelScheduled(
     createdAt: now,
     actorUserId: actor.id,
     actorName: actor.name,
-    detail: `Relay campaign ${delivery.campaignKey} ${existing ? 'cancelled' : 'not found in Relay'}; the draft is editable again`,
+    detail: `Relay campaign ${delivery.campaignKey} cancelled; the draft is editable again`,
     before: null,
     after: null,
   }]);
   return { set: next, delivery: next.delivery as DraftDelivery };
+}
+
+// ------------------------------------------------------------------ unschedule for an edit
+
+const unscheduleFailed = (message: string, status = 502) => new BlocksError(message, status, 'unschedule_failed');
+
+/**
+ * The first half of editing a scheduled draft: cancel its Relay campaign and
+ * read it back to verify Relay will not send it. Writes nothing to the draft;
+ * the caller commits the edit together with the returned cancelled delivery
+ * (./blocksEdit.ts `commitContent`). When Relay cannot be reached, refuses
+ * the cancel, or has started sending, it throws `unschedule_failed` and the
+ * caller leaves the draft untouched: an edit never claims success while a
+ * stale email may still go out.
+ *
+ * Only an explicit `cancelled` status read back from Relay clears the edit.
+ * A 404 (no campaign under this key, client and audience) is not proof that
+ * nothing will be sent: the campaign may sit under another scope, or the
+ * credential may not see it. It counts as unconfirmed, like a timeout or 403.
+ */
+export async function unscheduleForEdit(
+  client: DynamoDBDocumentClient,
+  set: IssueBlockSet,
+): Promise<{ delivery: DraftDelivery; detail: string }> {
+  const delivery = set.delivery;
+  if (!delivery || !LOCKED_DELIVERY.has(delivery.state)) throw new Error('unscheduleForEdit needs a scheduled delivery');
+  if (delivery.state === 'scheduling' && !stuck(delivery)) {
+    throw new BlocksError(
+      'The approved email is being scheduled in Relay right now. Wait for that to finish, then edit: the edit cancels the schedule first.',
+      409,
+      'schedule_in_progress',
+      { delivery },
+    );
+  }
+  const key = delivery.campaignKey;
+  let relay: RelayCampaignClient;
+  try {
+    relay = await relayCampaignClient();
+  } catch (error) {
+    throw unscheduleFailed(`The scheduled email could not be cancelled in Relay (${(error as Error).message}); the draft was not changed.`);
+  }
+  const read = async (): Promise<RelayCampaign | null> => {
+    try {
+      return await relay.getCampaign(key);
+    } catch (error) {
+      throw unscheduleFailed(`Relay campaign ${key} could not be read (${(error as Error).message}), so the schedule is not confirmed cancelled; the draft was not changed.`);
+    }
+  };
+  const missing = () => unscheduleFailed(
+    `Relay does not show campaign ${key} to DataOps (HTTP 404), so DataOps cannot confirm the scheduled email will not go out; the draft was not changed. Check the campaign in Relay.`,
+  );
+  let campaign = await read();
+  if (!campaign) throw missing();
+  let cancelled = false;
+  if (campaign.status !== 'cancelled') {
+    if (campaign.status === 'sending' || campaign.status === 'sent') {
+      throw unscheduleFailed(`Relay is already ${campaign.status === 'sent' ? 'done sending' : 'sending'} campaign ${key}; it can no longer be unscheduled, and the draft was not changed.`, 409);
+    }
+    let cancelError = '';
+    try {
+      await relay.cancel(key);
+    } catch (error) {
+      cancelError = (error as Error).message;
+    }
+    // Verify with Relay itself, whatever the cancel call answered.
+    campaign = await read();
+    if (!campaign) throw missing();
+    if (campaign.status !== 'cancelled') {
+      throw unscheduleFailed(
+        `Relay did not cancel campaign ${key} (status ${campaign.status}${cancelError ? `; ${cancelError}` : ''}); the draft was not changed.`,
+        campaign.status === 'sending' || campaign.status === 'sent' ? 409 : 502,
+      );
+    }
+    cancelled = true;
+  }
+  await deleteWebView(client, set.webViewToken).catch(() => undefined);
+  const now = new Date().toISOString();
+  return {
+    delivery: { ...delivery, state: 'cancelled', relayStatus: campaign.status, updatedAt: now },
+    detail: `Relay campaign ${key} ${cancelled ? 'cancelled' : 'already cancelled'} (verified) to edit the draft; it goes back to draft and needs a new approval, test and schedule`,
+  };
+}
+
+/**
+ * The edit lost its write race after Relay already cancelled the campaign:
+ * record the cancellation so DataOps never shows a schedule Relay no longer has.
+ */
+export async function recordUnscheduled(client: DynamoDBDocumentClient, issueId: string, cancelled: DraftDelivery): Promise<void> {
+  const fresh = await requireBlockSet(client, issueId);
+  if (fresh.delivery?.campaignKey !== cancelled.campaignKey || !LOCKED_DELIVERY.has(fresh.delivery.state)) return;
+  await writeDeliveryWithRetry(client, issueId, { ...fresh.delivery, state: 'cancelled', relayStatus: cancelled.relayStatus, updatedAt: cancelled.updatedAt });
 }
 
 /**

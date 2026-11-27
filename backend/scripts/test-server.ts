@@ -105,9 +105,14 @@ function configureOfflineDocsStore(): void {
   const config=knowledgeStoreConfigFromEnv();
   const source=resolve(config.cacheDir || '/tmp/dataops-knowledge');
   const files:Record<string,Uint8Array>={};
+  // The S3-backed store below caches into source/s3-cache. Skip it, or every
+  // start on a persistent runner re-imports the last run's cache and the
+  // synthetic publication grows until JSON.stringify overflows.
+  const cacheDir=source+'/s3-cache';
   function collect(root:string,prefix=''):void {
     for(const entry of readdirSync(root,{withFileTypes:true})) {
       const path=prefix+entry.name;
+      if(!prefix && entry.name==='s3-cache') continue;
       if(entry.isDirectory()) collect(resolve(root,entry.name),path+'/');
       else if(entry.isFile()) files[path]=readFileSync(resolve(root,entry.name));
     }
@@ -119,8 +124,8 @@ function configureOfflineDocsStore(): void {
   }
   collect(source);
   const s3=new MemoryS3();s3.seed(files);
-  const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false,validate:async()=>{}});
-  configureOperatingModelStoreForTests(()=>new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir:source+'/s3-cache',offline:false,validate:async()=>{}}));
+  const store=new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir,offline:false,validate:async()=>{}});
+  configureOperatingModelStoreForTests(()=>new KnowledgeStore({bucket:'test-knowledge',client:s3 as any,cacheDir,offline:false,validate:async()=>{}}));
   configureDocsRuntime(store);
   configurePortalStore(store);
 }

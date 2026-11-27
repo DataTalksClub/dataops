@@ -1230,6 +1230,15 @@ a.calendar-day-timeline-title:hover {
   display: grid;
   gap: var(--dk-space-3);
 }
+.newsletter-editor__left,
+.newsletter-editor__right,
+.newsletter-editor__blocks,
+.newsletter-editor__block,
+.newsletter-editor__block-form,
+.newsletter-editor__envelope {
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+}
 .newsletter-editor__right {
   position: sticky;
   top: var(--dk-space-4);
@@ -1272,6 +1281,8 @@ a.calendar-day-timeline-title:hover {
   cursor: pointer;
 }
 .newsletter-editor__snippet {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   color: var(--dk-text-muted);
   font-size: var(--dk-text-sm);
@@ -1297,6 +1308,7 @@ a.calendar-day-timeline-title:hover {
 }
 .newsletter-editor__values dd {
   margin: 0;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 .newsletter-editor__more,

@@ -61,7 +61,7 @@ subcommands, flags, and examples.
 | `cards` | `list`, `show` (with Tasks), `create --template`, `update`, `stage`, `link`, `park` / `resume`, `template-update` |
 | `templates` | `list`, `show`, `create`, `update`, `reset`, `delete`, `sync` (see Template editing below) |
 | `kb` | knowledge base: `search`, `related <task|card>`, `show`, `tree`, `ls`, `resolve`, `backlinks`, `history`, `write`, `publish` |
-| `newsletter` | issues, sponsor slots and each issue's email built in DataOps: `list`, `show`, `create`, `update`, `draft`, `block`, `render`, `approve` (owner), `test-send` / `schedule` (owner, via Relay) |
+| `newsletter` | issues, sponsor slots and each issue's email built in DataOps: `list`, `show`, `create`, `update`, `draft`, `block`, `render`, `approve`, `test-send` (to the owner), `test-receipt`, `schedule` (owner, via Relay) |
 | `podcast` | episodes: `list`, `show`, `create`, `update`, `create-card`, `delete` |
 | `speakers` | website speaker/author profiles: `list`, `show`, `create`, `update` |
 | `books` | Book of the Week entries: `list`, `show`, `create`, `update` |

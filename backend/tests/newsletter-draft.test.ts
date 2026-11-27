@@ -6,7 +6,7 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { getClient } from '../src/db/client';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 import { buildNewsletterIssue, createNewsletterIssue, updateNewsletterIssue, getNewsletterIssue } from '../src/db/newsletterIssues';
-import { createSponsorDoc } from '../src/db/sponsorDocs';
+import { createSponsorDoc, getSponsorDoc } from '../src/db/sponsorDocs';
 import { TABLE_ARTIFACTS } from '../src/db/tableNames';
 import { createUser } from '../src/db/users';
 import { setRelayDepsForTests } from '../src/newsletter/relayTransport';
@@ -23,7 +23,7 @@ const OWN_PROMO = {
   bullets: '- Docker and Terraform\n- Workflow orchestration\n- Batch and streaming',
   closing: 'Learn in public with thousands of students.',
   ctaText: 'Register for free',
-  ctaUrl: 'https://github.com/DataTalksClub/data-engineering-zoomcamp',
+  ctaUrl: 'https://github.com/DataTalksClub/data-engineering-zoomcamp?utm_source=datatalksclub-newsletter',
   graphicsUrl: 'https://datatalks.club/images/zoomcamp.png',
   subjectLine: 'Data Engineering Zoomcamp starts soon',
   previewText: 'A free course by DataTalks.Club',
@@ -126,18 +126,15 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     return doc;
   }
 
-  /** A complete draft: subject, a filled intro, an own sponsor block and two content blocks. */
+  /** A complete draft: subject, a filled intro, an own sponsor block staged from its linked sponsor doc, and two content blocks. */
   async function completeDraft() {
-    const issue = await newIssue();
+    const doc = await ownDoc();
+    const issue = { ...(await newIssue({ primary: { sponsor: 'DataTalks.Club', documentUrl: `${DOC_BASE}${doc.id}` } })), docId: doc.id };
     const created = await req('POST', issue.base);
     assert.strictEqual(created.status, 201, JSON.stringify(created.body));
     let draft = created.body.draft;
     const intro = draft.blocks[0];
     draft = (await req('PUT', `${issue.base}/blocks/${intro.id}`, { version: intro.version, data: { issue_label: intro.data.issue_label, summary: 'This week: **Zoomcamp** news.' } })).body.draft;
-    draft = (await req('POST', `${issue.base}/blocks`, {
-      type: 'sponsor',
-      data: { title: OWN_PROMO.title, body: OWN_PROMO.intro, cta_text: OWN_PROMO.ctaText, cta_url: OWN_PROMO.ctaUrl, image_url: OWN_PROMO.graphicsUrl, image_link: OWN_PROMO.ctaUrl },
-    })).body.draft;
     draft = (await req('POST', `${issue.base}/blocks`, { type: 'events_list', data: { events: 'Mon, Mar 8 · Webinar | Building data products | https://datatalks.club/events/x.html | with Alexey' } })).body.draft;
     draft = (await req('POST', `${issue.base}/blocks`, { type: 'recording', data: { title: 'Last week: dbt in production', cta_text: 'Watch', cta_url: 'https://www.youtube.com/watch?v=abc' } })).body.draft;
     draft = (await req('PUT', issue.base, { version: draft.version, subject: 'Zoomcamp is back | DataTalks.Club Weekly', previewText: 'Free course, events and recordings' })).body.draft;
@@ -149,6 +146,26 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     const approved = await req('POST', `${issue.base}/approve`, { version: draft.version, payloadHash: draft.payloadHash, note: 'reviewed' });
     assert.strictEqual(approved.status, 200, JSON.stringify(approved.body));
     return approved.body.draft;
+  }
+
+  /** Send the owner a test of the current approval and confirm its receipt. Returns the current draft. */
+  async function confirmTest(issue: { base: string }, approved: any, requestId: string) {
+    const sent = await req('POST', `${issue.base}/test-send`, { requestId });
+    assert.strictEqual(sent.status, 200, JSON.stringify(sent.body));
+    assert.deepStrictEqual(
+      { requestId: sent.body.draft.lastTest.requestId, status: sent.body.draft.lastTest.status, payloadHash: sent.body.draft.lastTest.payloadHash },
+      { requestId, status: 'provider_accepted', payloadHash: approved.approval.payloadHash },
+      'the draft remembers the test the owner is asked to confirm',
+    );
+    const receipt = await req('POST', `${issue.base}/test-receipt`, { version: approved.approval.draftVersion, payloadHash: approved.approval.payloadHash, testRequestId: requestId });
+    assert.strictEqual(receipt.status, 200, JSON.stringify(receipt.body));
+    assert.strictEqual(receipt.body.draft.testReceipt.state, 'current');
+    return receipt.body.draft;
+  }
+
+  /** Approve, test and confirm: everything scheduling needs. */
+  async function approveAndConfirm(issue: { base: string }, tag: string) {
+    return confirmTest(issue, await approve(issue), `test-${tag}-0001`);
   }
 
   it('starts an empty draft without any Relay call, then builds it block by block', async () => {
@@ -167,7 +184,10 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.strictEqual((await req('POST', issue.base)).body.code, 'draft_exists');
 
     const types = (await req('GET', `${issue.base}/types`)).body.types;
-    assert.ok(types.find((t: any) => t.type === 'sponsor').addable, 'a slot without a sponsor doc takes a hand-made sponsor block');
+    assert.strictEqual(types.find((t: any) => t.type === 'sponsor').addable, false, 'a sponsor block comes only from a linked sponsor doc');
+    const handMade = await req('POST', `${issue.base}/blocks`, { type: 'sponsor', data: { title: 'Hand-made promo' } });
+    assert.strictEqual(handMade.status, 409);
+    assert.strictEqual(handMade.body.code, 'sponsor_block_doc_only');
     assert.ok(types.find((t: any) => t.type === 'link_list').fields.some((f: any) => f.name === 'links'));
 
     // Incomplete blocks save (the draft is built step by step) but bad URLs never do.
@@ -213,7 +233,7 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.match(render.html, /\/api\/newsletter-view\/[A-Za-z0-9_-]+/, 'web view link');
     assert.ok(!render.html.includes('<!--RELAY:'), 'every marker filled');
     assert.match(render.text, /SPONSORED\n\n\n\*\* Join the free Data Engineering Zoomcamp/);
-    assert.match(render.text, /Register for free \(https:\/\/github\.com\/DataTalksClub\/data-engineering-zoomcamp\)/);
+    assert.match(render.text, /Register for free \(https:\/\/github\.com\/DataTalksClub\/data-engineering-zoomcamp\?utm_source=datatalksclub-newsletter\)/);
 
     // Markdown escapes raw HTML and drops unsafe links.
     const intro = draft.blocks[0];
@@ -238,12 +258,12 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
   });
 
   it('takes sponsor content without an external sponsor and stages sponsor-doc saves locally only', async () => {
-    // A hand-made own DataTalks.Club promo in a slot without a doc is a normal, editable block.
+    // An own DataTalks.Club promo has its own linked sponsor doc; the block is staged from it and read-only.
     const { issue, draft } = await completeDraft();
     const sponsor = draft.blocks.find((b: any) => b.type === 'sponsor');
-    assert.strictEqual(sponsor.readOnly, false);
+    assert.strictEqual(sponsor.readOnly, true);
     assert.strictEqual(draft.blocks.indexOf(sponsor), 1, 'the main sponsor block goes right under the intro');
-    assert.strictEqual((await req('POST', `${issue.base}/blocks`, { type: 'sponsor', data: { title: 'Twice' } })).body.code, 'sponsor_block_exists');
+    assert.strictEqual((await req('POST', `${issue.base}/blocks`, { type: 'sponsor', data: { title: 'Twice' } })).body.code, 'sponsor_block_doc_only');
 
     // A slot with a sponsor doc (here DataTalks.Club itself, no invoice or outreach): saving the doc stages it.
     const doc = await ownDoc();
@@ -275,6 +295,41 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.deepStrictEqual(strayRelayFetches, []);
   });
 
+  it('refuses approval until sponsor content comes from a linked doc and the envelope and own promo are review-ready', async () => {
+    // A slot booked for DataTalks.Club without a sponsor doc blocks approval.
+    const booked = await newIssue({ primary: { sponsor: 'DataTalks.Club' } });
+    let draft = (await req('POST', booked.base)).body.draft;
+    draft = (await req('POST', `${booked.base}/blocks`, { type: 'recording', data: { title: 'Last week', cta_text: 'Watch', cta_url: 'https://www.youtube.com/watch?v=abc' } })).body.draft;
+    draft = (await req('PUT', booked.base, { version: draft.version, subject: 'Short subject', previewText: 'Short preview' })).body.draft;
+    const intro = draft.blocks[0];
+    draft = (await req('PUT', `${booked.base}/blocks/${intro.id}`, { version: intro.version, data: { summary: 'Hello' } })).body.draft;
+    assert.ok(draft.problems.some((p: any) => p.field === 'sponsor_primary' && /no sponsor document/.test(p.message)), JSON.stringify(draft.problems));
+    const refused = await req('POST', `${booked.base}/approve`, { version: draft.version, payloadHash: draft.payloadHash });
+    assert.strictEqual(refused.status, 422);
+    assert.strictEqual(refused.body.code, 'draft_incomplete');
+
+    // Over-long subject/preview and a title over 12 words are diagnostics on save, refusals at approval.
+    const { issue } = await completeDraft();
+    let current = (await req('GET', issue.base)).body.draft;
+    current = (await req('PUT', issue.base, { version: current.version, subject: `${'x'.repeat(66)} | DataTalks.Club Weekly`, previewText: 'y'.repeat(141) })).body.draft;
+    assert.deepStrictEqual(current.problems.map((p: any) => p.field).sort(), ['previewText', 'subject']);
+    const tooLong = await req('POST', `${issue.base}/approve`, { version: current.version, payloadHash: current.payloadHash });
+    assert.strictEqual(tooLong.status, 422);
+    current = (await req('PUT', issue.base, { version: current.version, subject: `${'x'.repeat(65)} | DataTalks.Club Weekly`, previewText: 'y'.repeat(140) })).body.draft;
+    assert.deepStrictEqual(current.problems, []);
+
+    // An own promo needs its bullets, closing and utm tracking reviewed in its doc.
+    const save = await req('PUT', `/api/sponsor-docs/${issue.docId}`, {
+      content: { ...OWN_PROMO, title: 'one two three four five six seven eight nine ten eleven twelve thirteen', bullets: '', closing: '', ctaUrl: 'https://datatalks.club/courses' },
+    });
+    assert.strictEqual(save.status, 200, JSON.stringify(save.body));
+    current = (await req('GET', issue.base)).body.draft;
+    const sponsorBlock = current.blocks.find((b: any) => b.type === 'sponsor');
+    assert.deepStrictEqual(current.problems.filter((p: any) => p.blockId === sponsorBlock.id).map((p: any) => p.field).sort(), ['bullets', 'closing', 'cta_url', 'title']);
+    assert.strictEqual((await req('POST', `${issue.base}/approve`, { version: current.version, payloadHash: current.payloadHash })).status, 422);
+    assert.deepStrictEqual(relay.calls, []);
+  });
+
   it('lets only the owner approve the exact reviewed revision; any later edit withdraws the approval', async () => {
     const { issue, draft } = await completeDraft();
     for (const as of ['agent', 'operator']) {
@@ -298,7 +353,7 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     const origins = (await req('GET', `${issue.base}/revisions`)).body.revisions.map((r: any) => r.origin);
     assert.deepStrictEqual(origins.slice(-3), ['approve', 'edit', 'approval-withdrawn']);
 
-    const blocked = await req('POST', `${issue.base}/test-send`, { emails: ['alexey@datatalks.club'], requestId: 'test-after-edit-1' });
+    const blocked = await req('POST', `${issue.base}/test-send`, { requestId: 'test-after-edit-1' });
     assert.strictEqual(blocked.status, 409);
     assert.strictEqual(blocked.body.code, 'approval_required');
 
@@ -313,9 +368,11 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
   it('test-sends only the frozen approved payload, once per request id, through the campaign API', async () => {
     const { issue } = await completeDraft();
     const approved = await approve(issue);
-    const sent = await req('POST', `${issue.base}/test-send`, { emails: ['alexey@datatalks.club'], requestId: 'test-send-0001' });
+    const sent = await req('POST', `${issue.base}/test-send`, { requestId: 'test-send-0001' });
     assert.strictEqual(sent.status, 200, JSON.stringify(sent.body));
     assert.strictEqual(sent.body.testSend.status, 'provider_accepted');
+    assert.deepStrictEqual(sent.body.testSend.emails, ['alexey@datatalks.club'], 'the server picks the owner mailbox');
+    assert.deepStrictEqual(relay.testSends.map((t) => t.emails), [['alexey@datatalks.club']]);
     const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
     assert.strictEqual(sent.body.testSend.campaignKey, key);
     assert.deepStrictEqual(relay.calls.map((c) => `${c.method} ${c.path}`), [
@@ -332,17 +389,24 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.strictEqual(campaign.metadata.dataops_payload_sha256, approved.approval.payloadHash);
     assert.strictEqual(relay.apiKeySeen, 'Bearer prod-key-1');
 
-    const replay = await req('POST', `${issue.base}/test-send`, { emails: ['alexey@datatalks.club'], requestId: 'test-send-0001' });
+    const replay = await req('POST', `${issue.base}/test-send`, { requestId: 'test-send-0001' });
     assert.strictEqual(replay.body.testSend.replayed, true);
     assert.strictEqual(relay.testSends.length, 1, 'a replayed request id never sends again');
-    assert.strictEqual((await req('POST', `${issue.base}/test-send`, { emails: ['a@x.example', 'b@x.example', 'c@x.example'], requestId: 'test-send-0002' })).body.code, 'test_recipients_too_many');
-    assert.strictEqual((await req('POST', `${issue.base}/test-send`, { emails: ['alexey@datatalks.club'], requestId: 'test-send-0003' }, { as: 'agent' })).status, 403);
+    // (d) a test to any destination other than the owner is refused before Relay.
+    for (const emails of [['someone@x.example'], ['alexey@datatalks.club', 'b@x.example'], 'alexey@datatalks.club']) {
+      const refused = await req('POST', `${issue.base}/test-send`, { emails, requestId: 'test-send-0002' });
+      assert.strictEqual(refused.status, 400, JSON.stringify(emails));
+      assert.strictEqual(refused.body.code, 'test_recipient_not_owner');
+    }
+    assert.strictEqual(relay.testSends.length, 1, 'a non-owner destination never reaches Relay');
+    assert.strictEqual((await req('POST', `${issue.base}/test-send`, { requestId: 'test-send-0003' }, { as: 'agent' })).status, 403);
     assert.ok(relay.calls.every((c) => c.path.startsWith('/api/campaigns/')), 'no block-level or issue-level Relay writes');
   });
 
   it('schedules once under races and lost responses, locks the draft, serves the web view, and cancels', async () => {
     const { issue } = await completeDraft();
-    const approved = await approve(issue);
+    const approved = await approveAndConfirm(issue, 'sched');
+    relay.calls = [];
     const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
     const at = new Date(NOW + 3 * 86_400_000).toISOString();
     const schedule = (requestId: string, overrides: Record<string, unknown> = {}) => req('POST', `${issue.base}/schedule`, {
@@ -369,8 +433,6 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
 
     const draft = (await req('GET', issue.base)).body.draft;
     assert.strictEqual(draft.locked, true);
-    const recording = draft.blocks.find((b: any) => b.type === 'recording');
-    assert.strictEqual((await req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { title: 'late' } })).body.code, 'draft_locked');
     assert.strictEqual((await schedule('sched-other')).body.code, 'already_scheduled');
     assert.strictEqual((await schedule(delivery.requestId)).body.replayed, true);
 
@@ -413,7 +475,7 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
 
   it('keeps the draft locked when the outcome is unknown, and adopts what Relay really holds', async () => {
     const { issue } = await completeDraft();
-    const approved = await approve(issue);
+    const approved = await approveAndConfirm(issue, 'unknown');
     const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
     const at = new Date(NOW + 2 * 86_400_000).toISOString();
     relay.failNextQueueResponse = 504;
@@ -424,7 +486,8 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.strictEqual(draft.delivery.state, 'scheduling', 'an unknown outcome never unlocks the draft');
     assert.strictEqual(draft.locked, true);
     const recording = draft.blocks.find((b: any) => b.type === 'recording');
-    assert.strictEqual((await req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { title: 'x' } })).body.code, 'draft_locked');
+    const midSchedule = await req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { title: 'x' } });
+    assert.strictEqual(midSchedule.body.code, 'schedule_in_progress', 'an edit never races a schedule whose outcome is unknown');
 
     // Relay is reachable again: refreshing reads what it holds and records the real state and time.
     relay.getsFailing = false;
@@ -438,7 +501,7 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
 
   it('adopts a campaign Relay already holds at its real time instead of the retried one', async () => {
     const { issue } = await completeDraft();
-    const approved = await approve(issue);
+    const approved = await approveAndConfirm(issue, 'adopt');
     const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
     const relayAt = new Date(NOW + 86_400_000).toISOString();
     const render = (await req('GET', `${issue.base}/render`)).body.render;
@@ -447,6 +510,7 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
       html_body: render.html, text_body: render.text, scheduled_at: relayAt, metadata: { dataops_payload_sha256: approved.payloadHash },
     });
     const later = new Date(NOW + 5 * 86_400_000).toISOString();
+    relay.calls = [];
     const result = await req('POST', `${issue.base}/schedule`, { scheduledAt: later, payloadHash: approved.payloadHash, version: approved.version, requestId: 'sched-adopt-1' });
     assert.strictEqual(result.status, 200, JSON.stringify(result.body));
     assert.strictEqual(result.body.adopted, true);
@@ -456,12 +520,12 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
 
   it('never lets a test send and a schedule interleave into an unscheduled queue', async () => {
     const { issue } = await completeDraft();
-    const approved = await approve(issue);
+    const approved = await approveAndConfirm(issue, 'race');
     const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
     const at = new Date(NOW + 3 * 86_400_000).toISOString();
     relay.testSendDelayMs = 40;
     const [test, schedule] = await Promise.all([
-      req('POST', `${issue.base}/test-send`, { emails: ['alexey@datatalks.club'], requestId: 'race-test-0001' }),
+      req('POST', `${issue.base}/test-send`, { requestId: 'race-test-0002' }),
       req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: approved.payloadHash, version: approved.version, requestId: 'race-sched-001' }),
     ]);
     relay.testSendDelayMs = 0;
@@ -476,6 +540,271 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
       assert.strictEqual(later.status, 200, JSON.stringify(later.body));
       assert.strictEqual(relay.campaigns.get(key)!.scheduled_at, at);
     }
+  });
+
+  it('queues only after the owner confirmed receiving the test of the exact approved revision', async () => {
+    const { issue } = await completeDraft();
+    const approved = await approve(issue);
+    const at = new Date(NOW + 3 * 86_400_000).toISOString();
+    const schedule = (draft: any, requestId: string) => req('POST', `${issue.base}/schedule`, {
+      scheduledAt: at, payloadHash: draft.approval.payloadHash, version: draft.version, requestId,
+    });
+    const queued = () => relay.calls.filter((c) => c.path.endsWith('/queue')).length;
+
+    // (a) approved, but no test yet.
+    const beforeTest = await schedule(approved, 'gate-before-test');
+    assert.strictEqual(beforeTest.status, 409);
+    assert.strictEqual(beforeTest.body.code, 'test_receipt_required');
+    assert.strictEqual(approved.testReceipt.state, 'none');
+
+    // A receipt needs an accepted test of this approval to the owner.
+    const noTest = await req('POST', `${issue.base}/test-receipt`, { version: approved.approval.draftVersion, payloadHash: approved.approval.payloadHash, testRequestId: 'gate-missing-01' });
+    assert.strictEqual(noTest.body.code, 'test_send_required');
+
+    // (b) the provider accepted the test send, but the owner has not confirmed it arrived.
+    const sent = await req('POST', `${issue.base}/test-send`, { requestId: 'gate-test-0001' });
+    assert.strictEqual(sent.body.testSend.status, 'provider_accepted');
+    const afterSend = await schedule(sent.body.draft, 'gate-after-send');
+    assert.strictEqual(afterSend.body.code, 'test_receipt_required');
+    assert.strictEqual(queued(), 0);
+
+    // Only the owner confirms, and only for the approval on screen.
+    const byAgent = await req('POST', `${issue.base}/test-receipt`, { version: approved.approval.draftVersion, payloadHash: approved.approval.payloadHash, testRequestId: 'gate-test-0001' }, { as: 'agent' });
+    assert.strictEqual(byAgent.status, 403);
+    const wrongHash = await req('POST', `${issue.base}/test-receipt`, { version: approved.approval.draftVersion, payloadHash: 'b'.repeat(64), testRequestId: 'gate-test-0001' });
+    assert.strictEqual(wrongHash.body.code, 'draft_changed');
+    const confirmed = await req('POST', `${issue.base}/test-receipt`, { version: approved.approval.draftVersion, payloadHash: approved.approval.payloadHash, testRequestId: 'gate-test-0001' });
+    assert.strictEqual(confirmed.status, 200, JSON.stringify(confirmed.body));
+    assert.strictEqual(confirmed.body.draft.testReceipt.state, 'current');
+    assert.strictEqual(confirmed.body.draft.testReceipt.recipient, 'alexey@datatalks.club');
+
+    // (c) a new revision after the receipt: approval and receipt are gone; a fresh approval needs a fresh test.
+    const recording = confirmed.body.draft.blocks.find((b: any) => b.type === 'recording');
+    const edited = await req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { ...recording.data, title: 'Edited after the test' } });
+    assert.strictEqual(edited.body.draft.approval.state, 'none');
+    assert.strictEqual(edited.body.draft.testReceipt.state, 'none');
+    const reapproved = await approve(issue);
+    const afterEdit = await schedule(reapproved, 'gate-after-edit');
+    assert.strictEqual(afterEdit.body.code, 'test_receipt_required');
+    // The old test (previous payload) cannot be confirmed for the new approval.
+    const oldTest = await req('POST', `${issue.base}/test-receipt`, { version: reapproved.approval.draftVersion, payloadHash: reapproved.approval.payloadHash, testRequestId: 'gate-test-0001' });
+    assert.strictEqual(oldTest.body.code, 'test_send_required');
+    assert.strictEqual(queued(), 0, 'nothing was queued without a receipt for the exact revision');
+
+    const revisions = (await req('GET', `${issue.base}/revisions`)).body.revisions;
+    assert.ok(revisions.some((r: any) => r.origin === 'test-receipt' && /accepted it/.test(r.detail)));
+    assert.ok(revisions.some((r: any) => r.origin === 'approval-withdrawn' && /test receipt/.test(r.detail)));
+
+    // With a new test and its receipt the owner can schedule.
+    const ready = await confirmTest(issue, reapproved, 'gate-test-0002');
+    const scheduled = await schedule(ready, 'gate-scheduled');
+    assert.strictEqual(scheduled.status, 200, JSON.stringify(scheduled.body));
+    assert.strictEqual(queued(), 1);
+  });
+
+  async function scheduledDraft(tag: string) {
+    const { issue } = await completeDraft();
+    const ready = await approveAndConfirm(issue, tag);
+    const at = new Date(NOW + 3 * 86_400_000).toISOString();
+    const res = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: ready.approval.payloadHash, version: ready.version, requestId: `sched-${tag}-01` });
+    assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+    const key = res.body.delivery.campaignKey;
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'scheduled');
+    return { issue, draft: res.body.draft, key };
+  }
+
+  it('an edit of a scheduled draft cancels the Relay schedule first, verifies it, then saves and needs a new review', async () => {
+    const { issue, draft, key } = await scheduledDraft('edit-ok');
+    const token = draft.webViewUrl.split('/').pop();
+    const recording = draft.blocks.find((b: any) => b.type === 'recording');
+    assert.strictEqual(recording.readOnly, false, 'a scheduled draft stays editable');
+    relay.calls = [];
+    const edited = await req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { ...recording.data, title: 'Changed after scheduling' } }, { as: 'operator' });
+    assert.strictEqual(edited.status, 200, JSON.stringify(edited.body));
+    assert.deepStrictEqual(relay.calls.map((c) => `${c.method} ${c.path}`), [
+      `GET /api/campaigns/${key}`, `POST /api/campaigns/${key}/cancel`, `GET /api/campaigns/${key}`,
+    ], 'cancel, then read back; no content goes to Relay');
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'cancelled');
+    const after = edited.body.draft;
+    assert.strictEqual(after.delivery.state, 'cancelled');
+    assert.strictEqual(after.locked, false);
+    assert.strictEqual(after.approval.state, 'none');
+    assert.strictEqual(after.testReceipt.state, 'none');
+    assert.strictEqual(after.blocks.find((b: any) => b.id === recording.id).data.title, 'Changed after scheduling');
+    assert.strictEqual((await req('GET', `/api/newsletter-view/${token}`)).status, 404, 'the web view goes with the schedule');
+    const origins = (await req('GET', `${issue.base}/revisions`)).body.revisions.map((r: any) => r.origin);
+    assert.deepStrictEqual(origins.slice(-3), ['cancel', 'edit', 'approval-withdrawn']);
+
+    // A subject edit of a scheduled draft takes the same path; a new schedule is a new campaign.
+    const ready = await approveAndConfirm(issue, 'edit-ok-2');
+    const at = new Date(NOW + 4 * 86_400_000).toISOString();
+    const again = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: ready.approval.payloadHash, version: ready.version, requestId: 'sched-edit-ok-02' });
+    assert.strictEqual(again.status, 200, JSON.stringify(again.body));
+    assert.strictEqual(again.body.delivery.campaignKey, `${key}-r2`);
+    const subject = await req('PUT', issue.base, { version: again.body.draft.version, subject: 'A new subject | DataTalks.Club Weekly' });
+    assert.strictEqual(subject.status, 200, JSON.stringify(subject.body));
+    assert.strictEqual(relay.campaigns.get(`${key}-r2`)!.status, 'cancelled');
+    assert.strictEqual(subject.body.draft.delivery.state, 'cancelled');
+  });
+
+  it('a failed or unconfirmed unschedule leaves the scheduled draft and its content untouched', async () => {
+    const { issue, draft, key } = await scheduledDraft('edit-fail');
+    relay.calls = [];
+    const recording = draft.blocks.find((b: any) => b.type === 'recording');
+    const tryEdit = () => req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { ...recording.data, title: 'Should not land' } });
+    const unchanged = async () => {
+      const now = (await req('GET', issue.base)).body.draft;
+      assert.strictEqual(now.delivery.state, 'scheduled');
+      assert.strictEqual(now.approval.state, 'current');
+      assert.strictEqual(now.testReceipt.state, 'current');
+      assert.strictEqual(now.blocks.find((b: any) => b.id === recording.id).data.title, recording.data.title);
+      assert.strictEqual(now.version, draft.version);
+    };
+
+    // Relay unreachable: nothing is confirmed, so nothing changes.
+    relay.getsFailing = true;
+    const unreachable = await tryEdit();
+    relay.getsFailing = false;
+    assert.strictEqual(unreachable.status, 502, JSON.stringify(unreachable.body));
+    assert.strictEqual(unreachable.body.code, 'unschedule_failed');
+    await unchanged();
+
+    // Relay answers the cancel, but the campaign is still scheduled when read back.
+    const fakeFetch = relay.fetch;
+    restore();
+    restore = setRelayDepsForTests({
+      fetchImpl: (async (input: string | URL, init: RequestInit = {}) => {
+        if (String(input).endsWith('/cancel')) return new Response(JSON.stringify({ campaign: relay.campaigns.get(key), cancelled: false }), { status: 200 });
+        return fakeFetch(input, init);
+      }) as typeof fetch,
+      readSecret: async (name) => SECRETS[name],
+      now: () => NOW,
+    });
+    const refused = await tryEdit();
+    assert.strictEqual(refused.body.code, 'unschedule_failed');
+    assert.match(refused.body.error, /did not cancel/);
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'scheduled');
+    await unchanged();
+
+    // Sending already started: too late, and said so.
+    relay.campaigns.get(key)!.status = 'sending';
+    const sending = await tryEdit();
+    assert.strictEqual(sending.status, 409);
+    assert.strictEqual(sending.body.code, 'unschedule_failed');
+    assert.match(sending.body.error, /sending/);
+    relay.campaigns.get(key)!.status = 'scheduled';
+    await unchanged();
+
+    // A 404, 403 or timeout is not proof that nothing will be sent: each leaves
+    // the scheduled draft as it is, whether it comes before or after the cancel.
+    const withRelay = (wrap: (input: string | URL, init: RequestInit) => Promise<Response> | undefined) => {
+      restore();
+      restore = setRelayDepsForTests({
+        fetchImpl: (async (input: string | URL, init: RequestInit = {}) => (await wrap(input, init)) || fakeFetch(input, init)) as typeof fetch,
+        readSecret: async (name) => SECRETS[name],
+        now: () => NOW,
+      });
+    };
+    const isRead = (input: string | URL, init: RequestInit) => (init.method || 'GET') === 'GET' && String(input).includes(`/api/campaigns/${key}?`);
+    const notFound = () => new Response(JSON.stringify({ external_key: 'not_found' }), { status: 404 });
+    const cases: Array<[string, (input: string | URL, init: RequestInit) => Promise<Response> | undefined, RegExp]> = [
+      ['404 before the cancel', (input, init) => (isRead(input, init) ? Promise.resolve(notFound()) : undefined), /HTTP 404/],
+      ['403 on the read', (input, init) => (isRead(input, init) ? Promise.resolve(new Response('forbidden', { status: 403 })) : undefined), /could not be read/],
+      ['timeout on the read', (input, init) => (isRead(input, init) ? Promise.reject(Object.assign(new Error('timed out'), { name: 'TimeoutError' })) : undefined), /could not be read/],
+    ];
+    for (const [label, wrap, message] of cases) {
+      relay.calls = [];
+      withRelay(wrap);
+      const res = await tryEdit();
+      assert.strictEqual(res.body.code, 'unschedule_failed', `${label}: ${JSON.stringify(res.body)}`);
+      assert.match(res.body.error, message, label);
+      assert.ok(!relay.calls.some((c) => c.path.endsWith('/cancel')), `${label}: nothing confirmed, so no cancel is sent`);
+      assert.strictEqual(relay.campaigns.get(key)!.status, 'scheduled', label);
+      await unchanged();
+    }
+
+    // The cancel goes through, but the readback is a 404: still unconfirmed.
+    let cancelSeen = false;
+    withRelay((input, init) => {
+      if (String(input).endsWith('/cancel')) { cancelSeen = true; return undefined; }
+      return cancelSeen && isRead(input, init) ? Promise.resolve(notFound()) : undefined;
+    });
+    const gone = await tryEdit();
+    assert.ok(cancelSeen);
+    assert.strictEqual(gone.body.code, 'unschedule_failed', JSON.stringify(gone.body));
+    assert.match(gone.body.error, /HTTP 404/);
+    await unchanged();
+    assert.ok(!relay.calls.some((c) => c.method === 'PUT'), 'no content ever went to Relay');
+  });
+
+  it('two concurrent edits of a scheduled draft save once and never leave a stale schedule; a retry needs no Relay call', async () => {
+    const { issue, draft, key } = await scheduledDraft('edit-race');
+    const recording = draft.blocks.find((b: any) => b.type === 'recording');
+    const intro = draft.blocks.find((b: any) => b.type === 'intro');
+    relay.calls = [];
+    const [a, b] = await Promise.all([
+      req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { ...recording.data, title: 'Edit A' } }),
+      req('PUT', `${issue.base}/blocks/${intro.id}`, { version: intro.version, data: { ...intro.data, summary: 'Edit B' } }),
+    ]);
+    assert.ok([a.status, b.status].includes(200), JSON.stringify([a.body, b.body]));
+    const after = (await req('GET', issue.base)).body.draft;
+    assert.strictEqual(after.delivery.state, 'cancelled', 'DataOps never keeps showing a schedule Relay cancelled');
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'cancelled');
+    assert.strictEqual(relay.calls.filter((c) => c.path.endsWith('/queue') || c.method === 'PUT').length, 0);
+    const loser = [a, b].find((r) => r.status !== 200);
+    if (loser) {
+      assert.strictEqual(loser.body.code, 'draft_version_conflict');
+      relay.calls = [];
+      const fresh = after.blocks.find((x: any) => x.id === recording.id);
+      const retry = await req('PUT', `${issue.base}/blocks/${recording.id}`, { version: fresh.version, data: { ...fresh.data, title: 'Edit A again' } });
+      assert.strictEqual(retry.status, 200);
+      assert.deepStrictEqual(relay.calls, [], 'the draft is no longer scheduled: the retry is a plain local edit');
+    }
+  });
+
+  it('a sponsor-doc save of a scheduled issue unschedules it in Relay first, or is not saved at all', async () => {
+    const doc = await ownDoc();
+    const issue = await newIssue({ primary: { sponsor: 'DataTalks.Club', documentUrl: `${DOC_BASE}${doc.id}` } });
+    let draft = (await req('POST', issue.base)).body.draft;
+    const intro = draft.blocks[0];
+    draft = (await req('PUT', `${issue.base}/blocks/${intro.id}`, { version: intro.version, data: { issue_label: intro.data.issue_label, summary: 'This week: our own course.' } })).body.draft;
+    draft = (await req('POST', `${issue.base}/blocks`, { type: 'recording', data: { title: 'Last week: dbt in production', cta_text: 'Watch', cta_url: 'https://www.youtube.com/watch?v=abc' } })).body.draft;
+    const ready = await approveAndConfirm(issue, 'doc-save');
+    const at = new Date(NOW + 3 * 86_400_000).toISOString();
+    const scheduled = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: ready.approval.payloadHash, version: ready.version, requestId: 'sched-doc-save-1' });
+    assert.strictEqual(scheduled.status, 200, JSON.stringify(scheduled.body));
+    const key = scheduled.body.delivery.campaignKey;
+
+    // Relay unreachable: the doc is not saved and the issue stays scheduled with its approval.
+    relay.getsFailing = true;
+    const refused = await req('PUT', `/api/sponsor-docs/${doc.id}`, { content: { ...OWN_PROMO, title: 'Changed while Relay is down' } });
+    relay.getsFailing = false;
+    assert.strictEqual(refused.status, 502, JSON.stringify(refused.body));
+    assert.strictEqual(refused.body.code, 'unschedule_failed');
+    assert.match(refused.body.error, /not saved/);
+    assert.strictEqual((await getSponsorDoc(client, doc.id))!.content.title, OWN_PROMO.title);
+    let now = (await req('GET', issue.base)).body.draft;
+    assert.strictEqual(now.delivery.state, 'scheduled');
+    assert.strictEqual(now.approval.state, 'current');
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'scheduled');
+
+    // A save that changes nothing never touches the schedule.
+    relay.calls = [];
+    const same = await req('PUT', `/api/sponsor-docs/${doc.id}`, { content: { title: OWN_PROMO.title } });
+    assert.strictEqual(same.status, 200, JSON.stringify(same.body));
+    assert.deepStrictEqual(relay.calls, []);
+    assert.strictEqual((await req('GET', issue.base)).body.draft.delivery.state, 'scheduled');
+
+    // Relay reachable: cancel verified, then the doc is saved and staged; review and test start over.
+    const saved = await req('PUT', `/api/sponsor-docs/${doc.id}`, { content: { ...OWN_PROMO, title: 'Data Engineering Zoomcamp 2027' } });
+    assert.strictEqual(saved.status, 200, JSON.stringify(saved.body));
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'cancelled');
+    now = (await req('GET', issue.base)).body.draft;
+    assert.strictEqual(now.delivery.state, 'cancelled');
+    assert.strictEqual(now.approval.state, 'none');
+    assert.strictEqual(now.testReceipt.state, 'none');
+    assert.strictEqual(now.blocks.find((b: any) => b.type === 'sponsor').data.title, 'Data Engineering Zoomcamp 2027');
+    assert.ok(relay.calls.every((c) => c.method === 'GET' || c.path.endsWith('/cancel')), 'the doc save sends no content to Relay');
   });
 
   it('keeps an archived draft first built by the retired Relay import readable and editable', async () => {

@@ -3,13 +3,16 @@
  *
  * Every change is one optimistic write of the draft plus one revision per
  * affected block. A change to the content (blocks, subject, preview text)
- * always withdraws the owner's approval, recorded as its own revision, so an
- * approval only ever covers the exact revision that was reviewed. Once the
- * approved payload is handed to Relay for delivery the draft is locked until
- * that schedule is cancelled.
+ * always withdraws the owner's approval and test receipt, recorded as its own
+ * revision, so an approval only ever covers the exact revision that was
+ * reviewed.
  *
- * Nothing here talks to Relay: a draft is created empty, built here, and never
- * imported or pulled from anywhere.
+ * A draft is created empty, built here, and never imported or pulled from
+ * anywhere. The one Relay call an edit can make: editing a draft whose email
+ * Relay holds scheduled first cancels that campaign and verifies the cancel
+ * with Relay (./relayTransport.ts `unscheduleForEdit`); only then is the edit
+ * written, and the draft is back to an unapproved, unscheduled draft. If the
+ * cancel cannot be confirmed, the edit fails and nothing changes.
  */
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import {
@@ -32,7 +35,16 @@ import {
   renumber,
   type SponsorDocUrls,
 } from './blocksLayout';
-import { appendBlockRevisions, getBlockSet, putBlockSet, type BlockRevision } from './blocksStore';
+import {
+  appendBlockRevisions,
+  BlockSetVersionConflict,
+  getBlockSet,
+  putBlockSet,
+  requireBlockSet,
+  type BlockRevision,
+} from './blocksStore';
+import { LOCKED_DELIVERY } from './draftApproval';
+import { recordUnscheduled, unscheduleForEdit } from './relayTransport';
 
 export { BlocksError } from './blocksErrors';
 
@@ -46,36 +58,11 @@ export type NewRevision = Omit<BlockRevision, 'issueId' | 'revision'>;
 export const MAX_SUBJECT_LENGTH = 255;
 export const MAX_PREVIEW_TEXT_LENGTH = 255;
 
-/** Delivery states in which Relay holds the approved payload; the draft is frozen. */
-const LOCKED_DELIVERY = new Set(['scheduling', 'scheduled']);
-
-export function assertUnlocked(set: IssueBlockSet): void {
-  if (set.delivery && LOCKED_DELIVERY.has(set.delivery.state)) {
-    throw new BlocksError(
-      `The approved email of this issue is ${set.delivery.state === 'scheduled' ? 'scheduled' : 'being scheduled'} in Relay `
-        + `(campaign ${set.delivery.campaignKey}); the draft is locked. Cancel the schedule first to edit it.`,
-      409,
-      'draft_locked',
-      { delivery: set.delivery },
-    );
-  }
-}
-
-export async function requireBlockSet(client: DynamoDBDocumentClient, issueId: string): Promise<IssueBlockSet> {
-  const set = await getBlockSet(client, issueId);
-  if (!set) {
-    throw new BlocksError(
-      `Issue ${issueId} has no draft yet. Create it in DataOps (the issue page's "Start the draft", or dataops newsletter draft <issue> --create).`,
-      404,
-      'draft_missing',
-    );
-  }
-  return set;
-}
-
 /**
  * Write a content change of `set`: bumps the version, withdraws any approval
- * (and records that), and keeps every other stored attribute.
+ * and test receipt (and records that), and keeps every other stored attribute.
+ * A scheduled draft is unscheduled in Relay first (verified), in the same
+ * action; if that fails nothing is written.
  */
 export async function commitContent(
   client: DynamoDBDocumentClient,
@@ -85,30 +72,45 @@ export async function commitContent(
   actor: BlockActor,
   now: string,
 ): Promise<IssueBlockSet> {
-  assertUnlocked(set);
+  const event = (origin: NewRevision['origin'], detail: string): NewRevision => ({
+    blockId: '', blockType: 'draft', origin, createdAt: now, actorUserId: actor.id, actorName: actor.name, detail, before: null, after: null,
+  });
+  let delivery = set.delivery;
+  const unscheduled: NewRevision[] = [];
+  if (delivery && LOCKED_DELIVERY.has(delivery.state)) {
+    const cancelled = await unscheduleForEdit(client, set);
+    delivery = cancelled.delivery;
+    unscheduled.push(event('cancel', cancelled.detail));
+  }
   const next: IssueBlockSet = {
     ...set,
     ...changes,
     webViewToken: set.webViewToken || newWebViewToken(),
     approval: null,
+    testReceipt: null,
+    delivery,
     version: set.version + 1,
     updatedAt: now,
   };
-  await putBlockSet(client, next, set.version);
+  try {
+    await putBlockSet(client, next, set.version);
+  } catch (error) {
+    if (!unscheduled.length || !(error instanceof BlockSetVersionConflict)) throw error;
+    await recordUnscheduled(client, set.issueId, delivery as NonNullable<typeof delivery>);
+    await appendBlockRevisions(client, set.issueId, unscheduled);
+    throw new BlocksError(
+      'The schedule was cancelled in Relay, but the draft changed at the same moment, so your edit was not saved. Reload and make it again.',
+      409,
+      'draft_version_conflict',
+    );
+  }
   const withdrawn: NewRevision[] = set.approval
-    ? [{
-      blockId: '',
-      blockType: 'draft',
-      origin: 'approval-withdrawn',
-      createdAt: now,
-      actorUserId: actor.id,
-      actorName: actor.name,
-      detail: `approval of version ${set.approval.draftVersion} (by ${set.approval.approvedByName || set.approval.approvedBy}) withdrawn: the draft changed`,
-      before: null,
-      after: null,
-    }]
+    ? [event(
+      'approval-withdrawn',
+      `approval of version ${set.approval.draftVersion} (by ${set.approval.approvedByName || set.approval.approvedBy})${set.testReceipt ? ' and its test receipt' : ''} withdrawn: the draft changed`,
+    )]
     : [];
-  await appendBlockRevisions(client, set.issueId, [...revisions, ...withdrawn]);
+  await appendBlockRevisions(client, set.issueId, [...unscheduled, ...revisions, ...withdrawn]);
   return next;
 }
 

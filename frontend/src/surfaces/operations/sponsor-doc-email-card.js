@@ -554,75 +554,41 @@ export function renderNewsletterLivePreview({
   if (!previewCard) return;
   previewCard.replaceChildren();
 
+  // The preview is the sponsor block as recipients see it: no badge or helper
+  // copy, no envelope labels (the subject and inbox preview are edited on the
+  // left and shown in the whole-email preview), and nothing for empty fields.
   const head = el("div", "sponsor-doc-preview__head");
-  const headRow = el("div", "sponsor-doc-title-row");
-  headRow.append(el("h2", "sponsor-doc-section__title", "Live Preview"));
-  const slotLabel = doc.template === "newsletter-standalone"
-    ? "Stand-Alone Blast"
-    : doc.template === "newsletter-secondary" ? "Secondary Slot" : "Main Sponsor Block";
-  const slotBadge = el("span", "dk-badge", slotLabel);
-  slotBadge.dataset.sponsorPreviewSlot = doc.template || "newsletter-main";
-  headRow.append(slotBadge);
-  const hintText =
-    "Updates live as you type and upload your visual so the final email block look is clear before submitting.";
-  head.append(headRow, el("p", "dk-hint", hintText));
+  head.append(el("h2", "sponsor-doc-section__title", "Live Preview"));
   previewCard.append(head);
 
   const val = (key) => String(draftContent[key] || "").trim();
-  const previewEl = (tag, baseClass, text, placeholder, dataAttr) => {
-    const node = el(tag, text ? baseClass : `${baseClass} is-placeholder`, text || placeholder);
+  const previewEl = (parent, tag, baseClass, text, dataAttr) => {
+    if (!text) return null;
+    const node = el(tag, baseClass, text);
     node.dataset[dataAttr] = "";
+    parent.append(node);
     return node;
   };
-  const appendCtaPreview = (parent, textVal, urlVal, fallbackLabel, wrapAttr, linkAttr, urlAttr, stepName) => {
+  const appendCtaPreview = (parent, textVal, urlVal, wrapAttr, linkAttr, stepName) => {
+    if (!textVal) return;
     const wrap = el("div", "sponsor-preview-canvas__cta");
     wrap.dataset[wrapAttr] = "";
     if (stepName) wrap.dataset.sponsorPreviewStep = stepName;
-    const btn = previewEl("a", "sponsor-preview-canvas__cta-btn", textVal, fallbackLabel, linkAttr);
+    // The link is the button's href (tracking included); its URL is not repeated as text.
+    const btn = previewEl(wrap, "a", "sponsor-preview-canvas__cta-btn", textVal, linkAttr);
     btn.href = safePreviewHref(urlVal);
     btn.target = "_blank";
     btn.rel = "noopener noreferrer";
-    const urlSpan = el("span", "sponsor-preview-canvas__cta-url", urlVal || "https://...");
-    if (urlAttr) urlSpan.dataset[urlAttr] = "";
-    wrap.append(btn, urlSpan);
     parent.append(wrap);
   };
-
-  const showEnvelope =
-    doc.template === "newsletter-main"
-    || doc.template === "newsletter-standalone"
-    || hasField("subjectLine")
-    || hasField("previewText");
-  if (showEnvelope) {
-    const env = el("div", "sponsor-preview-envelope");
-    env.dataset.sponsorPreviewEnvelope = "";
-    const rawSubj = val("subjectLine");
-    const subjDisplay = doc.template === "newsletter-main"
-      ? `${rawSubj || "[Your subject line]"} | DataTalks.Club Weekly`
-      : (rawSubj || "[Email subject line]");
-    const subjRow = el("div", "sponsor-preview-envelope__row");
-    const envValClass = "sponsor-preview-envelope__value";
-    const subjValEl = previewEl("span", envValClass, rawSubj ? subjDisplay : "", subjDisplay, "sponsorPreviewSubject");
-    subjRow.append(el("span", "sponsor-preview-envelope__label", "Subject"), subjValEl);
-    const preRow = el("div", "sponsor-preview-envelope__row");
-    const preValEl = previewEl("span", envValClass, val("previewText"), "[Inbox preview text]", "sponsorPreviewPreheader");
-    preRow.append(el("span", "sponsor-preview-envelope__label", "Preview"), preValEl);
-    env.append(subjRow, preRow);
-    previewCard.append(env);
-  }
 
   const canvas = el("article", "sponsor-preview-canvas");
   canvas.dataset.sponsorPreviewCanvas = "";
   canvas.dataset.sponsorPreviewFlow = "";
-  const kickerDate = doc.publicationDate ? ` · ${doc.publicationDate}` : "";
-  canvas.append(
-    el("div", "sponsor-preview-canvas__kicker", `Sponsored · ${doc.sponsorName || "Your Company"}${kickerDate}`),
-  );
+  canvas.append(el("div", "sponsor-preview-canvas__kicker", ["Sponsored", doc.sponsorName, doc.publicationDate].filter(Boolean).join(" · ")));
 
   const titleVal = val("title") || val("headline");
-  canvas.append(
-    previewEl("h3", "sponsor-preview-canvas__title", titleVal, "Headline for your sponsored section", "sponsorPreviewTitle"),
-  );
+  previewEl(canvas, "h3", "sponsor-preview-canvas__title", titleVal, "sponsorPreviewTitle");
 
   const visualWrap = el("div", "sponsor-preview-canvas__visual");
   visualWrap.dataset.sponsorPreviewVisual = "";
@@ -654,72 +620,50 @@ export function renderNewsletterLivePreview({
     errBox.setAttribute("role", "alert");
     errBox.dataset.sponsorPreviewVisualError = "";
     visualWrap.append(errBox);
-  } else {
-    const phText = "Visual placement — upload an image or paste an image URL to preview it here.";
-    const ph = el("div", "sponsor-preview-visual-placeholder is-placeholder", phText);
-    ph.dataset.sponsorPreviewVisualPlaceholder = "";
-    visualWrap.append(ph);
   }
-  canvas.append(visualWrap);
+  if (visualWrap.childNodes.length) canvas.append(visualWrap);
 
   const isStandalone = doc.template === "newsletter-standalone" || hasField("mainBodyOpening");
   const pClass = "sponsor-preview-canvas__paragraph";
-  const introFallback = "1–2 sentences introducing the problem, product, or resource.";
-  const introNode = previewEl("p", pClass, val("intro") || val("body"), introFallback, "sponsorPreviewIntro");
-  if (!isStandalone) introNode.dataset.sponsorPreviewStep = "opening";
-  canvas.append(introNode);
+  const introNode = previewEl(canvas, "p", pClass, val("intro") || val("body"), "sponsorPreviewIntro");
+  if (introNode && !isStandalone) introNode.dataset.sponsorPreviewStep = "opening";
 
   if (doc.template === "newsletter-standalone" || hasField("earlyCtaText") || hasField("earlyCtaUrl")) {
-    appendCtaPreview(
-      canvas, val("earlyCtaText"), val("earlyCtaUrl"), "Early CTA Button",
-      "sponsorPreviewEarlyCta", "sponsorPreviewEarlyCtaLink", "", "",
-    );
+    appendCtaPreview(canvas, val("earlyCtaText"), val("earlyCtaUrl"), "sponsorPreviewEarlyCta", "sponsorPreviewEarlyCtaLink", "");
   }
   if (isStandalone) {
-    const openingFallback = "1–2 sentences introducing the session, product, or key story before the bullet list.";
-    const openNode = previewEl("p", pClass, val("mainBodyOpening"), openingFallback, "sponsorPreviewOpening");
-    openNode.dataset.sponsorPreviewStep = "opening";
-    canvas.append(openNode);
+    const openNode = previewEl(canvas, "p", pClass, val("mainBodyOpening"), "sponsorPreviewOpening");
+    if (openNode) openNode.dataset.sponsorPreviewStep = "opening";
   }
-  const isNewsletter = String(doc.template || tDef?.key || "").startsWith("newsletter-");
-  if (hasField("bullets") || Boolean(draftContent.bullets) || isNewsletter) {
+  const parsedBullets = parseSponsorBulletItems(draftContent.bullets, 0).filter((item) => item.trim().length > 0);
+  if (parsedBullets.length > 0) {
     const ul = el("ul", "sponsor-preview-canvas__bullets");
     ul.dataset.sponsorPreviewBullets = "";
     ul.dataset.sponsorPreviewStep = "bullets";
-    const parsedBullets = parseSponsorBulletItems(draftContent.bullets, 0).filter((item) => item.trim().length > 0);
-    if (parsedBullets.length > 0) {
-      for (const bulletText of parsedBullets) {
-        const li = el("li", "", bulletText);
-        li.dataset.sponsorPreviewBullet = "";
-        ul.append(li);
-      }
-    } else {
-      for (let i = 1; i <= 3; i += 1) {
-        const li = el("li", "is-placeholder", `Bullet point ${i}`);
-        li.dataset.sponsorPreviewBulletPlaceholder = String(i);
-        ul.append(li);
-      }
+    for (const bulletText of parsedBullets) {
+      const li = el("li", "", bulletText);
+      li.dataset.sponsorPreviewBullet = "";
+      ul.append(li);
     }
     canvas.append(ul);
   }
-  if (hasField("closing") || Boolean(draftContent.closing) || isNewsletter) {
-    const closingFallback = "Closing sentence leading into the call-to-action.";
-    const closeNode = previewEl("p", pClass, val("closing"), closingFallback, "sponsorPreviewClosing");
-    closeNode.dataset.sponsorPreviewStep = "closing";
-    canvas.append(closeNode);
-  }
+  const closeNode = previewEl(canvas, "p", pClass, val("closing"), "sponsorPreviewClosing");
+  if (closeNode) closeNode.dataset.sponsorPreviewStep = "closing";
 
   const useClosingCta = doc.template === "newsletter-standalone" || hasField("closingCtaText");
   appendCtaPreview(
     canvas,
     useClosingCta ? val("closingCtaText") : val("ctaText"),
     useClosingCta ? val("closingCtaUrl") : val("ctaUrl"),
-    useClosingCta ? "Closing CTA Button" : "Call to Action",
     "sponsorPreviewCta",
     "sponsorPreviewCtaLink",
-    "sponsorPreviewCtaUrl",
     "cta",
   );
+  if (canvas.childNodes.length === 1) {
+    const empty = el("p", "dk-hint", "The sponsor block appears here as the fields are filled in.");
+    empty.dataset.sponsorPreviewEmpty = "";
+    canvas.append(empty);
+  }
   previewCard.append(canvas);
 
   const generatedSocial = generateSponsorSocialPosts(draftContent, {

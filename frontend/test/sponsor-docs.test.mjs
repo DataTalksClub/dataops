@@ -247,7 +247,13 @@ test("authenticated DataOps staff can view, copy share links, rotate codes, and 
   await h.controller.start();
 
   assert.match(h.identity.textContent, /DataOps Staff/);
-  assert.match(h.root.textContent, /Shareable sponsor link/);
+  // The compact staff strip never shows the share URL or access code as text.
+  assert.doesNotMatch(h.root.textContent, /Shareable sponsor link|BCDF-GHJK-LMNP-QRST|\?code=/);
+  assert.ok(h.root.querySelector("[data-sponsor-staff-more] [data-sponsor-action=\"rotate-code\"]"), "secondary actions live in the More overflow");
+  // A newsletter sponsor doc has no displayed Markdown dump; Copy Markdown is an overflow action.
+  assert.equal(h.root.querySelector("[data-sponsor-export]"), null);
+  await h.root.querySelector("[data-sponsor-staff-more] [data-sponsor-action=\"copy-export\"]").click();
+  assert.ok(h.copied.length > 0, "Copy Markdown copies the export");
 
   await findByText(h.root, "Copy share link", "button").click();
   assert.equal(h.copied.at(-1), "https://ops.example.test/sponsor-docs/doc-abc?code=BCDF-GHJK-LMNP-QRST");
@@ -257,7 +263,7 @@ test("authenticated DataOps staff can view, copy share links, rotate codes, and 
 
   assert.equal(h.root.querySelector("[data-sponsor-task-id]"), null, "no manual owning-task input");
   assert.doesNotMatch(h.root.textContent, /Owning task ID/);
-  assert.ok(h.root.querySelector("[data-sponsor-staff-only-note]"), "staff panel is labelled staff-only");
+  assert.ok(h.root.querySelector("[data-sponsor-staff-bar]"), "staff get the action strip");
   await findByText(h.root, "Send from orin@datatalks.club", "button").click();
   await nextTicks();
   const sendCall = h.calls.find(([url]) => url.endsWith("/send-email"));
@@ -268,7 +274,9 @@ test("authenticated DataOps staff can view, copy share links, rotate codes, and 
 
   await findByText(h.root, "Rotate code", "button").click();
   await nextTicks();
-  assert.match(h.root.textContent, /WXZ2-3456-789B-CDFG/);
+  await findByText(h.root, "Copy share link", "button").click();
+  assert.equal(h.copied.at(-1), "https://ops.example.test/sponsor-docs/doc-abc?code=WXZ2-3456-789B-CDFG", "the rotated code is in the copied link, never shown");
+  assert.doesNotMatch(h.root.textContent, /WXZ2-3456-789B-CDFG/);
 
   await findByText(h.root, "Reopen as Draft", "button").click();
   await nextTicks();
@@ -406,7 +414,9 @@ test("keeps structured Main Body Opening, Bulleted List, and Closing fields and 
   const preview = h.root.querySelector("[data-sponsor-live-preview]");
   assert.ok(preview, "Live preview pane is rendered");
   assert.match(preview.textContent, /Live Preview/);
-  assert.match(preview.textContent, /Stand-Alone Blast/);
+  // The preview is the block alone: no slot badge, helper copy, envelope labels or sample text.
+  assert.doesNotMatch(preview.textContent, /Stand-Alone Blast|Updates live|Subject|\[Inbox preview text\]|Bullet point 1|Headline for your/);
+  assert.ok(preview.querySelector("[data-sponsor-preview-empty]"), "an empty doc shows one quiet empty-state line");
 
   // 4. Typing into structured fields updates the live preview immediately
   const titleInput = h.root.querySelector("#sponsor-field-title");
@@ -1078,7 +1088,8 @@ test("Graphics renders the image with Upload/Replace (no URL text box), rejects 
   assert.ok(img, "the existing value renders as an image preview");
   assert.equal(img.src, existing);
   const uploadLabel = h.root.querySelector('[data-sponsor-visual-upload-label="graphicsUrl"]');
-  assert.equal(uploadLabel.textContent, "Replace image");
+  assert.equal(uploadLabel.textContent, "Replace");
+  assert.ok(h.root.querySelector('[data-sponsor-visual-preview="graphicsUrl"]').classList.contains("is-thumbnail"), "the editor shows the uploaded image as a thumbnail");
 
   // Wrong type: visible alert, no upload, current image kept.
   const fileInput = h.root.querySelector('[data-sponsor-visual-upload="graphicsUrl"]');

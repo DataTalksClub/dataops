@@ -31,6 +31,7 @@ import { appendSponsorDocRadioField } from "./sponsor-doc-radio.js";
 import { appendSponsorDocSelectField } from "./sponsor-doc-select.js";
 import { renderNewsletterSyncNote } from "./sponsor-doc-newsletter-sync.js";
 import { isImageOnlyVisualField, mountSponsorDocVisualControls } from "./sponsor-doc-visual.js";
+import { mountSponsorXThreadEditor } from "./sponsor-doc-x-thread.js";
 import {
   appendSponsorDocBulletsField,
   parseSponsorBulletItems,
@@ -498,14 +499,21 @@ export function createSponsorDocPage({
       ));
     }
 
+    // Strip 1: title and state on one line, then one quiet meta line; strip 2 (staff only): the action strip.
     const statusRow = buildSponsorDocStatusRow({ el, doc, isSubmitted, isTwoTab, isStaff });
+    const [heading, ...titleActions] = [...titleRow.childNodes];
+    titleRow.replaceChildren(heading, statusRow, ...titleActions);
 
     const { metaRow, secondaryRow, guestSchedule, guestZone } = guestEventMetadataRow({
       el, doc, tDef, draftContent, isSpeakerDoc, isPodcastGuestDoc, formatEditorLabel,
     });
-    headWrap.append(titleRow, statusRow);
-    if (metaRow.childNodes.length > 0) headWrap.append(metaRow);
-    headWrap.append(secondaryRow);
+    if (metaRow.childNodes.length > 0) {
+      const sep = el("span", "sponsor-doc-meta__sep", "·");
+      sep.setAttribute("aria-hidden", "true");
+      metaRow.append(sep);
+    }
+    metaRow.append(...[...secondaryRow.childNodes]);
+    headWrap.append(titleRow, metaRow);
     headerCard.append(headWrap);
     if (guestSchedule && !isTwoTab) {
       appendGuestTimezoneSelector({ el, headerCard, guestZone, busy, draftContent, render });
@@ -523,6 +531,7 @@ export function createSponsorDocPage({
         copyText,
         onSendEmail: () => sendSponsorEmailFromOrin(),
         onRotateCode: () => rotateStaffCode(),
+        onCopyExport: () => copyText(doc.markdownExport, "Copied Markdown export to clipboard."),
       }));
     }
 
@@ -721,6 +730,20 @@ export function createSponsorDocPage({
             continue;
           }
 
+          if (fieldDef.key === "twitterPost") {
+            // One editable card per tweet (each with its own counter); the stored value stays the separator-joined thread.
+            top.replaceChildren(label);
+            fieldWrap.append(top);
+            const binding = mountSponsorXThreadEditor({
+              el, fieldWrap, fieldDef, inputId, draftContent, busy, onChange: () => updateLivePreview(),
+            });
+            socialFieldControls.set(fieldDef.key, binding);
+            appendErrorIfAny();
+            if (fieldDef.helpText) fieldWrap.append(el("p", "dk-hint", fieldDef.helpText));
+            appendFieldNode(fieldDef.key, fieldWrap);
+            continue;
+          }
+
           if (fieldDef.type === "select") {
             appendSponsorDocSelectField({
               el, fieldWrap, fieldDef, inputId, currentVal, busy, draftContent, updateCount, updateLivePreview, top,
@@ -732,7 +755,7 @@ export function createSponsorDocPage({
 
           const imageOnly = isImageOnlyVisualField(fieldDef);
           const isMultiline = !imageOnly && (fieldDef.type === "textarea" || Boolean(fieldDef.multiline));
-          const control = isMultiline ? el("textarea", "sponsor-doc-textarea") : el("input", "dk-input");
+          const control = isMultiline ? el("textarea", "dk-textarea sponsor-doc-textarea") : el("input", "dk-input");
           if (isMultiline) control.rows = fieldDef.rows || 5;
           else control.type = imageOnly ? "hidden" : "text";
           // Image fields show the image and an Upload/Replace button; the URL
@@ -902,8 +925,9 @@ export function createSponsorDocPage({
       root.append(formCard);
     }
 
-    // 3. Read-only Markdown Export card
-    if (doc.markdownExport) {
+    // 3. Read-only Markdown Export card; a newsletter sponsor doc keeps only
+    // "Copy Markdown" in the staff "More" menu, never a displayed dump.
+    if (doc.markdownExport && !String(doc.template || "").startsWith("newsletter-")) {
       root.append(renderSponsorDocExportCard({
         el,
         markdownExport: doc.markdownExport,

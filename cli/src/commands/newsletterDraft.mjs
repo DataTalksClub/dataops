@@ -9,7 +9,7 @@ import { enc, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { formatLineDiff } from "./sponsorDocs.mjs";
 
-export const draftHelp = `dataops newsletter draft / block / render / approve / test-send / schedule - the issue's email
+export const draftHelp = `dataops newsletter draft / block / render / approve / test-send / test-receipt / schedule - the issue's email
 
 Usage
   dataops newsletter draft <issue> [--show] [--json]          The draft: subject, blocks, approval
@@ -28,7 +28,8 @@ Usage
   dataops newsletter sponsor-sync <issue> --slot primary|secondary [--dry-run]
   dataops newsletter revisions <issue> [--block <id>] [--origin <origin>] [--diff] [--rev N] [--json]
   dataops newsletter approve <issue> --version N --hash <payload-sha256> [--note <text>]
-  dataops newsletter test-send <issue> --to <email>[,<email>]
+  dataops newsletter test-send <issue>                          Send the approved email to the owner's mailbox
+  dataops newsletter test-receipt <issue> --test <request-id> --version N --hash <payload-sha256>
   dataops newsletter schedule <issue> --at <ISO time with offset> --version N --hash <payload-sha256> --yes
   dataops newsletter cancel-schedule <issue> --yes
   dataops newsletter delivery <issue> [--refresh]
@@ -40,18 +41,24 @@ and payload sha256, --out writes the exact HTML, --text prints the text part;
 --editor marks incomplete blocks). Nothing is imported from or written to
 Relay while the draft is built.
 
-A sponsor slot with a sponsor document takes its sponsor block from the doc:
-every doc save stages it into the draft (DataOps only; "sponsor-sync" re-runs
-that by hand). A slot without a doc (an own DataTalks.Club promo) takes a
-hand-made sponsor block: "block add --type sponsor".
+A sponsor block comes only from its slot's sponsor document, an own
+DataTalks.Club promo included: every doc save stages it into the draft
+(DataOps only; "sponsor-sync" re-runs that by hand). Sponsor blocks cannot be
+added or edited by hand. "approve" refuses a draft whose sponsor slot has no
+linked doc, a subject over 65 characters (without the weekly suffix), preview
+text over 140, a sponsor title over 12 words, or an own promo without bullets,
+closing and utm tracking.
 
-Only the owner approves, test-sends and schedules (signed in personally, not
-with an API token). "approve" takes the --version and --hash that "render"
-printed, so the approval covers exactly the reviewed email; any later edit
-withdraws it. After approval, "test-send" and "schedule" hand the frozen
-payload to Relay's campaign API (Relay is transport only); a schedule locks the
-draft until "cancel-schedule". Refusals print the server's message and exit
-non-zero.
+Only the owner approves, tests and schedules (signed in personally, not with
+an API token). "approve" takes the --version and --hash that "render" printed,
+so the approval covers exactly the reviewed email; any later edit withdraws it.
+After approval, "test-send" hands the frozen payload to Relay's campaign API
+(Relay is transport only), which sends it to the owner's mailbox only. When it
+arrives and looks right, "test-receipt" confirms it with the request id
+"test-send" printed and the approved version and hash ("draft" prints them);
+only then does "schedule" queue it. Editing a scheduled draft cancels the
+schedule in Relay first (verified), or fails and changes nothing. Refusals
+print the server's message and exit non-zero.
 `;
 
 const issueArg = (args, usage) => String(positional(args, 0, usage));
@@ -66,7 +73,8 @@ function printDraft(io, draft) {
   io.print(`subject: ${draft.subject || "(empty)"}`);
   io.print(`preview: ${draft.previewText || "(empty)"}`);
   const approval = draft.approval || {};
-  io.print(`approval: ${approval.state}${approval.approvedAt ? ` (by ${approval.approvedByName || approval.approvedBy} at ${approval.approvedAt})` : ""}`);
+  io.print(`approval: ${approval.state}${approval.approvedAt ? ` (by ${approval.approvedByName || approval.approvedBy} at ${approval.approvedAt}; version ${approval.draftVersion}, hash ${approval.payloadHash})` : ""}`);
+  if (draft.testReceipt) io.print(`test receipt: ${draft.testReceipt.state}${draft.testReceipt.receivedAt ? ` (at ${draft.testReceipt.receivedAt})` : ""}`);
   if (draft.delivery) io.print(`relay: ${draft.delivery.state} · ${draft.delivery.campaignKey} · ${draft.delivery.scheduledAt}`);
   io.print(`version: ${draft.version} · payload sha256: ${draft.payloadHash}`);
   table(
@@ -77,7 +85,7 @@ function printDraft(io, draft) {
       ["ID", (b) => b.id],
       ["TYPE", (b) => b.type],
       ["V", (b) => String(b.version)],
-      ["RULE", (b) => (b.readOnly && b.sponsorDocUrl ? "from sponsor doc" : b.pinned ? "pinned" : "")],
+      ["RULE", (b) => (b.sponsor ? (b.sponsorDocUrl ? "from sponsor doc" : "needs sponsor doc") : b.pinned ? "pinned" : "")],
       ["TODO", (b) => (b.problems?.length ? "needs content" : "")],
       ["CONTENT", (b) => b.preview],
     ],
@@ -356,14 +364,29 @@ export async function approve(args, io) {
 }
 
 export async function testSend(args, io) {
-  const usage = "dataops newsletter test-send <issue> --to <email>[,<email>]";
+  const usage = "dataops newsletter test-send <issue>";
   const issue = issueArg(args, usage);
-  const to = optionalString(args, "to");
-  if (!to) throw new UsageError(`--to is required. Usage: ${usage}`);
-  const emails = to.split(",").map((value) => value.trim()).filter(Boolean);
-  const result = await apiFor(args).post(draftUrl(issue, "/test-send"), { emails, requestId: `cli-${randomUUID()}` });
+  if (args.to !== undefined) throw new UsageError(`Test emails go only to the owner's mailbox; --to is not accepted. Usage: ${usage}`);
+  const result = await apiFor(args).post(draftUrl(issue, "/test-send"), { requestId: `cli-${randomUUID()}` });
   if (args.json) return result;
-  io.print(`test send via Relay campaign ${result.testSend.campaignKey}: ${result.testSend.status} (${result.testSend.emails.join(", ")})`);
+  const sent = result.testSend;
+  io.print(`test send via Relay campaign ${sent.campaignKey}: ${sent.status} (${sent.emails.join(", ")})`);
+  const approval = result.draft?.approval || {};
+  if (sent.status === "provider_accepted") {
+    io.print(`when it arrives and looks right: dataops newsletter test-receipt ${issue} --test ${sent.requestId} --version ${approval.draftVersion} --hash ${approval.payloadHash}`);
+  }
+  return result;
+}
+
+export async function testReceipt(args, io) {
+  const usage = "dataops newsletter test-receipt <issue> --test <request-id> --version N --hash <payload-sha256>";
+  const issue = issueArg(args, usage);
+  const testRequestId = optionalString(args, "test");
+  if (!testRequestId) throw new UsageError(`--test <request-id> (printed by "test-send") is required. Usage: ${usage}`);
+  const body = { testRequestId, version: versionArg(args, usage), payloadHash: hashArg(args, usage) };
+  const result = await apiFor(args).post(draftUrl(issue, "/test-receipt"), body);
+  if (args.json) return result;
+  io.print(`test receipt recorded for approved version ${result.testReceipt.approvedVersion}; the email can be scheduled`);
   return result;
 }
 
@@ -386,7 +409,7 @@ export async function cancelSchedule(args, io) {
   if (!args.yes) throw new UsageError(`This cancels the scheduled send in Relay. Re-run with --yes.`);
   const result = await apiFor(args).post(draftUrl(issue, "/cancel"), {});
   if (args.json) return result;
-  io.print(`cancelled Relay campaign ${result.delivery.campaignKey}; the draft is editable again`);
+  io.print(`cancelled Relay campaign ${result.delivery.campaignKey}; the email is a draft again`);
   return result;
 }
 

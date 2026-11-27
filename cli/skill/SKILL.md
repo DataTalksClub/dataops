@@ -289,13 +289,24 @@ approved email. Start the draft with `dataops newsletter draft <issue> --create`
 (nothing is imported), add and edit blocks with `dataops newsletter block add|edit|move`,
 and check the result with `dataops newsletter render <issue> --out email.html`.
 The owner approves the exact rendered revision (`dataops newsletter approve`,
-owner only); only then does the frozen email go to Relay for a test send or a
-scheduled send. Never send or schedule an issue yourself.
+owner only); only then does the frozen email go to Relay, first as a test to
+the owner's own mailbox (`test-send`), which the owner confirms with
+`test-receipt` once it arrived and looks right; only then can it be scheduled.
+Editing a scheduled issue (a block, the subject, its sponsor document) cancels
+the Relay schedule first and sends it back to review; if Relay cannot confirm
+the cancel, the edit fails and nothing changes. Never test, confirm, send or
+schedule an issue yourself.
 
 For sponsored slots, edit the slot's sponsor document: every save stages its
-sponsor block into the DataOps draft (nothing goes to Relay). A slot without an
-external sponsor takes a hand-made sponsor block
-(`dataops newsletter block add <issue> --type sponsor`).
+sponsor block into the DataOps draft (nothing goes to Relay). A sponsor block
+comes only from its slot's sponsor document; an own DataTalks.Club promo gets
+its own internal sponsor doc too (book the slot for DataTalks.Club and create
+the doc from the issue page: no invoice or sponsor email). Sponsor blocks are
+never added or edited by hand. Approval refuses a slot without a linked doc, a
+subject over 65 characters (the ` | DataTalks.Club Weekly` suffix not counted),
+preview text over 140, a sponsor title over 12 words, and an own promo without
+bullets, closing and utm tracking; a newsletter sponsor doc marked Ready must
+meet the same subject/preview/title limits.
 `dataops newsletter image upload <issue-id> <path>` returns a durable public
 image URL for a block or the sponsor document.
 

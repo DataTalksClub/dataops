@@ -39,11 +39,20 @@
 .newsletter-review__canvas,
 .newsletter-review__panel,
 .newsletter-review__approve,
-.newsletter-review__test,
-.newsletter-review__schedule,
+.newsletter-review__step,
+.newsletter-review__when,
 .newsletter-review__delivery {
   display: grid;
   gap: var(--dk-space-3);
+}
+
+.newsletter-review__when {
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+}
+
+.newsletter-review__when > button {
+  grid-column: 1 / -1;
 }
 
 .newsletter-review__panel {

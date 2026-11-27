@@ -15,9 +15,11 @@ import { browserAuthOrigin } from '../auth/browserAuth';
 import { BlockValidationError, blockLabel, newWebViewToken, validateBlockData, type IssueBlockSet } from './blocks';
 import { BlocksError } from './blocksErrors';
 import { byPosition } from './blocksLayout';
-import { appendBlockRevisions, putBlockSet, putFrozenPayload, type FrozenPayload } from './blocksStore';
-import { assertUnlocked, requireBlockSet, type BlockActor } from './blocksEdit';
+import { appendBlockRevisions, putBlockSet, putFrozenPayload, requireBlockSet, type FrozenPayload } from './blocksStore';
+import type { BlockActor } from './blocksEdit';
 import { renderIssueEmail, type RenderedEmail } from './emailRender';
+import { envelopeProblems, sponsorProblems, type IssueSlots } from './draftReadiness';
+import { getNewsletterIssue } from '../db/newsletterIssues';
 
 export const WEB_VIEW_PATH = '/api/newsletter-view/';
 
@@ -38,10 +40,15 @@ export interface DraftProblem {
 
 const FIELD_WORDS: Record<string, string> = { required: 'is required', invalid_url: 'is not a valid http(s) URL', too_long: 'is too long', unknown_field: 'is not a field of this block' };
 
-/** Everything that keeps the draft from being approved; empty when it is complete. */
-export function draftProblems(set: IssueBlockSet): DraftProblem[] {
+/**
+ * Everything that keeps the draft from being approved; empty when it is
+ * complete. `slots` (the issue's sponsor slots) adds the sponsor-document rules
+ * of ./draftReadiness.ts; approval always passes them.
+ */
+export function draftProblems(set: IssueBlockSet, slots?: IssueSlots): DraftProblem[] {
   const problems: DraftProblem[] = [];
   if (!set.subject.trim()) problems.push({ blockId: null, field: 'subject', message: 'The subject is empty.' });
+  problems.push(...envelopeProblems(set));
   const blocks = byPosition(set.blocks);
   if (!blocks.some((block) => block.type !== 'intro')) {
     problems.push({ blockId: null, field: 'blocks', message: 'The draft has no content blocks besides the intro.' });
@@ -57,6 +64,7 @@ export function draftProblems(set: IssueBlockSet): DraftProblem[] {
       }
     }
   }
+  if (slots) problems.push(...sponsorProblems(set, slots));
   return problems;
 }
 
@@ -75,8 +83,8 @@ export interface DraftRender extends RenderedEmail {
  * visible "Needs content" note before incomplete blocks (and changes the
  * hash); the approved and delivered payload is always the plain render.
  */
-export function renderDraft(set: IssueBlockSet, options: { editor?: boolean } = {}): DraftRender {
-  const problems = draftProblems(set);
+export function renderDraft(set: IssueBlockSet, options: { editor?: boolean; slots?: IssueSlots } = {}): DraftRender {
+  const problems = draftProblems(set, options.slots);
   const unfinished = new Map<string, string[]>();
   if (options.editor) {
     for (const problem of problems) {
@@ -93,10 +101,41 @@ export function renderDraft(set: IssueBlockSet, options: { editor?: boolean } = 
 
 export type ApprovalState = 'none' | 'current' | 'stale';
 
+/** Delivery states in which Relay holds (or is being given) the approved payload. */
+export const LOCKED_DELIVERY = new Set(['scheduling', 'scheduled']);
+
+/** Relay holds the approved email: approving again is meaningless until an edit unschedules it. */
+function assertNotScheduled(set: IssueBlockSet): void {
+  if (set.delivery && LOCKED_DELIVERY.has(set.delivery.state)) {
+    throw new BlocksError(
+      `The approved email of this issue is ${set.delivery.state === 'scheduled' ? 'scheduled' : 'being scheduled'} in Relay `
+        + `(campaign ${set.delivery.campaignKey}). Editing the draft cancels that schedule first.`,
+      409,
+      'draft_locked',
+      { delivery: set.delivery },
+    );
+  }
+}
+
 /** Current only while the stored approval still matches what the draft renders now. */
 export function approvalState(set: IssueBlockSet, render: Pick<DraftRender, 'payloadHash'> = renderDraft(set)): ApprovalState {
   if (!set.approval) return 'none';
   return set.approval.payloadHash === render.payloadHash ? 'current' : 'stale';
+}
+
+/**
+ * The owner's confirmation that the test email arrived and looks right. Current
+ * only for the exact approval it was given for (approved version and payload
+ * hash) while that approval is itself current; any edit clears it.
+ */
+export function testReceiptState(set: IssueBlockSet, render: Pick<DraftRender, 'payloadHash'> = renderDraft(set)): ApprovalState {
+  const receipt = set.testReceipt;
+  if (!receipt) return 'none';
+  return approvalState(set, render) === 'current'
+    && receipt.payloadHash === set.approval?.payloadHash
+    && receipt.approvedVersion === set.approval?.draftVersion
+    ? 'current'
+    : 'stale';
 }
 
 /**
@@ -110,7 +149,7 @@ export async function approveDraft(
   actor: BlockActor,
 ): Promise<{ set: IssueBlockSet; payload: FrozenPayload }> {
   let set = await requireBlockSet(client, issueId);
-  assertUnlocked(set);
+  assertNotScheduled(set);
   if (!set.webViewToken) {
     // A draft built by the retired Relay import has no web-view link yet; give it one, which changes the email.
     const now = new Date().toISOString();
@@ -118,7 +157,8 @@ export async function approveDraft(
     await putBlockSet(client, next, set.version);
     set = next;
   }
-  const render = renderDraft(set);
+  const issue = await getNewsletterIssue(client, issueId);
+  const render = renderDraft(set, { slots: issue?.slots || {} });
   if (input.expectedVersion !== set.version || input.payloadHash !== render.payloadHash) {
     throw new BlocksError(
       `The draft changed since you reviewed it (now version ${set.version}). Review the current email again, then approve.`,
@@ -160,6 +200,7 @@ export async function approveDraft(
       approvedByName: actor.name,
       ...(note ? { note } : {}),
     },
+    testReceipt: null,
     version: set.version + 1,
     updatedAt: now,
   };

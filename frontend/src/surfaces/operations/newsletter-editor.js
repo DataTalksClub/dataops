@@ -71,6 +71,7 @@ export function createNewsletterEditor({
     let previewSeq = 0;
     let frame = null;
     let envelopeLines = null;
+    let lastPreview = null;
 
     function say(message, tone = "info") {
       status.textContent = message;
@@ -79,11 +80,13 @@ export function createNewsletterEditor({
 
     function setDraft(next, message, tone = "success") {
       const hadApproval = draft?.approval?.state === "current";
+      const wasScheduled = Boolean(draft?.locked);
       draft = next;
       render();
       if (message) {
+        const unscheduled = wasScheduled && !draft.locked ? " The Relay schedule was cancelled first (confirmed by Relay)." : "";
         const withdrawn = hadApproval && draft.approval?.state !== "current" ? " The owner's approval was withdrawn; review again before sending." : "";
-        say(`${message}${withdrawn}`, tone);
+        say(`${message}${unscheduled}${withdrawn}`, tone);
       }
       schedulePreview(0);
     }
@@ -107,6 +110,15 @@ export function createNewsletterEditor({
       previewTimer = setTimeoutFn(refreshPreview, delay);
     }
 
+    /** Put the latest rendered preview into the (possibly just rebuilt) pane. */
+    function showPreview() {
+      if (!lastPreview || !frame) return;
+      frame.srcdoc = lastPreview.html;
+      frame.dataset.previewState = "ready";
+      envelopeLines.subject.textContent = lastPreview.subject || "(no subject yet)";
+      envelopeLines.preview.textContent = lastPreview.previewText || "(no preview text yet)";
+    }
+
     async function refreshPreview() {
       previewTimer = null;
       if (!draft || !frame) return;
@@ -115,10 +127,8 @@ export function createNewsletterEditor({
       try {
         const result = await request(`${base}/preview`, { method: "POST", body: JSON.stringify(state) });
         if (seq !== previewSeq) return;
-        frame.srcdoc = result.preview.html;
-        frame.dataset.previewState = "ready";
-        envelopeLines.subject.textContent = result.preview.subject || "(no subject yet)";
-        envelopeLines.preview.textContent = result.preview.previewText || "(no preview text yet)";
+        lastPreview = result.preview;
+        showPreview();
       } catch (error) {
         if (seq !== previewSeq) return;
         frame.dataset.previewState = "failed";
@@ -160,10 +170,8 @@ export function createNewsletterEditor({
       const preview = fieldControl(dom, { name: "previewText", label: "Inbox preview text", kind: "text", required: false, default: "" }, draft.previewText);
       const save = button("Save subject", "secondary", "save-envelope");
       save.type = "submit";
-      save.disabled = draft.locked;
       form.append(subject, preview, save);
       for (const input of [subject, preview].map((wrap) => wrap.querySelector("[data-block-field]"))) {
-        input.disabled = draft.locked;
         input.addEventListener("input", () => schedulePreview());
       }
       form.addEventListener("submit", async (event) => {
@@ -326,9 +334,9 @@ export function createNewsletterEditor({
       grid.dataset.blockPicker = "";
       grid.setAttribute("role", "group");
       grid.setAttribute("aria-label", "Block type");
-      const taken = new Set(draft.blocks.map((block) => block.type));
       for (const type of types) {
-        if (!type.addable || ((type.type === "sponsor" || type.type === "sponsor_secondary") && taken.has(type.type))) continue;
+        // Sponsor blocks are never offered: they come only from the slot's sponsor document.
+        if (!type.addable) continue;
         const choice = button(type.label, "secondary", "pick");
         choice.dataset.blockType = type.type;
         choice.addEventListener("click", () => guarded(async () => {
@@ -381,7 +389,11 @@ export function createNewsletterEditor({
       left.dataset.editorLeft = "";
       if (draft.locked) {
         const when = formatWhen(draft.delivery?.scheduledAt);
-        const lock = el("p", "newsletter-editor__locked", `Scheduled in Relay for ${when}. The draft is locked; cancel the schedule on the full email page to edit it.`);
+        const lock = el(
+          "p",
+          "newsletter-editor__locked",
+          `Scheduled in Relay for ${when}. Saving any change first cancels that schedule (checked with Relay); then the email needs a new approval, test and schedule.`,
+        );
         lock.dataset.draftLocked = "";
         left.append(lock);
       }
@@ -397,7 +409,7 @@ export function createNewsletterEditor({
       list.dataset.blockList = "";
       draft.blocks.forEach((block, index) => list.append(renderBlock(block, index)));
       left.append(list);
-      if (!draft.locked) {
+      {
         const add = button(pickerOpen ? "Close block types" : "Add block", "primary", "add");
         add.dataset.addBlock = "";
         const pickerBox = el("div", "newsletter-editor__add");
@@ -432,6 +444,8 @@ export function createNewsletterEditor({
       right.append(el("h3", "newsletter-editor__pane-title", "Live preview"), envelope, frame);
       panes.append(left, right);
       body.append(panes, renderDetails());
+      // Opening or closing a block rebuilds the panes: keep showing the last preview.
+      showPreview();
     }
 
     say("Loading the email draft…");
