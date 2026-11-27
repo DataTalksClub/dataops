@@ -615,6 +615,10 @@
   padding-top: 0;
 }
 
+.sponsor-doc-visual-row .sponsor-doc-visual-upload__status:empty {
+  display: none;
+}
+
 .sponsor-doc-visual-dropzone.is-thumbnail {
   min-height: 0;
   padding: var(--dk-space-1);

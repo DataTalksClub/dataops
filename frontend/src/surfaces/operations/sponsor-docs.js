@@ -731,8 +731,8 @@ export function createSponsorDocPage({
           }
 
           if (fieldDef.key === "twitterPost") {
-            // One editable card per tweet; the stored value stays the separator-joined thread.
-            top.append(label);
+            // One editable card per tweet (each with its own counter); the stored value stays the separator-joined thread.
+            top.replaceChildren(label);
             fieldWrap.append(top);
             const binding = mountSponsorXThreadEditor({
               el, fieldWrap, fieldDef, inputId, draftContent, busy, onChange: () => updateLivePreview(),
