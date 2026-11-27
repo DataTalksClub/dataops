@@ -64,6 +64,18 @@ describe('GET /api/tasks/search', () => {
     assert.equal(taskScans.length, 1);
   });
 
+  it('drops the cache when a Task is written in this container', async () => {
+    const created = await handler({
+      httpMethod: 'POST',
+      path: '/api/tasks',
+      body: JSON.stringify({ description: 'Freshly created invoice task', date: '2031-07-01' }),
+    }, {});
+    assert.equal(created.statusCode, 201, created.body);
+    const res = await search({ q: 'freshly created' });
+    assert.equal(JSON.parse(res.body).total, 1);
+    assert.equal(taskScans.length, 2);
+  });
+
   it('rejects a missing query or an out-of-range limit', async () => {
     assert.equal((await search({})).statusCode, 400);
     assert.equal((await search({ q: 'x', limit: '0' })).statusCode, 400);

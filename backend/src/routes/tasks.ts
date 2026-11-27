@@ -24,10 +24,10 @@ import {
   listTasksByCardConsistent,
   listTasksByStatus,
   listTasksByOwner,
-  listTaskSearchRows,
+  listTaskSearchRowsCached,
   TaskVersionConflictError,
 } from '../db/tasks';
-import type { TaskPatch, TaskSearchRow } from '../db/tasks';
+import type { TaskPatch } from '../db/tasks';
 import {
   CollectionCursorError,
   decodeCollectionCursor,
@@ -153,26 +153,8 @@ function storeListSnapshot(snapshot: Omit<ListSnapshot, 'expiresAt'>): string {
   return id;
 }
 
-/**
- * Global search used to list every Task with full rows (inline history
- * included) through a 2000-2100 date range on every query, and then matched
- * only the first page. It now matches server-side against a cached
- * projection: one table read per container per TTL serves a whole search
- * session, and a just-created Task shows up within the TTL.
- */
-const SEARCH_ROWS_TTL_MS = 60_000;
 const SEARCH_DEFAULT_LIMIT = 50;
 const SEARCH_MAX_LIMIT = 200;
-let searchRowsCache: { expiresAt: number; rows: Promise<TaskSearchRow[]> } | null = null;
-
-function cachedTaskSearchRows(client: DynamoDBDocumentClient): Promise<TaskSearchRow[]> {
-  if (!searchRowsCache || searchRowsCache.expiresAt <= Date.now()) {
-    const rows = listTaskSearchRows(client);
-    searchRowsCache = { expiresAt: Date.now() + SEARCH_ROWS_TTL_MS, rows };
-    rows.catch(() => { if (searchRowsCache?.rows === rows) searchRowsCache = null; });
-  }
-  return searchRowsCache.rows;
-}
 
 /**
  * List rows are summaries: append-only transition history stays complete
@@ -1377,7 +1359,7 @@ export async function handleTaskRoutes(
     if (!Number.isInteger(limit) || limit < 1 || limit > SEARCH_MAX_LIMIT) {
       return jsonResponse(400, { error: `limit must be an integer from 1 to ${SEARCH_MAX_LIMIT}` });
     }
-    const matches = (await cachedTaskSearchRows(client))
+    const matches = (await listTaskSearchRowsCached(client))
       .filter((row) => `${row.id} ${row.description} ${row.status}`.toLowerCase().includes(query))
       .sort((left, right) => right.date.localeCompare(left.date) || left.id.localeCompare(right.id));
     return jsonResponse(200, { tasks: matches.slice(0, limit), total: matches.length });
