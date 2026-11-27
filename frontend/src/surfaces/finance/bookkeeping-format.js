@@ -164,29 +164,88 @@ export function isReportExempt(entry) {
     || isOwnerWithdrawalReportExempt(entry);
 }
 
+// Keys of the payment itself: its classification markers, free-text reference,
+// and saved allocations. A child is classified on its own category and text,
+// never on what the payment carried; bank statementRef stays on the child.
+const PAYMENT_ONLY_KEYS = ["mandatoryKind", "ownerPayType", "kind", "taxType", "reference", "allocations"];
+
+// Mirror of the backend mandatory-payment text. A child inherits no mandatory
+// markers or parent reference, so its own counterparty and description decide.
+const MANDATORY_TEXT = [
+  /techniker\s*krankenkasse|krankenkasse|\btk\b/i,
+  /finanzamt|bundeskasse|steuerverwaltung/i,
+];
+
+/** Saved invoice allocations complete enough to become report rows. */
+function reportAllocations(entry) {
+  if (!Array.isArray(entry?.allocations)) return [];
+  return entry.allocations.filter(
+    (allocation) =>
+      allocation &&
+      typeof allocation === "object" &&
+      ["documentId", "counterparty", "description", "amount"].every(
+        (field) => String(allocation[field] || "").trim(),
+      ),
+  );
+}
+
 /** Expand persisted allocations for package counts and previews. The parent remains the only ledger transaction. */
 export function expandReportEntries(entries) {
   return (Array.isArray(entries) ? entries : []).flatMap((entry) => {
-    const allocations = Array.isArray(entry.allocations) ? entry.allocations : [];
+    const allocations = reportAllocations(entry);
     if (!allocations.length) return [entry];
-    return allocations.map((allocation) => ({
-      ...entry,
-      ...allocation,
-      sourceTransactionId: entry.id,
-      transactionDate: allocation.transactionDate || entry.transactionDate,
-      paidDate: allocation.paidDate || entry.paidDate,
-      counterparty: allocation.counterparty || entry.counterparty,
-      description: allocation.description || entry.description,
-      amount: allocation.amount,
-      currency: allocation.currency || entry.currency,
-      amountEur: allocation.amountEur,
-      category: allocation.category || entry.category,
-      subtype: allocation.subtype || entry.subtype,
-      invoiceNumber: allocation.invoiceNumber,
-      allocationDocumentId: allocation.documentId,
-      allocations: undefined,
-    }));
+    return allocations.map((allocation) => {
+      const child = {
+        ...entry,
+        sourceTransactionId: entry.id,
+        transactionDate: allocation.transactionDate || entry.transactionDate,
+        paidDate: allocation.paidDate || entry.paidDate,
+        counterparty: allocation.counterparty,
+        description: allocation.description,
+        amount: allocation.amount,
+        currency: allocation.currency || entry.currency,
+        amountEur: allocation.amountEur,
+        vatAmount: allocation.vatAmount,
+        vatCurrency: allocation.vatCurrency,
+        category: allocation.category || entry.category,
+        subtype: allocation.subtype || entry.subtype,
+        invoiceId: allocation.invoiceId,
+        invoiceNumber: allocation.invoiceNumber,
+        allocationDocumentId: allocation.documentId,
+      };
+      for (const key of PAYMENT_ONLY_KEYS) delete child[key];
+      return child;
+    });
   });
+}
+
+/** Whether a child row is kept out of the package on its own category and text. */
+function isReportExemptChild(row) {
+  const category = String(row?.category || "").trim().toLowerCase();
+  if (["taxes", "health insurance", "vat"].includes(category)) return true;
+  const text = [row?.counterparty, row?.description, row?.reference]
+    .map((value) => (value == null ? "" : String(value)))
+    .join(" ");
+  return MANDATORY_TEXT.some((pattern) => pattern.test(text));
+}
+
+/**
+ * The rows the monthly package lists, mirroring the backend snapshot: a
+ * payment with saved invoice allocations as its children, each listed or kept
+ * out on its own; any other entry as itself under the caller's rule.
+ */
+export function selectReportEntries(entries, isExemptEntry) {
+  const included = [];
+  const excluded = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const children = reportAllocations(entry).length ? expandReportEntries([entry]) : [];
+    if (!children.length) {
+      (isExemptEntry(entry) ? excluded : included).push(entry);
+      continue;
+    }
+    for (const child of children) (isReportExemptChild(child) ? excluded : included).push(child);
+  }
+  return { included, excluded };
 }
 
 // Format full raw ledger entries matching the backend snapshot format.

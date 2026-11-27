@@ -220,6 +220,26 @@ describe("native accountant report API", () => {
     assert.equal(selectAccountantReportRows([
       { id: "moved", transactionDate: "2026-10-31", paidDate: "2026-11-02", amount: "30.00", currency: "EUR", entryType: "income" },
     ], "2026-10").length, 0);
+    const parentRefRows = selectAccountantReportRows([
+      {
+        id: "mixed-ref", paidDate: "2026-11-08", amount: "50.00", currency: "EUR", entryType: "expense",
+        category: "Taxes", reference: "Finanzamt monthly statement", statementRef: "Synthetic Bank",
+        allocations: [
+          { documentId: "doc-host", counterparty: "Synthetic Host", description: "Hosting", amount: "20.00", currency: "EUR", category: "Software" },
+          { documentId: "doc-tax", counterparty: "Finanzamt Example", description: "Tax portion", amount: "30.00", currency: "EUR", category: "Taxes" },
+        ],
+      },
+      {
+        id: "ordinary-ref", paidDate: "2026-11-08", amount: "15.00", currency: "EUR", entryType: "expense",
+        category: "Other", reference: "Finanzamt monthly statement", statementRef: "Synthetic Bank",
+      },
+    ], "2026-11");
+    assert.equal(parentRefRows.length, 1);
+    assert.deepEqual(
+      [parentRefRows[0].counterparty, parentRefRows[0].description, parentRefRows[0].amount, parentRefRows[0].category, parentRefRows[0].statementRef],
+      ["Synthetic Host", "Hosting", "20.00", "Software", "Synthetic Bank"],
+    );
+    assert.equal("reference" in parentRefRows[0], false);
     assert.equal(formatAccountantCsv([
       { paidDate: "2026-11-07", transactionDate: "2026-10-30", counterparty: "Synthetic USD Vendor", description: "Converted service", amount: "10.00", amountEur: "9.25", currency: "USD", entryType: "expense" },
     ]), '"Date","Company","What","Amount, EUR"\r\n"2026-11-07","Synthetic USD Vendor","Converted service","-9.25"\r\n');

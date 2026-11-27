@@ -14,6 +14,7 @@ import { cleanItem } from "./cleanItem";
 import { TABLE_BOOKKEEPING } from "./tableNames";
 import { classifyMandatoryPayment } from "../finance/mandatoryPayments";
 import { isOwnerWithdrawalReportExempt } from "../finance/ownerPay";
+import { projectTransactionAllocations } from "../bookkeepingAllocations";
 import { deriveInventoryItems, dismissedInventorySeedId, inventoryItemId, inventoryItemSeed } from "../finance/inventory";
 import {
   BOOKKEEPING_AUDIT_PARTITION_PREFIX,
@@ -35,10 +36,19 @@ export type BookkeepingItem = Record<string, unknown> & {
 // Payment categories tracked in the ledger but kept out of the accountant's
 // monthly package: they are settled from private money and reported separately.
 export const REPORT_EXEMPT_CATEGORIES = new Set(["Taxes", "Health Insurance"]);
-export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
+function isReportExemptClassification(item: Readonly<Record<string, unknown>>) {
   return REPORT_EXEMPT_CATEGORIES.has(String(item.category || ""))
     || classifyMandatoryPayment(item) !== null
     || isOwnerWithdrawalReportExempt(item);
+}
+
+// A payment with invoice allocations is exempt only when every reportable child is;
+// each child is classified on its own, not on the parent's markers.
+export function isReportExemptTransaction(item: Readonly<Record<string, unknown>>) {
+  const children = projectTransactionAllocations(item);
+  return children.length
+    ? children.every(isReportExemptClassification)
+    : isReportExemptClassification(item);
 }
 
 // Raised when a conditional mutation loses its optimistic-concurrency race or

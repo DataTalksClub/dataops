@@ -1,5 +1,5 @@
 import { isReportExemptTransaction } from "../db/bookkeeping";
-import { readTransactionAllocations } from "../bookkeepingAllocations";
+import { projectTransactionAllocations, readTransactionAllocations } from "../bookkeepingAllocations";
 
 export type AccountantReportEntry = Record<string, unknown>;
 
@@ -15,24 +15,7 @@ export function accountantReportRows(transactions: AccountantReportEntry[]) {
   return transactions.flatMap((entry) => {
     const allocations = readTransactionAllocations(entry);
     if (!allocations.length) return [entry];
-    return allocations.map((allocation) => ({
-      ...entry,
-      transactionDate: entry.transactionDate,
-      paidDate: entry.paidDate,
-      counterparty: allocation.counterparty,
-      description: allocation.description,
-      amount: allocation.amount,
-      currency: allocation.currency,
-      ...(allocation.amountEur !== undefined ? { amountEur: allocation.amountEur } : { amountEur: undefined }),
-      ...(allocation.vatAmount !== undefined ? { vatAmount: allocation.vatAmount } : { vatAmount: undefined }),
-      ...(allocation.vatCurrency !== undefined ? { vatCurrency: allocation.vatCurrency } : { vatCurrency: undefined }),
-      category: allocation.category || entry.category,
-      subtype: allocation.subtype || entry.subtype,
-      invoiceNumber: allocation.invoiceNumber,
-      allocationDocumentId: allocation.documentId,
-      invoiceId: allocation.invoiceId,
-      allocations: undefined,
-    }));
+    return projectTransactionAllocations(entry);
   });
 }
 
@@ -48,6 +31,16 @@ export function isAccountantReportRowIncluded(entry: AccountantReportEntry) {
 
 export function selectAccountantReportRows(transactions: AccountantReportEntry[], period: string) {
   return accountantReportRowsForPeriod(transactions, period).filter(isAccountantReportRowIncluded);
+}
+
+/**
+ * The rows already-selected payments contribute to the accountant package: a
+ * payment with invoice allocations as its reportable children in saved order,
+ * any other payment as itself. The portal snapshot counts its payments this
+ * way and its archive lists them this way, so both show the same rows.
+ */
+export function includedAccountantReportRows(transactions: AccountantReportEntry[]) {
+  return accountantReportRows(transactions).filter(isAccountantReportRowIncluded);
 }
 
 function accountantCurrency(entry: AccountantReportEntry) {
