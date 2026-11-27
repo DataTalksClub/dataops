@@ -1,4 +1,5 @@
 import {
+  BatchGetCommand,
   PutCommand,
   GetCommand,
   DeleteCommand,
@@ -9,7 +10,7 @@ import {
 import { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { readAllPages } from './readAllPages';
-import { TABLE_TASKS } from './tableNames';
+import { TABLE_CARDS, TABLE_TASKS } from './tableNames';
 import type { Task, TaskHistoryEvent } from '../types';
 import {
   CardLifecycleConflictError,
@@ -455,14 +456,52 @@ function listTasksByCard(client: DynamoDBDocumentClient, cardId: string): Promis
   }));
 }
 
+const BATCH_GET_MAX_KEYS = 100;
+const BATCH_GET_MAX_ATTEMPTS = 8;
+
+/** Strongly consistent BatchGet of Task rows by id; missing rows are left out. */
+async function batchGetTasksConsistent(client: DynamoDBDocumentClient, ids: string[]): Promise<Task[]> {
+  const tasks: Task[] = [];
+  for (let start = 0; start < ids.length; start += BATCH_GET_MAX_KEYS) {
+    let keys: Record<string, unknown>[] = ids.slice(start, start + BATCH_GET_MAX_KEYS)
+      .map((id) => ({ PK: `TASK#${id}`, SK: `TASK#${id}` }));
+    for (let attempt = 0; keys.length > 0; attempt += 1) {
+      if (attempt >= BATCH_GET_MAX_ATTEMPTS) throw new Error('Task BatchGet left keys unprocessed');
+      const result = await client.send(new BatchGetCommand({
+        RequestItems: { [TABLE_TASKS]: { Keys: keys, ConsistentRead: true } },
+      }));
+      for (const item of result.Responses?.[TABLE_TASKS] || []) {
+        tasks.push(cleanItem(item as Record<string, unknown>) as Task);
+      }
+      keys = (result.UnprocessedKeys?.[TABLE_TASKS]?.Keys || []) as Record<string, unknown>[];
+      if (keys.length > 0) await new Promise((resolve) => setTimeout(resolve, 25 * 2 ** attempt));
+    }
+  }
+  return tasks;
+}
+
+/** The Card's Task aggregate, read strongly consistent; null when the Card row is missing. */
+async function readCardTaskAggregate(
+  client: DynamoDBDocumentClient,
+  cardId: string,
+): Promise<{ version: number; taskCount: number } | null> {
+  const result = await client.send(new GetCommand({
+    TableName: TABLE_CARDS,
+    Key: { PK: `CARD#${cardId}`, SK: `CARD#${cardId}` },
+    ProjectionExpression: '#version, taskCount',
+    ExpressionAttributeNames: { '#version': 'version' },
+    ConsistentRead: true,
+  }));
+  const item = result.Item as { version?: unknown; taskCount?: unknown } | undefined;
+  if (!item || !Number.isInteger(item.version) || !Number.isInteger(item.taskCount)) return null;
+  return { version: item.version as number, taskCount: item.taskCount as number };
+}
+
 /**
- * List a Card's Tasks from the base table with strongly consistent reads.
- * GSI-Card is eventually consistent, so a Task inserted or re-pointed a moment
- * ago can be missing from it. Dependency rules that must see every dependent
- * (reopen, delete, Template sync) read through this Scan instead; callers reach
- * it only for those rare operations.
+ * Full-table strongly consistent Scan for one Card. Only the fallback of
+ * listTasksByCardConsistent may call it: it reads every Task row in the table.
  */
-function listTasksByCardConsistent(client: DynamoDBDocumentClient, cardId: string): Promise<Task[]> {
+function scanTasksByCardConsistent(client: DynamoDBDocumentClient, cardId: string): Promise<Task[]> {
   return readAllTaskPages(client, (exclusiveStartKey) => new ScanCommand({
     TableName: TABLE_TASKS,
     FilterExpression: 'begins_with(PK, :prefix) AND cardId = :cardId',
@@ -470,6 +509,45 @@ function listTasksByCardConsistent(client: DynamoDBDocumentClient, cardId: strin
     ConsistentRead: true,
     ExclusiveStartKey: exclusiveStartKey,
   }));
+}
+
+/**
+ * List a Card's Tasks with the guarantees of a strongly consistent read:
+ * every Task whose write finished before the call is present, with its
+ * current content. Dependency rules that must see every dependent (reopen,
+ * delete, Template sync) and intake/card flows that act right after a write
+ * rely on this.
+ *
+ * GSI-Card is eventually consistent, so it is only used to find candidate
+ * ids. The rows themselves come from a strongly consistent BatchGet on the
+ * base table, and completeness is proved against the Card's `taskCount`
+ * aggregate, which every Task create, delete, and re-point maintains in the
+ * same transaction as the Task write (bumping the Card version). The Card is
+ * read before and after; when its version is unchanged no membership change
+ * happened in between, so `taskCount` matching the rows found means none is
+ * missing. Anything else (the index lagging behind a fresh write, a
+ * concurrent membership change, a Card row without an aggregate) falls back
+ * to the old full-table consistent Scan, which is always correct but reads
+ * the whole table.
+ */
+async function listTasksByCardConsistent(client: DynamoDBDocumentClient, cardId: string): Promise<Task[]> {
+  const before = await readCardTaskAggregate(client, cardId);
+  if (before) {
+    const indexed = await listTasksByCard(client, cardId);
+    const ids = [...new Set(indexed.map((task) => task.id))];
+    const tasks = (await batchGetTasksConsistent(client, ids)).filter((task) => task.cardId === cardId);
+    const after = await readCardTaskAggregate(client, cardId);
+    if (after && after.version === before.version && after.taskCount === tasks.length) {
+      const order = new Map(ids.map((id, index) => [id, index]));
+      return tasks.sort((left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0));
+    }
+  }
+  console.warn(JSON.stringify({
+    event: 'task-card-consistent-scan-fallback',
+    cardId,
+    reason: before ? 'aggregate-mismatch' : 'card-aggregate-missing',
+  }));
+  return scanTasksByCardConsistent(client, cardId);
 }
 
 /**

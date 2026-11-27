@@ -1,12 +1,12 @@
 import { after, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { GetCommand, QueryCommand, ScanCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, QueryCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { getClient } from '../src/db/client';
 import { createCard } from '../src/db/cards';
 import { templateLink } from './helpers/cardTemplate';
 import { CardLifecycleConflictError, createTask, deleteTask, getTask, updateTask } from '../src/db/tasks';
-import { TABLE_TASKS } from '../src/db/tableNames';
+import { TABLE_CARDS } from '../src/db/tableNames';
 import { TaskDependencyError } from '../src/db/taskDependencies';
 import { createTables, startLocal, stopLocal } from '../scripts/local-dynamodb';
 
@@ -428,7 +428,16 @@ describe('Task dependency races', () => {
   const isGet = (id: string) => (command: unknown) => (
     command instanceof GetCommand && command.input.Key?.PK === `TASK#${id}`
   );
-  const isTaskScan = (command: unknown) => command instanceof ScanCommand && command.input.TableName === TABLE_TASKS;
+  // listTasksByCardConsistent ends with its second Card aggregate read; a write
+  // interleaved after it lands once the dependents have been read.
+  const afterSiblingsRead = () => {
+    let aggregateReads = 0;
+    return (command: unknown) => {
+      if (command instanceof GetCommand && command.input.TableName === TABLE_CARDS
+        && command.input.ProjectionExpression === '#version, taskCount') aggregateReads += 1;
+      return aggregateReads === 2;
+    };
+  };
 
   it('refuses to reopen a prerequisite whose completed dependent is missing from GSI-Card', async () => {
     const cardId = await cardWith('Stale index');
@@ -468,7 +477,7 @@ describe('Task dependency races', () => {
     const prerequisite = await task(cardId, 'Prerequisite');
     const dependent = await task(cardId, 'Dependent', { dependsOn: [prerequisite.id] });
     const done = await updateTask(client, prerequisite.id, { expectedVersion: 1, patch: { status: 'done' } });
-    interleaveAfter(isTaskScan, async () => {
+    interleaveAfter(afterSiblingsRead(), async () => {
       await updateTask(client, dependent.id, { expectedVersion: 1, patch: { status: 'done' } });
     });
     await assert.rejects(updateTask(client, prerequisite.id, {
@@ -512,7 +521,7 @@ describe('Task dependency races', () => {
     const cardId = await cardWith('Delete vs new dependent');
     const prerequisite = await task(cardId, 'Prerequisite');
     const other = await task(cardId, 'Later dependent');
-    interleaveAfter(isTaskScan, async () => {
+    interleaveAfter(afterSiblingsRead(), async () => {
       await updateTask(client, other.id, { expectedVersion: 1, patch: { dependsOn: [prerequisite.id] } });
     });
     await assert.rejects(
