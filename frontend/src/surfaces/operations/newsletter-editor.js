@@ -71,6 +71,7 @@ export function createNewsletterEditor({
     let previewSeq = 0;
     let frame = null;
     let envelopeLines = null;
+    let lastPreview = null;
 
     function say(message, tone = "info") {
       status.textContent = message;
@@ -107,6 +108,15 @@ export function createNewsletterEditor({
       previewTimer = setTimeoutFn(refreshPreview, delay);
     }
 
+    /** Put the latest rendered preview into the (possibly just rebuilt) pane. */
+    function showPreview() {
+      if (!lastPreview || !frame) return;
+      frame.srcdoc = lastPreview.html;
+      frame.dataset.previewState = "ready";
+      envelopeLines.subject.textContent = lastPreview.subject || "(no subject yet)";
+      envelopeLines.preview.textContent = lastPreview.previewText || "(no preview text yet)";
+    }
+
     async function refreshPreview() {
       previewTimer = null;
       if (!draft || !frame) return;
@@ -115,10 +125,8 @@ export function createNewsletterEditor({
       try {
         const result = await request(`${base}/preview`, { method: "POST", body: JSON.stringify(state) });
         if (seq !== previewSeq) return;
-        frame.srcdoc = result.preview.html;
-        frame.dataset.previewState = "ready";
-        envelopeLines.subject.textContent = result.preview.subject || "(no subject yet)";
-        envelopeLines.preview.textContent = result.preview.previewText || "(no preview text yet)";
+        lastPreview = result.preview;
+        showPreview();
       } catch (error) {
         if (seq !== previewSeq) return;
         frame.dataset.previewState = "failed";
@@ -432,6 +440,8 @@ export function createNewsletterEditor({
       right.append(el("h3", "newsletter-editor__pane-title", "Live preview"), envelope, frame);
       panes.append(left, right);
       body.append(panes, renderDetails());
+      // Opening or closing a block rebuilds the panes: keep showing the last preview.
+      showPreview();
     }
 
     say("Loading the email draft…");

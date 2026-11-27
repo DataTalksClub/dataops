@@ -204,3 +204,16 @@ test("saving after approval says the approval was withdrawn; a scheduled draft i
   assert.ok(locked.container.querySelector("[data-draft-locked]"));
   assert.ok(!locked.container.querySelector("[data-add-block]"));
 });
+
+test("opening a block keeps the live preview on screen", async () => {
+  const { editor, flush, container } = setup({
+    [`GET ${BASE}`]: () => ({ draft: draftOf() }),
+    [`POST ${BASE}/preview`]: preview("<html>kept</html>"),
+  });
+  await editor.mount(container, "iss");
+  await flush();
+  await container.querySelector('[data-block-toggle="nb-rec"]').dispatch("click");
+  const frame = container.querySelector("[data-live-preview]");
+  assert.equal(frame.srcdoc, "<html>kept</html>");
+  assert.equal(frame.dataset.previewState, "ready");
+});
