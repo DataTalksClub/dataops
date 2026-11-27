@@ -106,7 +106,7 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
   async function newIssue(slots: Record<string, unknown> = {}) {
     seq += 1;
     const issue = buildNewsletterIssue(
-      { kind: 'weekly', publicationDate: `2027-03-${String(seq + 1).padStart(2, '0')}`, issueNumber: 800 + seq, status: 'drafting', slots },
+      { kind: 'weekly', publicationDate: `2027-03-${String(seq + 1).padStart(2, '0')}`, issueNumber: 800 + seq, status: 'drafting', slots: { primary: {}, secondary: {}, ...slots } },
       `draft-test-${seq}`,
     );
     await createNewsletterIssue(client, issue);
@@ -388,21 +388,94 @@ describe('Newsletter drafts: built in DataOps, approved by the owner, sent throu
     assert.strictEqual((await req('GET', `/api/newsletter-view/${token}`)).status, 404);
     assert.strictEqual(cancelled.body.draft.locked, false);
 
-    // After a cancel the next delivery is a new Relay campaign; a lost queue response is adopted on retry.
+    // After a cancel the next delivery is a new Relay campaign. A lost queue response is reconciled
+    // with Relay at once: Relay holds the payload, so the draft is scheduled and stays locked.
     const again = (await req('GET', issue.base)).body.draft;
     relay.calls = [];
     relay.failNextQueueResponse = 504;
     const lost = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: again.payloadHash, version: again.version, requestId: 'sched-lost-1' });
-    assert.strictEqual(lost.status, 502);
-    assert.strictEqual((await req('GET', `${issue.base}/delivery`)).body.delivery.state, 'failed');
-    assert.strictEqual(relay.campaigns.get(`${key}-r2`)!.status, 'scheduled', 'Relay did schedule it');
-    const retryDraft = (await req('GET', issue.base)).body.draft;
-    const retry = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: retryDraft.payloadHash, version: retryDraft.version, requestId: 'sched-lost-2' });
-    assert.strictEqual(retry.status, 200, JSON.stringify(retry.body));
-    assert.strictEqual(retry.body.adopted, true);
-    assert.strictEqual(relay.calls.filter((c) => c.path.endsWith('/queue')).length, 1, 'the retry adopted the campaign instead of queueing again');
-    assert.strictEqual(relay.calls.filter((c) => c.method === 'PUT').length, 1);
+    assert.strictEqual(lost.status, 200, JSON.stringify(lost.body));
+    assert.strictEqual(lost.body.delivery.state, 'scheduled');
+    assert.strictEqual(lost.body.delivery.campaignKey, `${key}-r2`);
+    assert.strictEqual(relay.campaigns.get(`${key}-r2`)!.status, 'scheduled');
+    assert.strictEqual(relay.calls.filter((c) => c.path.endsWith('/queue')).length, 1);
+    assert.strictEqual((await req('GET', issue.base)).body.draft.locked, true);
     assert.ok(relay.calls.every((c) => c.path.startsWith('/api/campaigns/')));
+
+    // While Relay holds the email, the issue can be neither deleted nor cancelled in DataOps.
+    const stored = await getNewsletterIssue(client, issue.id);
+    const del = await req('DELETE', `/api/newsletter-issues/${issue.id}`, { version: stored!.version });
+    assert.strictEqual(del.status, 409);
+    assert.strictEqual(del.body.code, 'newsletter_scheduled_in_relay');
+    const cancelIssue = await req('PUT', `/api/newsletter-issues/${issue.id}`, { version: stored!.version, status: 'cancelled' });
+    assert.strictEqual(cancelIssue.body.code, 'newsletter_scheduled_in_relay', JSON.stringify(cancelIssue.body));
+  });
+
+  it('keeps the draft locked when the outcome is unknown, and adopts what Relay really holds', async () => {
+    const { issue } = await completeDraft();
+    const approved = await approve(issue);
+    const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
+    const at = new Date(NOW + 2 * 86_400_000).toISOString();
+    relay.failNextQueueResponse = 504;
+    relay.failGetsAfterQueue = true;
+    const unknown = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: approved.payloadHash, version: approved.version, requestId: 'sched-unknown-1' });
+    assert.strictEqual(unknown.status, 502);
+    const draft = (await req('GET', issue.base)).body.draft;
+    assert.strictEqual(draft.delivery.state, 'scheduling', 'an unknown outcome never unlocks the draft');
+    assert.strictEqual(draft.locked, true);
+    const recording = draft.blocks.find((b: any) => b.type === 'recording');
+    assert.strictEqual((await req('PUT', `${issue.base}/blocks/${recording.id}`, { version: recording.version, data: { title: 'x' } })).body.code, 'draft_locked');
+
+    // Relay is reachable again: refreshing reads what it holds and records the real state and time.
+    relay.getsFailing = false;
+    const refreshed = await req('GET', `${issue.base}/delivery`, undefined, { query: { refresh: '1' } });
+    assert.strictEqual(refreshed.body.delivery.state, 'scheduled');
+    assert.strictEqual(refreshed.body.delivery.scheduledAt, at);
+    assert.strictEqual(relay.campaigns.get(key)!.status, 'scheduled');
+    const token = draft.webViewUrl.split('/').pop();
+    assert.strictEqual((await req('GET', `/api/newsletter-view/${token}`)).status, 200);
+  });
+
+  it('adopts a campaign Relay already holds at its real time instead of the retried one', async () => {
+    const { issue } = await completeDraft();
+    const approved = await approve(issue);
+    const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
+    const relayAt = new Date(NOW + 86_400_000).toISOString();
+    const render = (await req('GET', `${issue.base}/render`)).body.render;
+    relay.campaigns.set(key, {
+      external_key: key, client: 'dtc-newsletter', audience: 'dtc', status: 'scheduled', subject: render.subject, preview_text: render.previewText,
+      html_body: render.html, text_body: render.text, scheduled_at: relayAt, metadata: { dataops_payload_sha256: approved.payloadHash },
+    });
+    const later = new Date(NOW + 5 * 86_400_000).toISOString();
+    const result = await req('POST', `${issue.base}/schedule`, { scheduledAt: later, payloadHash: approved.payloadHash, version: approved.version, requestId: 'sched-adopt-1' });
+    assert.strictEqual(result.status, 200, JSON.stringify(result.body));
+    assert.strictEqual(result.body.adopted, true);
+    assert.strictEqual(result.body.delivery.scheduledAt, relayAt, 'DataOps records the time Relay will actually send');
+    assert.ok(!relay.calls.some((c) => c.method === 'PUT' || c.path.endsWith('/queue')));
+  });
+
+  it('never lets a test send and a schedule interleave into an unscheduled queue', async () => {
+    const { issue } = await completeDraft();
+    const approved = await approve(issue);
+    const key = `dataops-newsletter-${issue.number}-${issue.id.slice(0, 12)}`;
+    const at = new Date(NOW + 3 * 86_400_000).toISOString();
+    relay.testSendDelayMs = 40;
+    const [test, schedule] = await Promise.all([
+      req('POST', `${issue.base}/test-send`, { emails: ['alexey@datatalks.club'], requestId: 'race-test-0001' }),
+      req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: approved.payloadHash, version: approved.version, requestId: 'race-sched-001' }),
+    ]);
+    relay.testSendDelayMs = 0;
+    assert.ok([test.status, schedule.status].includes(409), JSON.stringify([test.body, schedule.body]));
+    const campaign = relay.campaigns.get(key);
+    assert.notStrictEqual(campaign?.status, 'queued', 'Relay never got a queue without a schedule time');
+    if (campaign?.status === 'scheduled') assert.strictEqual(campaign.scheduled_at, at);
+    // Once the test send is done, the owner can schedule.
+    const fresh = (await req('GET', issue.base)).body.draft;
+    if (!fresh.locked) {
+      const later = await req('POST', `${issue.base}/schedule`, { scheduledAt: at, payloadHash: fresh.payloadHash, version: fresh.version, requestId: 'race-sched-002' });
+      assert.strictEqual(later.status, 200, JSON.stringify(later.body));
+      assert.strictEqual(relay.campaigns.get(key)!.scheduled_at, at);
+    }
   });
 
   it('keeps an archived draft first built by the retired Relay import readable and editable', async () => {

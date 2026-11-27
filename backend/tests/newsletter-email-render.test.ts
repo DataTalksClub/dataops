@@ -38,6 +38,8 @@ describe('newsletter email renderer (DataOps port of Relay layout)', () => {
     assert.deepStrictEqual(markdownBlocks('<img src=x onerror=alert(1)> [a](javascript:x) [b](https://ok.example/?a=1&b=2) [c](mailto:x@y.z)'), [
       '<p>&lt;img src=x onerror=alert(1)&gt; <a href="#" target="_blank">a</a> <a href="https://ok.example/?a=1&amp;b=2" target="_blank">b</a> <a href="mailto:x@y.z" target="_blank">c</a></p>',
     ]);
+    const injected = markdownBlocks('[x](https://a.co/`"onmouseover="alert(1)//`)')[0];
+    assert.ok(!/<a [^>]*onmouseover/.test(injected), injected);
     assert.deepStrictEqual(markdownBlocks('one\ntwo\n\n- a\n- b'), ['<p>one<br/>two</p>', '<ul><li><p>a</p></li><li><p>b</p></li></ul>']);
   });
 

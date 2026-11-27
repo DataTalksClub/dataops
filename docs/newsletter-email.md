@@ -139,8 +139,19 @@ The campaign key is `dataops-newsletter-<number>-<issue-id prefix>`, with
 - Scheduling first locks the draft with an optimistic write (`scheduling`), so
   concurrent requests cannot schedule twice; a lock left by a request that
   died is retryable or cancellable after 5 minutes.
-- A retry after a lost response adopts a Relay campaign that already holds the
-  same payload hash instead of writing or queueing again.
+- A test send holds a short lock on the draft; a schedule waits for it, so a
+  test send can never rewrite the campaign between its scheduled save and the
+  queue. Right before queueing, the campaign is read back and must still be a
+  draft with the approved HTML and time.
+- When a call fails, Relay is asked what it holds before anything is unlocked:
+  a campaign holding the approved payload is recorded as scheduled (at Relay's
+  actual time); if Relay cannot be reached the draft stays locked in
+  `scheduling` until `delivery --refresh` (or the 5-minute stuck window) settles
+  it. A retry adopts a campaign that already holds the same payload instead of
+  writing or queueing again; a campaign cancelled in Relay directly moves on to
+  the next key.
+- An issue whose email Relay holds can be neither deleted nor cancelled in
+  DataOps until the schedule is cancelled.
 - Test sends are recorded under their `requestId`; a replay never sends again.
 - A schedule less than 15 minutes ahead is refused, so Relay never treats it as
   "send now".

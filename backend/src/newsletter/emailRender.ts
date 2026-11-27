@@ -59,6 +59,8 @@ function inline(escaped: string): string {
     return `\u0000${codes.length - 1}\u0000`;
   });
   text = text.replace(/\[([^\]]*)\]\(([^)\s]*)\)/g, (_m, label: string, href: string) => {
+    // A code span inside a URL would be restored into the attribute: never a link.
+    if (href.includes('\u0000')) return `<a href="#" target="_blank">${label}</a>`;
     const url = href.replace(/&amp;/g, '&');
     const safe = SAFE_HREF.test(url) ? escapeHtml(url) : '#';
     return `<a href="${safe}" target="_blank">${label}</a>`;

@@ -288,6 +288,26 @@ function holdsPayload(campaign: RelayCampaign, payload: FrozenPayload): boolean 
 
 // ------------------------------------------------------------------ test send
 
+/** A test-send lock older than this was left by a request that died; it no longer blocks anything. */
+export const TEST_LOCK_MS = 2 * 60_000;
+
+function testLocked(set: IssueBlockSet): boolean {
+  return Boolean(set.testLock && Date.now() - Date.parse(set.testLock.at) < TEST_LOCK_MS);
+}
+
+async function releaseTestLock(client: DynamoDBDocumentClient, issueId: string, requestId: string): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const set = await requireBlockSet(client, issueId);
+    if (set.testLock?.requestId !== requestId) return;
+    try {
+      await putBlockSet(client, { ...set, testLock: null, version: set.version + 1 }, set.version);
+      return;
+    } catch (error) {
+      if (!(error instanceof BlockSetVersionConflict)) throw error;
+    }
+  }
+}
+
 const testKey = (issueId: string, requestId: string) => ({ PK: `NL_DELIVERY#${issueId}`, SK: `TEST#${requestId}` });
 
 export interface TestSendOutcome {
@@ -335,6 +355,17 @@ export async function testSendApproved(
   const payload = await approvedPayload(client, set);
   const campaignKey = campaignKeyFor(set, issue.issueNumber, currentAttempt(set));
   const now = new Date().toISOString();
+  const prior = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: testKey(issue.id, requestId), ConsistentRead: true }))).Item;
+  if (!prior) {
+    // The test lock: a schedule cannot start while a test send rewrites the draft campaign.
+    if (testLocked(set)) throw new BlocksError('Another test send is running; try again in a moment.', 409, 'test_send_running');
+    try {
+      await putBlockSet(client, { ...set, testLock: { requestId, at: now }, version: set.version + 1, updatedAt: now }, set.version);
+    } catch (error) {
+      if (error instanceof BlockSetVersionConflict) throw new BlocksError('The draft changed (or is being scheduled); reload and try again.', 409, 'draft_version_conflict');
+      throw error;
+    }
+  }
   try {
     await client.send(new PutCommand({
       TableName: TABLE_ARTIFACTS,
@@ -343,14 +374,14 @@ export async function testSendApproved(
     }));
   } catch (error) {
     if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') throw error;
-    const prior = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: testKey(issue.id, requestId), ConsistentRead: true }))).Item || {};
+    const recorded = (await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: testKey(issue.id, requestId), ConsistentRead: true }))).Item || {};
     return {
-      campaignKey: String(prior.campaignKey || campaignKey),
-      emails: (prior.emails as string[]) || emails,
-      status: String(prior.state || 'unknown'),
-      sentCount: Number(prior.sentCount || 0),
+      campaignKey: String(recorded.campaignKey || campaignKey),
+      emails: (recorded.emails as string[]) || emails,
+      status: String(recorded.state || 'unknown'),
+      sentCount: Number(recorded.sentCount || 0),
       replayed: true,
-      detail: (prior.detail as TestSendResult) || null,
+      detail: (recorded.detail as TestSendResult) || null,
     };
   }
   let detail: TestSendResult | null = null;
@@ -370,6 +401,7 @@ export async function testSendApproved(
     error = (failure as Error).message;
     throw failure;
   } finally {
+    await releaseTestLock(client, issue.id, requestId);
     const done = new Date().toISOString();
     await client.send(new UpdateCommand({
       TableName: TABLE_ARTIFACTS,
@@ -442,12 +474,13 @@ export async function scheduleApproved(
   if (input.expectedVersion !== set.version) {
     throw new BlocksError(`The draft is at version ${set.version}, not ${String(input.expectedVersion)}: reload before scheduling.`, 409, 'draft_version_conflict', { currentVersion: set.version });
   }
+  if (testLocked(set)) throw new BlocksError('A test send is running; schedule once it has finished.', 409, 'test_send_running');
   const payload = await approvedPayload(client, set);
   if (input.payloadHash !== payload.payloadHash) {
     throw new BlocksError('The confirmed payload is not the approved one; review the approved email again.', 409, 'payload_not_confirmed');
   }
-  const attempt = currentAttempt(set);
-  const campaignKey = campaignKeyFor(set, issue.issueNumber, attempt);
+  let attempt = currentAttempt(set);
+  let campaignKey = campaignKeyFor(set, issue.issueNumber, attempt);
   const now = new Date().toISOString();
   const base = {
     draftVersion: set.version,
@@ -473,20 +506,37 @@ export async function scheduleApproved(
 
   let adopted = false;
   let relayStatus = '';
+  let actualAt = scheduledAt;
   let failure: Error | null = null;
+  let held: Hold = 'unknown';
+  let relay: RelayCampaignClient | null = null;
   try {
-    const relay = await relayCampaignClient();
-    const existing = await relay.getCampaign(campaignKey);
+    relay = await relayCampaignClient();
+    let existing = await relay.getCampaign(campaignKey);
+    if (existing?.status === 'cancelled') {
+      // Cancelled in Relay directly: that campaign can never be edited again; use the next one.
+      attempt += 1;
+      campaignKey = campaignKeyFor(set, issue.issueNumber, attempt);
+      existing = await relay.getCampaign(campaignKey);
+    }
     if (existing && existing.status !== 'draft') {
-      if (!holdsPayload(existing, payload)) {
+      if (!holdsPayload(existing, payload) || !HELD_STATUSES.has(existing.status)) {
         throw new RelayError(`Relay campaign ${campaignKey} is ${existing.status} with a different payload; nothing was changed.`, 409, 'relay_campaign_conflict');
       }
-      adopted = true; // A lost response from an earlier attempt: Relay already holds this payload.
+      // An earlier attempt reached Relay (its response was lost): record what Relay really holds.
+      adopted = true;
       relayStatus = existing.status;
+      actualAt = existing.scheduled_at ? new Date(existing.scheduled_at).toISOString() : scheduledAt;
     } else {
       const saved = await relay.putCampaign(campaignKey, campaignBody(payload, scheduledAt));
       if (!sameHtml(saved, payload) || !saved.scheduled_at || Date.parse(saved.scheduled_at) !== Date.parse(scheduledAt)) {
         throw new RelayError(`Relay stored a different payload or time for ${campaignKey}; it was not queued.`, 502, 'relay_payload_mismatch');
+      }
+      // Re-read right before queueing: queueing a campaign without its time would send it now.
+      const check = await relay.getCampaign(campaignKey);
+      if (!check || check.status !== 'draft' || !check.scheduled_at || Date.parse(check.scheduled_at) !== Date.parse(scheduledAt)
+        || !sameHtml(check, payload) || Date.parse(check.scheduled_at) - deps.now() < MIN_SCHEDULE_LEAD_MS / 3) {
+        throw new RelayError(`Relay campaign ${campaignKey} changed before it was queued (status ${check?.status || 'missing'}); it was not queued.`, 409, 'relay_campaign_changed');
       }
       const queued = await relay.queue(campaignKey);
       relayStatus = queued.campaign?.status || '';
@@ -494,21 +544,35 @@ export async function scheduleApproved(
         throw new RelayError(`Relay did not confirm a schedule for ${campaignKey} (status ${relayStatus || 'unknown'}). Check the campaign in Relay.`, 502, 'relay_schedule_unconfirmed');
       }
     }
+    held = 'held';
   } catch (error) {
     failure = error as Error;
+    // The outcome of a failed call is unknown: ask Relay what it holds before unlocking anything.
+    const found = relay ? await reconcile(relay, campaignKey, payload) : { hold: 'not-held' as Hold };
+    held = found.hold;
+    if (found.campaign) {
+      relayStatus = found.campaign.status;
+      if (found.hold === 'held' && found.campaign.scheduled_at) actualAt = new Date(found.campaign.scheduled_at).toISOString();
+    }
   }
 
   const done = new Date().toISOString();
+  const state: DraftDelivery['state'] = held === 'held' ? 'scheduled' : held === 'unknown' ? 'scheduling' : 'failed';
   const delivery = {
     ...base,
-    state: failure ? 'failed' : 'scheduled',
+    campaignKey,
+    attempt,
+    scheduledAt: actualAt,
+    state,
     ...(relayStatus ? { relayStatus } : {}),
     ...(failure ? { error: failure.message } : {}),
     updatedAt: done,
   } as DraftDelivery;
-  const fresh = await requireBlockSet(client, issue.id);
-  set = await writeDelivery(client, fresh, delivery);
-  if (!failure) await putWebView(client, payload.webViewToken, issue.id, payload.payloadHash);
+  if (state === 'scheduled') await putWebView(client, payload.webViewToken, issue.id, payload.payloadHash);
+  set = await writeDeliveryWithRetry(client, issue.id, delivery);
+  const what = state === 'scheduled'
+    ? `payload ${payload.payloadHash.slice(0, 12)} ${adopted || failure ? 'held' : 'scheduled'} in Relay campaign ${campaignKey} for ${actualAt} (audience ${base.audience})`
+    : `scheduling payload ${payload.payloadHash.slice(0, 12)} for ${scheduledAt} ${state === 'scheduling' ? 'has an unknown outcome (the draft stays locked)' : 'failed'}`;
   await appendBlockRevisions(client, issue.id, [{
     blockId: '',
     blockType: 'draft',
@@ -516,14 +580,40 @@ export async function scheduleApproved(
     createdAt: done,
     actorUserId: actor.id,
     actorName: actor.name,
-    detail: failure
-      ? `scheduling payload ${payload.payloadHash.slice(0, 12)} for ${scheduledAt} failed: ${failure.message}`
-      : `payload ${payload.payloadHash.slice(0, 12)} ${adopted ? 'already held' : 'scheduled'} in Relay campaign ${campaignKey} for ${scheduledAt} (audience ${base.audience})`,
+    detail: failure ? `${what}: ${failure.message}` : what,
     before: null,
     after: null,
   }]);
-  if (failure) throw failure;
-  return { set, delivery, adopted, replayed: false };
+  if (failure && state !== 'scheduled') throw failure;
+  return { set, delivery, adopted: adopted || Boolean(failure), replayed: false };
+}
+
+/** Relay statuses in which a campaign holds (or has sent) its payload. */
+const HELD_STATUSES = new Set(['scheduled', 'queued', 'sending', 'sent']);
+
+type Hold = 'held' | 'not-held' | 'unknown';
+
+async function reconcile(relay: RelayCampaignClient, campaignKey: string, payload: FrozenPayload): Promise<{ hold: Hold; campaign?: RelayCampaign }> {
+  try {
+    const campaign = await relay.getCampaign(campaignKey);
+    if (!campaign) return { hold: 'not-held' };
+    if (HELD_STATUSES.has(campaign.status) && holdsPayload(campaign, payload)) return { hold: 'held', campaign };
+    if (HELD_STATUSES.has(campaign.status)) return { hold: 'unknown', campaign }; // Someone else's payload is live: keep the lock.
+    return { hold: 'not-held', campaign };
+  } catch {
+    return { hold: 'unknown' };
+  }
+}
+
+async function writeDeliveryWithRetry(client: DynamoDBDocumentClient, issueId: string, delivery: DraftDelivery): Promise<IssueBlockSet> {
+  for (let attempt = 0; ; attempt += 1) {
+    const fresh = await requireBlockSet(client, issueId);
+    try {
+      return await writeDelivery(client, fresh, delivery);
+    } catch (error) {
+      if (!(error instanceof BlockSetVersionConflict) || attempt >= 5) throw error;
+    }
+  }
 }
 
 /** Cancel a scheduled delivery before Relay starts sending; the draft becomes editable again. */
@@ -548,8 +638,8 @@ export async function cancelScheduled(
     }
   }
   const now = new Date().toISOString();
-  const next = await writeDelivery(client, set, { ...delivery, state: 'cancelled', relayStatus, updatedAt: now });
   await deleteWebView(client, set.webViewToken).catch(() => undefined);
+  const next = await writeDeliveryWithRetry(client, issue.id, { ...delivery, state: 'cancelled', relayStatus, updatedAt: now });
   await appendBlockRevisions(client, issue.id, [{
     blockId: '',
     blockType: 'draft',
@@ -564,19 +654,31 @@ export async function cancelScheduled(
   return { set: next, delivery: next.delivery as DraftDelivery };
 }
 
-/** Read the campaign's current status from Relay (after scheduling only). */
+/**
+ * Read the campaign from Relay (after scheduling only) and bring the delivery
+ * state in line with it: a campaign Relay holds with this payload is
+ * scheduled (and locks the draft); one Relay cancelled is cancelled.
+ */
 export async function refreshDelivery(client: DynamoDBDocumentClient, issue: { id: string }): Promise<DraftDelivery | null> {
   const set = await requireBlockSet(client, issue.id);
   const delivery = set.delivery;
   if (!delivery || delivery.state === 'cancelled') return delivery || null;
+  const payload = await getFrozenPayload(client, issue.id, delivery.payloadHash);
   const campaign = await (await relayCampaignClient()).getCampaign(delivery.campaignKey);
   const relayStatus = campaign?.status || 'missing';
-  if (relayStatus === delivery.relayStatus) return delivery;
-  try {
-    const next = await writeDelivery(client, set, { ...delivery, relayStatus, updatedAt: new Date().toISOString() });
-    return next.delivery || null;
-  } catch (error) {
-    if (error instanceof BlockSetVersionConflict) return { ...delivery, relayStatus };
-    throw error;
+  let state: DraftDelivery['state'] = delivery.state;
+  let scheduledAt = delivery.scheduledAt;
+  if (campaign && payload && HELD_STATUSES.has(campaign.status) && holdsPayload(campaign, payload)) {
+    state = 'scheduled';
+    if (campaign.scheduled_at) scheduledAt = new Date(campaign.scheduled_at).toISOString();
+    await putWebView(client, payload.webViewToken, issue.id, payload.payloadHash);
+  } else if (campaign?.status === 'cancelled') {
+    state = 'cancelled';
+    await deleteWebView(client, set.webViewToken).catch(() => undefined);
+  } else if (delivery.state === 'scheduling' && stuck(delivery) && (!campaign || campaign.status === 'draft')) {
+    state = 'failed';
   }
+  if (relayStatus === delivery.relayStatus && state === delivery.state && scheduledAt === delivery.scheduledAt) return delivery;
+  const next = await writeDeliveryWithRetry(client, issue.id, { ...delivery, state, scheduledAt, relayStatus, updatedAt: new Date().toISOString() });
+  return next.delivery || null;
 }

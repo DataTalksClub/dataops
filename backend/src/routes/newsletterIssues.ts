@@ -87,10 +87,20 @@ import { ReportSendError, sendIssueReport } from '../newsletter/reportSend';
 import { json, parseJsonObjectEvent } from '../http';
 import { handleNewsletterDraftRoutes, handleNewsletterImageUpload } from './newsletterDraft';
 import { sponsorDocPortalBaseUrl } from './sponsorDocs';
-import { deleteBlockSet } from '../newsletter/blocksStore';
+import { deleteBlockSet, getBlockSet } from '../newsletter/blocksStore';
 import { releaseRemovedSponsorBlocks } from '../newsletter/sponsorBlocks';
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
+/** Refuse to delete or cancel an issue whose approved email Relay holds for sending. */
+async function relayHoldsEmail(client: DynamoDBDocumentClient, issueId: string): Promise<LambdaResponse | null> {
+  const delivery = (await getBlockSet(client, issueId))?.delivery;
+  if (!delivery || (delivery.state !== 'scheduling' && delivery.state !== 'scheduled')) return null;
+  return json(409, {
+    error: `The issue's approved email is ${delivery.state} in Relay (campaign ${delivery.campaignKey}). Cancel the schedule on the issue's email page first.`,
+    code: 'newsletter_scheduled_in_relay',
+  });
+}
 
 /**
  * The issue as the API returns it: the retired Markdown preview's access-code
@@ -715,6 +725,8 @@ async function updateRoute(id: string, body: Body, event: LambdaEvent, client: D
   const cancelling = existing.status !== 'cancelled' && merged.status === 'cancelled';
   const reinstating = existing.status === 'cancelled' && merged.status !== 'cancelled';
   if (cancelling) {
+    const held = await relayHoldsEmail(client, existing.id);
+    if (held) return held;
     const next = nextNewsletterIssue(existing, { ...changes, cardId: undefined });
     const failure = existing.cardId
       ? await deleteWithCard(client, actor, existing, replaceIssueWrite(existing, next), body.confirmCardDeletion === true)
@@ -766,6 +778,8 @@ async function deleteRoute(id: string, body: Body, event: LambdaEvent, client: D
   if (body.version !== existing.version) return json(409, { error: 'Issue changed; reload and retry' });
   const resolved = await resolveInteractiveActor(client, event, 'work-write');
   if (!resolved.ok) return resolved.response;
+  const held = await relayHoldsEmail(client, existing.id);
+  if (held) return held;
   if (existing.cardId) {
     const failure = await deleteWithCard(
       client,

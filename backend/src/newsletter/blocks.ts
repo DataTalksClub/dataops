@@ -258,6 +258,8 @@ export interface IssueBlockSet {
   webViewToken: string;
   approval?: DraftApproval | null;
   delivery?: DraftDelivery | null;
+  /** Held while a test send rewrites the Relay draft campaign; a schedule waits for it. */
+  testLock?: { requestId: string; at: string } | null;
   version: number;
   createdAt: string;
   updatedAt: string;

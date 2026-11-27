@@ -39,6 +39,11 @@ export class FakeRelay {
   failNextQueueResponse = 0;
   /** Delay (ms) before answering a queue call, to let concurrent requests interleave. */
   queueDelayMs = 0;
+  /** Delay (ms) before answering a test send. */
+  testSendDelayMs = 0;
+  /** After the next queue call, every GET fails (Relay unreachable) until reset. */
+  failGetsAfterQueue = false;
+  getsFailing = false;
 
   fetch = async (input: string | URL, init: RequestInit = {}): Promise<Response> => {
     const url = new URL(String(input));
@@ -54,6 +59,7 @@ export class FakeRelay {
     if (scope.client !== 'dtc-newsletter') return json(403, { client: 'forbidden' });
     if (!scope.audience) return json(400, { audience: 'required' });
     const campaign = this.campaigns.get(key);
+    if (method === 'GET' && this.getsFailing) return new Response('unavailable', { status: 503 });
     if (action === '' && method === 'GET') return campaign ? json(200, { campaign }) : json(404, { external_key: 'not_found' });
     if (action === '' && method === 'PUT') {
       if (campaign && campaign.status !== 'draft') return json(409, { status: 'not_editable' });
@@ -75,6 +81,7 @@ export class FakeRelay {
     if (!campaign) return json(404, { external_key: 'not_found' });
     if (action === '/test-send' && method === 'POST') {
       const emails = (body!.emails as string[]) || [];
+      if (this.testSendDelayMs) await new Promise((resolve) => setTimeout(resolve, this.testSendDelayMs));
       this.testSends.push({ key, emails });
       return json(200, { campaign, sent_count: emails.length, recipients: emails.map((email, i) => ({ email, message_id: `m-${i}` })), status: 'provider_accepted' });
     }
@@ -82,6 +89,10 @@ export class FakeRelay {
       if (this.queueDelayMs) await new Promise((resolve) => setTimeout(resolve, this.queueDelayMs));
       const already = campaign.status === 'scheduled';
       if (campaign.status === 'draft') campaign.status = campaign.scheduled_at ? 'scheduled' : 'queued';
+      if (this.failGetsAfterQueue) {
+        this.failGetsAfterQueue = false;
+        this.getsFailing = true;
+      }
       if (this.failNextQueueResponse) {
         const status = this.failNextQueueResponse;
         this.failNextQueueResponse = 0;
