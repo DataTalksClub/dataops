@@ -259,7 +259,7 @@ describe('crm workspace activity', () => {
     }
   });
 
-  it('assembles deal history from a paged organization-scoped scan, never the workspace snapshot', async () => {
+  it('assembles deal history from a paged organization-scoped DEAL query, never a table scan', async () => {
     const suffix = String(seedCount++);
     const org = data(await invoke('POST', '/api/sponsor-crm/organizations', {
       displayName: `Many Deals Org ${suffix}`, domain: `manydeals-${suffix}.example`, sourceKey: `ws-manydeals-org-${suffix}`,
@@ -273,13 +273,15 @@ describe('crm workspace activity', () => {
       await invoke('PUT', `/api/sponsor-crm/deals/${deal.id}`, { status: 'agreed', version: fresh.version, historyNote: `Phase ${index}` });
       dealIds.push(deal.id);
     }
-    // Every scan page is capped at 25 evaluated items so the organization's
-    // deals arrive across many storage pages, like on a prod-sized source.
+    // Every type-index page is capped at 25 evaluated items so the deals
+    // arrive across many storage pages, like on a prod-sized source.
     const scans: any[] = [];
+    const queries: any[] = [];
     const observed = { send: async (command: any) => {
-      if (command instanceof ScanCommand) {
-        scans.push(command.input);
-        return client.send(new ScanCommand({ ...command.input, Limit: 25 }));
+      if (command instanceof ScanCommand) scans.push(command.input);
+      if (command instanceof QueryCommand && command.input.IndexName === 'GSI-EntityType') {
+        queries.push(command.input);
+        return client.send(new QueryCommand({ ...command.input, Limit: 25 }));
       }
       return client.send(command);
     } } as unknown as DynamoDBDocumentClient;
@@ -300,14 +302,14 @@ describe('crm workspace activity', () => {
       cursor = body.nextCursor || undefined;
       assert.ok(++pages < 200, 'pagination must advance to the end');
     } while (cursor);
-    assert.ok(scans.length > 10, 'the deals scan must paginate across many storage pages');
-    // The too-large request is the whole-workspace snapshot scan (every prefix
-    // ORed together). Only the org-scoped DEAL# scan may ever fire.
-    assert.ok(scans.every((scan) =>
-      scan.FilterExpression === 'begins_with(PK, :deal) AND organizationId = :organizationId' &&
-      scan.ExpressionAttributeValues?.[':deal'] === 'DEAL#' &&
-      scan.ExpressionAttributeValues?.[':organizationId'] === org.id,
-    ), 'activity must scan only this organization\'s deals, never the whole workspace source');
+    assert.deepEqual(scans, [], 'activity must never scan the table');
+    assert.ok(queries.length > 1, 'the deals query must paginate across storage pages');
+    // Only the DEAL partition of the type index, filtered to this organization.
+    assert.ok(queries.every((query) =>
+      query.ExpressionAttributeValues?.[':type'] === 'DEAL' &&
+      query.FilterExpression === 'organizationId = :organizationId' &&
+      query.ExpressionAttributeValues?.[':organizationId'] === org.id,
+    ), 'activity must read only this organization\'s deals');
     assert.deepEqual([...historyDeals].sort(), [...dealIds].sort());
   });
 

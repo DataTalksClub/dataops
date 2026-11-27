@@ -10,7 +10,7 @@
  */
 import { createHash } from 'crypto';
 import { GetCommand, PutCommand, UpdateCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
-import { scanCrmPrefix } from '../db/sponsorCrm';
+import { listCrmItems } from '../db/sponsorCrm';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
 import { CURRENCY, MONEY } from './core';
 import type { LedgerRow } from './ledger';
@@ -225,7 +225,7 @@ export type PaymentMailCandidate = {
 
 export const candidateId = (messageId: string) => `pmc-${createHash('sha256').update(messageId.trim()).digest('hex').slice(0, 32)}`;
 const key = (id: string) => ({ PK: `PAYMENT_MAIL#${id}`, SK: `PAYMENT_MAIL#${id}` });
-const strip = (item: Record<string, unknown>) => { const { PK: _p, SK: _s, ...rest } = item; return rest as unknown as PaymentMailCandidate; };
+const strip = (item: Record<string, unknown>) => { const { PK: _p, SK: _s, GSI5PK: _t, ...rest } = item; return rest as unknown as PaymentMailCandidate; };
 
 export function validateMail(value: unknown): PaymentMail {
   const mail = (value && typeof value === 'object' ? value : {}) as Record<string, unknown>;
@@ -293,7 +293,7 @@ export async function listPaymentMailCandidates(client: DynamoDBDocumentClient, 
   if (status && !['candidate', 'unmatched', 'confirmed', 'dismissed', 'already-paid'].includes(status)) {
     throw Object.assign(new Error('Invalid payment mail status'), { statusCode: 400 });
   }
-  const items = (await scanCrmPrefix(client, 'PAYMENT_MAIL#')).map(strip);
+  const items = (await listCrmItems(client, 'PAYMENT_MAIL#')).map(strip);
   return items.filter((item) => !status || item.status === status)
     .sort((a, b) => b.receivedAt.localeCompare(a.receivedAt) || a.id.localeCompare(b.id));
 }

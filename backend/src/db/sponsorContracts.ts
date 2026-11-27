@@ -2,14 +2,14 @@ import { createHash, randomBytes, randomUUID } from 'crypto';
 import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_SESSIONS, TABLE_SPONSOR_CRM } from './tableNames';
-import { transact, scanCrmPrefix, queryCrmPartition } from './sponsorCrm';
+import { transact, listCrmItems, queryCrmPartition } from './sponsorCrm';
 
 const key = (kind: string, id: string) => kind.toUpperCase() + '#' + id;
 const compact = (record: Record<string, any>) => Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 const clean = (item?: Record<string, any>): Record<string, any> | null => {
   if (!item) return null;
   const copy = { ...item };
-  delete copy.PK; delete copy.SK;
+  delete copy.PK; delete copy.SK; delete copy.GSI5PK;
   return copy;
 };
 
@@ -36,7 +36,7 @@ export async function getContract(client: DynamoDBDocumentClient, id: string) {
 }
 
 export async function listContracts(client: DynamoDBDocumentClient, dealId?: string) {
-  const items = (await scanCrmPrefix(client, 'CONTRACT#')).map((item) => clean(item)).filter((item): item is Record<string, any> => Boolean(item));
+  const items = (await listCrmItems(client, 'CONTRACT#')).map((item) => clean(item)).filter((item): item is Record<string, any> => Boolean(item));
   const filtered = dealId ? items.filter((item) => item.dealId === dealId) : items;
   return filtered.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)) || a.id.localeCompare(b.id));
 }

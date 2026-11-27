@@ -19,7 +19,7 @@ import {
   putBookkeepingItem,
 } from "../db/bookkeeping";
 import { businessAccountRequiresStatement } from "../finance/businessAccounts";
-import { listCrmRecords, scanCrmPrefix } from "../db/sponsorCrm";
+import { listCrmRecords, listCrmItems } from "../db/sponsorCrm";
 import { realDate } from "../sponsorCrm/model";
 import type { StatementAccount, StatementBalance, StatementRow } from "./parsers";
 import {
@@ -299,7 +299,7 @@ export async function buildReport(client: DynamoDBDocumentClient, period: string
     listTransactions(client),
     listCrmRecords(client, "deal"),
     listCrmRecords(client, "organization"),
-    scanCrmPrefix(client, "SPONSOR_FINANCE#"),
+    listCrmItems(client, "SPONSOR_FINANCE#"),
     listAliases(client),
   ]);
 

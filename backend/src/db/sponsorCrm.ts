@@ -6,10 +6,8 @@ import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { cleanItem } from './cleanItem';
 import { TABLE_SPONSOR_CRM } from './tableNames';
 import { usesLocalTransactionEmulation } from './client';
-import {
-  collectBoundedPages,
-  type StoragePaginationLimits,
-} from './boundedPagination';
+import { collectBoundedPages } from './boundedPagination';
+import { ENTITY_TYPE_ATTRIBUTE, ENTITY_TYPE_INDEX, entityTypeOfPrefix } from './sponsorCrmTypeIndex';
 
 export type CrmRecord = Record<string, unknown> & { id: string; version: number; createdAt: string; updatedAt: string };
 const key = (kind: string, id: string) => `${kind.toUpperCase()}#${id}`;
@@ -86,27 +84,20 @@ export async function getCrmRecord(client: DynamoDBDocumentClient, kind: string,
   return clean((await client.send(new GetCommand({ TableName: TABLE_SPONSOR_CRM, Key: { PK: k, SK: k }, ConsistentRead: true }))).Item as Record<string, unknown>);
 }
 
-// Every list read of this table is a full Scan (the key is KIND#id, so a kind
-// has no partition of its own). One page load fans out into several list
-// routes, and each used to scan once per kind it needed, so a burst of
-// parallel loads multiplied into dozens of consistent full-table scans on one
-// partition and DynamoDB throttled them. A read-only request now scans the
-// table once and serves each kind from that snapshot.
-const SNAPSHOT_PREFIXES = [
-  'ORGANIZATION#', 'CONTACT#', 'DEAL#', 'DELIVERABLE#', 'LEAD#', 'NEWSLETTER#',
-  'NEWSLETTER-ISSUE#', 'SPONSOR_FINANCE', 'CONTRACT#',
-] as const;
-
-type CrmReadSnapshot = { items?: Promise<Record<string, unknown>[]> };
+// Listing a type is a Query on GSI-EntityType (see sponsorCrmTypeIndex.ts),
+// which reads that type's rows only. One page load still fans out into
+// several list routes that ask for the same types, so a request memoizes
+// each type's query and serves repeat reads from it.
+type CrmReadSnapshot = { byType: Map<string, Promise<Record<string, unknown>[]>> };
 const readSnapshot = new AsyncLocalStorage<CrmReadSnapshot>();
 
 /**
- * Serve sponsor CRM list reads inside `operation` from one table scan. Only
- * for requests that do not write: a write inside the scope would not be seen
- * by later list reads in the same request.
+ * Serve repeated sponsor CRM list reads inside `operation` from one query per
+ * type. Only for requests that do not write: a write inside the scope would
+ * not be seen by later list reads in the same request.
  */
 export function withCrmReadSnapshot<T>(operation: () => Promise<T>): Promise<T> {
-  return readSnapshot.run({}, operation);
+  return readSnapshot.run({ byType: new Map() }, operation);
 }
 
 // List reads are eventually consistent: a strongly consistent read costs twice
@@ -114,13 +105,13 @@ export function withCrmReadSnapshot<T>(operation: () => Promise<T>): Promise<T> 
 // showing up on the next load. Writes never decide on a list read alone; they
 // are guarded by conditional expressions (version checks, domain/primary/
 // schedule locks, attribute_not_exists). Only reads that guard a destructive
-// operation ask for `consistent` (see hardDeleteCrmRecord).
-type ScanOptions = { limits?: StoragePaginationLimits; consistent?: boolean };
+// operation ask for `consistent` (see hardDeleteCrmRecord). A GSI query is
+// always eventually consistent.
+type ScanOptions = { consistent?: boolean };
 
 function scanCrmTable(client: DynamoDBDocumentClient, prefixes: readonly string[], options: ScanOptions = {}) {
   const values = Object.fromEntries(prefixes.map((prefix, index) => [`:p${index}`, prefix]));
   return collectBoundedPages<Record<string, unknown>>({
-    limits: options.limits,
     loadPage: async (ExclusiveStartKey, abortSignal) => client.send(
       new ScanCommand({
         TableName: TABLE_SPONSOR_CRM,
@@ -134,48 +125,54 @@ function scanCrmTable(client: DynamoDBDocumentClient, prefixes: readonly string[
   });
 }
 
-/** Raw items whose PK starts with `prefix`. */
-export async function scanCrmPrefix(
-  client: DynamoDBDocumentClient,
-  prefix: string,
-  limits?: StoragePaginationLimits,
-): Promise<Record<string, unknown>[]> {
-  const snapshot = readSnapshot.getStore();
-  if (!snapshot || limits || !SNAPSHOT_PREFIXES.some((covered) => prefix.startsWith(covered))) {
-    return scanCrmTable(client, [prefix], { limits });
-  }
-  snapshot.items ??= scanCrmTable(client, SNAPSHOT_PREFIXES);
-  return (await snapshot.items).filter((item) => String(item.PK).startsWith(prefix));
+type TypeQuery = { filter?: { expression: string; values: Record<string, unknown> } };
+
+function queryCrmType(client: DynamoDBDocumentClient, type: string, query: TypeQuery = {}) {
+  return collectBoundedPages<Record<string, unknown>>({
+    loadPage: async (ExclusiveStartKey, abortSignal) => client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        IndexName: ENTITY_TYPE_INDEX,
+        KeyConditionExpression: '#type = :type',
+        ExpressionAttributeNames: { '#type': ENTITY_TYPE_ATTRIBUTE },
+        ExpressionAttributeValues: { ':type': type, ...(query.filter?.values || {}) },
+        ...(query.filter ? { FilterExpression: query.filter.expression } : {}),
+        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+      }),
+      { abortSignal },
+    ),
+  });
 }
 
-export async function listCrmRecords(
-  client: DynamoDBDocumentClient,
-  kind: string,
-  limits?: StoragePaginationLimits,
-) {
-  const items = await scanCrmPrefix(client, `${kind.toUpperCase()}#`, limits);
+/** Raw items of one indexed type, named by its PK prefix (`DEAL#`). */
+export async function listCrmItems(client: DynamoDBDocumentClient, prefix: string): Promise<Record<string, unknown>[]> {
+  const type = entityTypeOfPrefix(prefix);
+  const snapshot = readSnapshot.getStore();
+  if (!snapshot) return queryCrmType(client, type);
+  let items = snapshot.byType.get(type);
+  if (!items) {
+    items = queryCrmType(client, type);
+    snapshot.byType.set(type, items);
+    // A failed read must not poison later reads in the same scope.
+    items.catch(() => { if (snapshot.byType.get(type) === items) snapshot.byType.delete(type); });
+  }
+  return [...await items];
+}
+
+export async function listCrmRecords(client: DynamoDBDocumentClient, kind: string) {
+  const items = await listCrmItems(client, `${kind.toUpperCase()}#`);
   return items.map(item => clean(item)!).sort((a, b) =>
     String(b.updatedAt).localeCompare(String(a.updatedAt)) ||
     a.id.localeCompare(b.id));
 }
 
 /**
- * Deals of one organization for single-record reads. A DEAL#-only bounded scan
- * filtered to the organization: it never populates or reads the workspace
- * snapshot, and only this organization's deals accumulate inside the page loop,
- * so prod-sized workspaces stay within the storage bounds.
+ * Deals of one organization: the DEAL partition of the type index, filtered
+ * to the organization. Reads deals only, never the rest of the table.
  */
 export async function listOrganizationDeals(client: DynamoDBDocumentClient, organizationId: string) {
-  const rows = await collectBoundedPages<Record<string, unknown>>({
-    loadPage: (ExclusiveStartKey, abortSignal) => client.send(
-      new ScanCommand({
-        TableName: TABLE_SPONSOR_CRM,
-        FilterExpression: 'begins_with(PK, :deal) AND organizationId = :organizationId',
-        ExpressionAttributeValues: { ':deal': 'DEAL#', ':organizationId': organizationId },
-        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
-      }),
-      { abortSignal },
-    ),
+  const rows = await queryCrmType(client, 'DEAL', {
+    filter: { expression: 'organizationId = :organizationId', values: { ':organizationId': organizationId } },
   });
   return rows.map(item => clean(item)!).sort((a, b) => a.id.localeCompare(b.id));
 }

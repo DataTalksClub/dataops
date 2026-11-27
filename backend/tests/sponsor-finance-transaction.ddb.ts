@@ -419,11 +419,14 @@ describe('sponsor finance production DynamoDB transactions', () => {
         RequestItems: { [TABLE_SPONSOR_CRM]: paginationRows.slice(offset, offset + 25) },
       }));
     }
-    let sponsorScanPages = 0;
+    // Deal lists come from the type index; 300 padded deals exceed one 1 MB
+    // page, so every evaluation must follow the cursor.
+    let sponsorDealPages = 0;
     const countingClient = {
-      send: async (command: { constructor: { name: string }; input?: { TableName?: string } }) => {
-        if (command.constructor.name === 'ScanCommand' && command.input?.TableName === TABLE_SPONSOR_CRM) {
-          sponsorScanPages++;
+      send: async (command: { constructor: { name: string }; input?: { TableName?: string; IndexName?: string; ExpressionAttributeValues?: Record<string, unknown> } }) => {
+        if (command.constructor.name === 'QueryCommand' && command.input?.TableName === TABLE_SPONSOR_CRM
+          && command.input.IndexName === 'GSI-EntityType' && command.input.ExpressionAttributeValues?.[':type'] === 'DEAL') {
+          sponsorDealPages++;
         }
         return client.send(command as never);
       },
@@ -432,7 +435,7 @@ describe('sponsor finance production DynamoDB transactions', () => {
       Array.from({ length: 8 }, () => evaluateSponsorFinanceAlerts(countingClient, '2026-01-02')),
     );
     assert.equal(concurrentInitial.reduce((sum, result) => sum + result.created, 0), 1);
-    assert.ok(sponsorScanPages > concurrentInitial.length);
+    assert.ok(sponsorDealPages > concurrentInitial.length);
     const findAlerts = async () => ((await client.send(new ScanCommand({
       TableName: TABLE_NOTIFICATIONS,
     }))).Items || []).filter((item) =>

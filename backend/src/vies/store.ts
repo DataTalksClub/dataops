@@ -5,7 +5,8 @@
  * checked `vatId` with the value they are about to use.
  */
 
-import { GetCommand, PutCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { GetCommand, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { listCrmItems } from '../db/sponsorCrm';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { cleanItem } from '../db/cleanItem';
 import { TABLE_SPONSOR_CRM } from '../db/tableNames';
@@ -59,20 +60,5 @@ export async function putViesCheck(client: DynamoDBDocumentClient, draft: ViesCh
 }
 
 export async function listViesChecks(client: DynamoDBDocumentClient): Promise<ViesCheck[]> {
-  const items: ViesCheck[] = [];
-  let cursor: Record<string, unknown> | undefined;
-  do {
-    const page = await client.send(new ScanCommand({
-      TableName: TABLE_SPONSOR_CRM,
-      FilterExpression: 'begins_with(PK, :prefix)',
-      ExpressionAttributeValues: { ':prefix': PREFIX },
-      ...(cursor ? { ExclusiveStartKey: cursor } : {}),
-    }));
-    for (const item of page.Items || []) {
-      const record = clean(item);
-      if (record) items.push(record);
-    }
-    cursor = page.LastEvaluatedKey as Record<string, unknown> | undefined;
-  } while (cursor);
-  return items;
+  return (await listCrmItems(client, PREFIX)).map((item) => clean(item)).filter((item): item is ViesCheck => Boolean(item));
 }

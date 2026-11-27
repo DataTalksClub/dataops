@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { route } from '../src/router';
 import { TABLE_SPONSOR_CRM } from '../src/db/tableNames';
+import { ENTITY_TYPE_INDEX, entityTypeOf } from '../src/db/sponsorCrmTypeIndex';
 const now = '2026-10-17T00:00:00Z';
 const record = (kind: string, id: string, fields: Record<string, unknown>) => ({ PK: `${kind}#${id}`, SK: `${kind}#${id}`, id, version: 1, createdAt: now, updatedAt: now, ...fields });
 const items = [
@@ -11,12 +12,20 @@ const items = [
   ...Array.from({ length: 75 }, (_, i) => record('DEAL', `deal-${String(i).padStart(3, '0')}`, { organizationId: 'org', status: i === 74 ? 'lost' : i < 4 ? 'agreed' : 'open', notes: 'Private long details' })),
 ];
 function fake(taskRows: Record<string, unknown>[] = [], records = items) {
-  let scans = 0;
+  // A full CRM scan, or a second query for a type already read, is redundant.
+  let redundant = 0;
+  const queriedTypes = new Set<string>();
   const views = new Map<string, Record<string, unknown>>();
   const client = { send: async (command: any) => {
     if (command.constructor.name === 'ScanCommand') {
-      assert.equal(command.input.TableName, TABLE_SPONSOR_CRM); scans++;
+      assert.equal(command.input.TableName, TABLE_SPONSOR_CRM); redundant++;
       return { Items: records };
+    }
+    if (command.constructor.name === 'QueryCommand' && command.input.IndexName === ENTITY_TYPE_INDEX) {
+      const type = command.input.ExpressionAttributeValues[':type'];
+      if (queriedTypes.has(type)) redundant++;
+      queriedTypes.add(type);
+      return { Items: records.filter((row) => entityTypeOf(row.PK) === type) };
     }
     if (command.constructor.name === 'GetCommand') return { Item: views.get(command.input.Key?.SK) };
     if (command.constructor.name === 'PutCommand' && command.input.Item?.PK.startsWith('SAVEDVIEW#')) {
@@ -28,7 +37,7 @@ function fake(taskRows: Record<string, unknown>[] = [], records = items) {
     }
     throw new Error(`Unexpected ${command.constructor.name}`);
   } } as unknown as DynamoDBDocumentClient;
-  return { client, scans: () => scans };
+  return { client, redundantReads: () => redundant };
 }
 async function get(query: Record<string, string> = {}, taskRows: Record<string, unknown>[] = [], records = items) {
   const f = fake(taskRows, records);
@@ -36,9 +45,9 @@ async function get(query: Record<string, string> = {}, taskRows: Record<string, 
   return { ...f, status: response.statusCode, body: JSON.parse(response.body) };
 }
 describe('bounded sponsor funnel', () => {
-  it('defaults to actionable active rows, scans once, projects primary contact and omits heavy details', async () => {
-    const { status, body, scans } = await get();
-    assert.equal(status, 200); assert.equal(scans(), 1);
+  it('defaults to actionable active rows, reads each type once, projects primary contact and omits heavy details', async () => {
+    const { status, body, redundantReads } = await get();
+    assert.equal(status, 200); assert.equal(redundantReads(), 0);
     assert.equal(body.items.length, 30); assert.equal(body.total, 74); assert.equal(body.nextCursor, '30');
     assert.equal(body.counts.lost, 1); assert.equal(body.counts.agreed, 4);
     // Chip counts under the active view sum to the list total; totals ignore the view.
@@ -143,7 +152,7 @@ it('canonical early and reply views use open stage and recent active inbound rev
 it('overdue is strictly before today, excludes deferred/lost/undated and uses waiting follow-up', async () => {
   const result = await get({ view: 'overdue' }, filterTasks);
   assert.equal(result.status, 200);
-  assert.equal(result.scans(), 1);
+  assert.equal(result.redundantReads(), 0);
   assert.deepEqual(ids(result.body), ['deal-000', 'deal-007']);
   assert.equal((await get({ view: 'overdue', owner: 'owner-b' }, filterTasks)).body.total, 0);
   // An eligible next Task wins over an older snoozed Task on the same deal.

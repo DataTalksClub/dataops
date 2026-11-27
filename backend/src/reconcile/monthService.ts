@@ -46,7 +46,7 @@ import {
   type ReconcileTolerances,
 } from "./month";
 import { listStatements, rowKeys, type StatementRecord } from "./service";
-import { listCrmRecords, scanCrmPrefix } from "../db/sponsorCrm";
+import { listCrmRecords, listCrmItems } from "../db/sponsorCrm";
 import { getIntakeItem } from "../db/intake";
 import { getInvoice, listInvoices } from "../invoices/store";
 import type { Invoice } from "../invoices/model";
@@ -535,7 +535,7 @@ export async function snapshot(
     preloaded.invoices ?? listInvoices(client),
     listCrmRecords(client, "deal"),
     listCrmRecords(client, "organization"),
-    scanCrmPrefix(client, "SPONSOR_FINANCE#"),
+    listCrmItems(client, "SPONSOR_FINANCE#"),
     listMonths(client),
     getConfig(client),
   ]);

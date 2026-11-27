@@ -382,6 +382,7 @@ Resources:
         - { AttributeName: GSI2SK, AttributeType: S }
         - { AttributeName: GSI4PK, AttributeType: S }
         - { AttributeName: GSI4SK, AttributeType: S }
+        - { AttributeName: GSI5PK, AttributeType: S }
       KeySchema:
         - { AttributeName: PK, KeyType: HASH }
         - { AttributeName: SK, KeyType: RANGE }
@@ -400,6 +401,13 @@ Resources:
           KeySchema:
             - { AttributeName: GSI4PK, KeyType: HASH }
             - { AttributeName: GSI4SK, KeyType: RANGE }
+          Projection: { ProjectionType: ALL }
+        # Sparse type index: GSI5PK is the record type (DEAL, CONTACT, ...),
+        # stamped on listable rows only, so a list is a Query, not a Scan.
+        - IndexName: GSI-EntityType
+          KeySchema:
+            - { AttributeName: GSI5PK, KeyType: HASH }
+            - { AttributeName: PK, KeyType: RANGE }
           Projection: { ProjectionType: ALL }
 
   DataOpsBookkeepingTable:
@@ -1221,6 +1229,7 @@ Resources:
               - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-Communication
               - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorSendDue
               - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-SponsorBookingCommunication
+              - !Sub ${DataOpsSponsorCrmTable.Arn}/index/GSI-EntityType
               - !GetAtt DataOpsNewsletterSlotsTable.Arn
               - !Sub ${DataOpsNewsletterSlotsTable.Arn}/index/*
               - !GetAtt DataOpsCalendarTable.Arn
