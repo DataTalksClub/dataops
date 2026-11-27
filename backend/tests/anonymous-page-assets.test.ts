@@ -41,6 +41,21 @@ describe('anonymous page assets', () => {
   }
 });
 
+describe('anonymous page assets in the shipped manifest', () => {
+  // The build copies only files listed in frontend-assets.json; a module
+  // imported by an anonymous page but missing there fails the deploy build.
+  const manifest = JSON.parse(readFileSync(resolve(__dirname, '../src/docs/frontend-assets.json'), 'utf8'));
+  const shipped = new Set<string>(JSON.stringify(manifest).match(/src\/[^"]+/g) || []);
+  for (const [entry] of PAGES) {
+    it(`lists every module ${entry} imports`, () => {
+      const missing = [...importGraph(entry)]
+        .map((file) => relative(FRONTEND_ROOT, file))
+        .filter((path) => !shipped.has(path));
+      assert.deepStrictEqual(missing, []);
+    });
+  }
+});
+
 describe('anonymous page scripts', () => {
   it('parse as modules', () => {
     for (const [entry] of PAGES) {

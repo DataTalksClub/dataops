@@ -241,7 +241,10 @@ test.describe("sponsor newsletter catalog", () => {
     const preview = page.locator("[data-sponsor-live-preview]");
     await expect(preview).toBeVisible();
     await expect(preview).toContainText("Live Preview");
-    await expect(preview).toContainText("Stand-Alone Blast");
+    // The preview is the sponsor block alone: no slot badge, helper copy or
+    // standalone Subject/Preview labels.
+    await expect(preview).not.toContainText("Stand-Alone Blast");
+    await expect(preview).not.toContainText(/^Subject$|^Preview$/m);
 
     // 1. White email-piece card in editor with ordered flow: opening -> bullets -> closing -> cta
     const emailCard = page.locator("[data-sponsor-email-card]");
@@ -251,10 +254,8 @@ test.describe("sponsor newsletter catalog", () => {
       .evaluateAll((nodes) => nodes.map((n) => n.dataset.sponsorEmailStep));
     expect(editorSteps).toEqual(["opening", "bullets", "closing", "cta"]);
 
-    const previewSteps = await preview
-      .locator("[data-sponsor-preview-step]")
-      .evaluateAll((nodes) => nodes.map((n) => n.dataset.sponsorPreviewStep));
-    expect(previewSteps).toEqual(["opening", "bullets", "closing", "cta"]);
+    // An empty doc renders no sample copy in the preview, only a hint.
+    await expect(preview.locator("[data-sponsor-preview-step]")).toHaveCount(0);
 
     // 2. Structured fields remain distinct (Opening, Bulleted List, Closing)
     const openingField = page.locator("#sponsor-field-mainBodyOpening");
@@ -320,6 +321,10 @@ test.describe("sponsor newsletter catalog", () => {
     await page.locator("#sponsor-field-closingCtaUrl").fill("https://estuary.dev/workshop");
     await expect(page.locator("[data-sponsor-editor-cta-pill]")).toHaveCount(0);
     await expect(preview.locator("[data-sponsor-preview-cta-link]")).toHaveText("Register for Workshop");
+    const previewSteps = await preview
+      .locator("[data-sponsor-preview-step]")
+      .evaluateAll((nodes) => nodes.map((n) => n.dataset.sponsorPreviewStep));
+    expect(previewSteps).toEqual(["opening", "bullets", "closing", "cta"]);
 
     const utmSuggestion = page.locator('[data-sponsor-utm-suggestion="closingCtaUrl"]');
     await expect(utmSuggestion).toBeVisible();
