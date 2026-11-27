@@ -299,15 +299,22 @@ export async function resolveEventTarget(
     const event = await readOrUpgradeEventRecord(client, holdId, card);
     if (event) return { card, episode, event, holdId };
     // Check if another CALHOLD# row references this cardId
-    const scan = await client.send(
-      new ScanCommand({
-        TableName: TABLE_CALENDAR,
-        FilterExpression: 'begins_with(PK, :prefix) AND cardId = :cardId',
-        ExpressionAttributeValues: { ':prefix': 'CALHOLD#', ':cardId': card.id },
-        ConsistentRead: true,
-      }),
-    );
-    const match = (scan.Items || [])[0];
+    // Page until a match: one Scan call stops at 1 MB and would miss rows past it.
+    let match: Record<string, unknown> | undefined;
+    let cursor: Record<string, unknown> | undefined;
+    do {
+      const page = await client.send(
+        new ScanCommand({
+          TableName: TABLE_CALENDAR,
+          FilterExpression: 'begins_with(PK, :prefix) AND cardId = :cardId',
+          ExpressionAttributeValues: { ':prefix': 'CALHOLD#', ':cardId': card.id },
+          ConsistentRead: true,
+          ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+        }),
+      );
+      match = (page.Items || [])[0];
+      cursor = page.LastEvaluatedKey;
+    } while (!match && cursor);
     if (match && typeof match.id === 'string') {
       const existing = await readOrUpgradeEventRecord(client, match.id, card);
       return { card, episode, event: existing, holdId: match.id };
@@ -1223,21 +1230,31 @@ export async function pollEventCalendarAcceptances(
     if (!event) throw new EventNotFoundError(`No event exists for '${options.targetId}'.`);
     candidates.push(event);
   } else {
-    const scan = await client.send(
-      new ScanCommand({
-        TableName: TABLE_CALENDAR,
-        FilterExpression: 'begins_with(PK, :prefix) AND #status = :proposed',
-        ExpressionAttributeNames: { '#status': 'status' },
-        ExpressionAttributeValues: { ':prefix': 'CALHOLD#', ':proposed': 'proposed' },
-        ConsistentRead: true,
-      }),
-    );
-    for (const item of scan.Items || []) {
-      if (typeof item.id === 'string' && Number.isInteger(item.generation)) {
-        const record = await getEventRecord(client, item.id);
-        if (record) candidates.push(record);
+    // Every page: a single Scan call stops at 1 MB and silently dropped later holds.
+    // Eventually consistent is enough because each candidate is re-read consistently below,
+    // and the automatic poll narrows the filter so it fetches only holds it will act on.
+    let cursor: Record<string, unknown> | undefined;
+    do {
+      const page = await client.send(
+        new ScanCommand({
+          TableName: TABLE_CALENDAR,
+          FilterExpression: `begins_with(PK, :prefix) AND #status = :proposed${options.automaticOnly ? ' AND autoAcceptancePoll = :auto' : ''}`,
+          ExpressionAttributeNames: { '#status': 'status' },
+          ExpressionAttributeValues: {
+            ':prefix': 'CALHOLD#', ':proposed': 'proposed',
+            ...(options.automaticOnly ? { ':auto': true } : {}),
+          },
+          ...(cursor ? { ExclusiveStartKey: cursor } : {}),
+        }),
+      );
+      for (const item of page.Items || []) {
+        if (typeof item.id === 'string' && Number.isInteger(item.generation)) {
+          const record = await getEventRecord(client, item.id);
+          if (record) candidates.push(record);
+        }
       }
-    }
+      cursor = page.LastEvaluatedKey;
+    } while (cursor);
   }
 
   const outcomes: CalendarAcceptancePollOutcome[] = [];
