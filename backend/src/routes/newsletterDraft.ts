@@ -63,6 +63,7 @@ import {
   testSendApproved,
 } from '../newsletter/relayTransport';
 import { docIdFromUrl, syncSponsorSlot } from '../newsletter/sponsorBlocks';
+import { syncStandaloneMarkdownTask } from '../newsletter/markdownTask';
 import { getSponsorDoc } from '../db/sponsorDocs';
 import { savePublicImage } from '../publicImages';
 import { FileStorageError } from '../storage';
@@ -295,6 +296,7 @@ export async function handleNewsletterDraftRoutes(
       if (!owner) return ownerOnly();
       if (rest === '/approve') {
         const result = await approveDraft(client, issue.id, { expectedVersion: body.version, payloadHash: body.payloadHash, note: body.note }, actor);
+        await syncStandaloneMarkdownTask(client, issue, actor.id, { draftApproved: true });
         return json(200, { issueId: issue.id, draft: view(result.set), payloadHash: result.payload.payloadHash });
       }
       if (rest === '/test-send') {

@@ -192,7 +192,8 @@ function buttonRow(text: string, url: string): string {
   const label = escapeHtml(text);
   const href = escapeHtml(url);
   // VML needs a fixed width; Mailchimp sized it from the label (Python's round()).
-  const width = Math.round((56 + 9.3 * text.length) * 100) / 100;
+  const rounded = Math.round((56 + 9.3 * text.length) * 100) / 100;
+  const width = Number.isInteger(rounded) ? rounded.toFixed(1) : String(rounded); // Python's str(float)
   return '<tr><td style="background-color:transparent;padding-top:12px;padding-bottom:12px;padding-right:24px;'
     + 'padding-left:24px;border:0;border-radius:0" valign="top" class="mceButtonBlockContainer" align="center">'
     + '<div><!--[if !mso]><!--></div><table align="center" border="0" cellpadding="0" cellspacing="0" '

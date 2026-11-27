@@ -2,8 +2,9 @@
  * The stand-alone newsletter Markdown step.
  *
  * The `newsletter-standalone` Template carries a step along the lines of
- * "Prepare and store standalone newsletter Markdown": write the issue text
- * and store it with `PUT /api/newsletter-issues/:id/markdown`. When the
+ * "Prepare and store standalone newsletter Markdown". The issue text is now
+ * built as a DataOps draft and approved by the owner (the Markdown package
+ * was retired), so the owner's approval is the step's completion proof. When the
  * sponsor supplies the text themselves (e.g. a Snowplow stand-alone whose
  * copy was written by the sponsor and scheduled straight in Mailchimp),
  * that step has nothing to do and must not sit open in the today/overdue
@@ -14,8 +15,9 @@
  *   the step is skipped with that reason;
  * - a stand-alone issue already `scheduled` or `sent` in Mailchimp is past
  *   the point of preparing Markdown; the step is skipped with that reason;
- * - stored issue Markdown (`issue.markdown.issue`) is the step's own
- *   completion proof; the step is marked done.
+ * - the owner's approval of the DataOps draft, or archived issue Markdown
+ *   (`issue.markdown.issue`, older issues), is the step's completion proof;
+ *   the step is marked done.
  *
  * Done and skipped Tasks both leave the overdue queue (only `todo`/`waiting`
  * Tasks are ever overdue). The step is matched by its Markdown description,
@@ -68,6 +70,7 @@ export async function syncStandaloneMarkdownTask(
   client: DynamoDBDocumentClient,
   issue: NewsletterIssue,
   actorId: string,
+  options: { draftApproved?: boolean } = {},
 ): Promise<MarkdownTaskSync> {
   if (issue.kind !== 'standalone' || !issue.cardId) return 'none';
   try {
@@ -76,16 +79,18 @@ export async function syncStandaloneMarkdownTask(
     const open = (await listTasksByCardConsistent(client, card.id)).filter(isStandaloneMarkdownTask);
     if (!open.length) return 'none';
     const now = new Date().toISOString();
-    if (String(issue.markdown?.issue || '').trim()) {
+    if (options.draftApproved || String(issue.markdown?.issue || '').trim()) {
       for (const task of open) {
         await updateTask(client, task.id, {
           expectedVersion: task.version,
           currentTask: task,
           actorId,
-          triggerKind: 'newsletter-markdown-stored',
+          triggerKind: options.draftApproved ? 'newsletter-draft-approved' : 'newsletter-markdown-stored',
           patch: {
             status: 'done',
-            externalStatus: `Newsletter Markdown stored in DataOps${issue.status ? ` (issue ${issue.status})` : ''}`,
+            externalStatus: options.draftApproved
+              ? 'Newsletter draft approved by the owner in DataOps'
+              : `Newsletter Markdown stored in DataOps${issue.status ? ` (issue ${issue.status})` : ''}`,
             completedBy: actorId,
             completedAt: now,
           },

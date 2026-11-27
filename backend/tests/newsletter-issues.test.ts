@@ -1,6 +1,6 @@
 import { before, after, afterEach, describe, it } from "node:test";
 import assert from "node:assert";
-import { PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { PutCommand, ScanCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { handler } from "../src/handler";
 import { createTables, startLocal, stopLocal } from "../scripts/local-dynamodb";
@@ -682,9 +682,8 @@ describe("newsletter issues", () => {
       },
     }));
 
-    // Store issue.md with primary and secondary sponsor sections
-    const mdPut = await invoke("PUT", `/api/newsletter-issues/${created.id}/markdown`, {
-      issue: [
+    // An older issue keeps its archived issue.md (the retired Markdown package) with both sponsor sections.
+    const archivedIssueMd = [
         "---",
         "issue: 392",
         "send_date: 2027-11-16",
@@ -714,9 +713,14 @@ describe("newsletter issues", () => {
         "NEWS",
         "",
         "## Upcoming Events",
-      ].join("\n"),
-    });
-    assert.equal(mdPut.statusCode, 200, mdPut.body);
+      ].join("\n");
+    await client.send(new UpdateCommand({
+      TableName: TABLE_NEWSLETTER_SLOTS,
+      Key: { PK: `ISSUE#${created.id}`, SK: `ISSUE#${created.id}` },
+      UpdateExpression: "SET #markdown = :markdown",
+      ExpressionAttributeNames: { "#markdown": "markdown" },
+      ExpressionAttributeValues: { ":markdown": { issue: archivedIssueMd } },
+    }));
 
     setMailchimpMetricsDepsForTests({
       apiKey: "fakekey123-us19",

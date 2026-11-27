@@ -14,6 +14,7 @@ import { getCard } from '../src/db/cards';
 import { createTemplate } from '../src/db/templates';
 import { listTasksByCard } from '../src/db/tasks';
 import { syncStandaloneMarkdownTask } from '../src/newsletter/markdownTask';
+import { getNewsletterIssue } from '../src/db/newsletterIssues';
 
 const invoke = (method: string, pathName: string, body?: unknown, query: Record<string, string> = {}) =>
   handler({
@@ -108,16 +109,14 @@ describe('stand-alone newsletter Markdown step', () => {
     assert.match(String(step.skipReason || ''), /scheduled/);
   });
 
-  it('marks the Markdown step done when issue Markdown is stored', async () => {
+  it('marks the Markdown step done when the owner approves the DataOps draft', async () => {
     const issue = await createStandalone(addDays(today, 5));
-    const stored = await invoke('PUT', `/api/newsletter-issues/${issue.id}/markdown`, {
-      issue: 'Subject: Synthetic stand-alone\n\nPreview: Synthetic preview.\n\n# Hello\n',
-    });
-    assert.equal(stored.statusCode, 200, stored.body);
+    const stored = await getNewsletterIssue(client, issue.id);
+    assert.equal(await syncStandaloneMarkdownTask(client, stored!, 'owner', { draftApproved: true }), 'closed');
 
     const step = await markdownTask(issue.cardId);
     assert.equal(step.status, 'done');
-    assert.match(String(step.externalStatus || ''), /Markdown stored/);
+    assert.match(String(step.externalStatus || ''), /draft approved/);
   });
 
   it('leaves the Markdown step open when nothing resolves it', async () => {

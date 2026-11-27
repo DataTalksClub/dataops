@@ -410,6 +410,11 @@ function cleanScheduledAt(input: unknown): string {
   return new Date(at).toISOString();
 }
 
+/** A "scheduling" lock older than this was left by a request that died mid-way; it may be retried or cancelled. */
+export const STUCK_SCHEDULING_MS = 5 * 60_000;
+
+const stuck = (delivery: DraftDelivery) => delivery.state === 'scheduling' && Date.now() - Date.parse(delivery.updatedAt) > STUCK_SCHEDULING_MS;
+
 async function writeDelivery(client: DynamoDBDocumentClient, set: IssueBlockSet, delivery: DraftDelivery): Promise<IssueBlockSet> {
   const next: IssueBlockSet = { ...set, delivery, version: set.version + 1, updatedAt: delivery.updatedAt };
   await putBlockSet(client, next, set.version);
@@ -430,7 +435,7 @@ export async function scheduleApproved(
   const scheduledAt = cleanScheduledAt(input.scheduledAt);
   let set = await requireBlockSet(client, issue.id);
   const current = set.delivery;
-  if (current && (current.state === 'scheduling' || current.state === 'scheduled')) {
+  if (current && (current.state === 'scheduled' || (current.state === 'scheduling' && !stuck(current)))) {
     if (current.requestId === requestId) return { set, delivery: current, adopted: false, replayed: true };
     throw new BlocksError(`The approved email is already ${current.state} in Relay (campaign ${current.campaignKey}).`, 409, 'already_scheduled', { delivery: current });
   }
@@ -497,7 +502,7 @@ export async function scheduleApproved(
   const delivery = {
     ...base,
     state: failure ? 'failed' : 'scheduled',
-    relayStatus: relayStatus || undefined,
+    ...(relayStatus ? { relayStatus } : {}),
     ...(failure ? { error: failure.message } : {}),
     updatedAt: done,
   } as DraftDelivery;
@@ -529,7 +534,7 @@ export async function cancelScheduled(
 ): Promise<{ set: IssueBlockSet; delivery: DraftDelivery }> {
   const set = await requireBlockSet(client, issue.id);
   const delivery = set.delivery;
-  if (!delivery || (delivery.state !== 'scheduled' && delivery.state !== 'failed')) {
+  if (!delivery || (delivery.state !== 'scheduled' && delivery.state !== 'failed' && !stuck(delivery))) {
     throw new BlocksError('Nothing is scheduled for this draft.', 409, 'nothing_scheduled');
   }
   const relay = await relayCampaignClient();

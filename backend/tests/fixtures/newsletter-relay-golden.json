@@ -1,0 +1,146 @@
+{
+ "source": "Rendered by DataTalksClub/relay mailing/services/newsletter_layout.py at 394fd42 (issue #302 blocks from mailing/tests/newsletter_302_blocks.py plus edge cases)",
+ "subject": "🛠️ Our new free course starts next week | DataTalks.Club Weekly",
+ "preheader": "Production AI Agents for Generative Media starts November 16. Join the Q&A on November 10 and bring your questions.",
+ "webViewUrl": "https://ops.example/v/tok",
+ "forwardUrl": "mailto:?subject=x",
+ "blocks": [
+  {
+   "type": "intro",
+   "data": {
+    "issue_label": "#302 · November 9, 2026",
+    "summary": "This week: our free generative media course starting next week, Project 2 in AI Dev Tools Zoomcamp, the Machine Learning Zoomcamp midterm, a Q&A and launch stream, two recordings, and Alexey's post on dark software factories."
+   },
+   "rowsSha256": "f76a8a6b007405e7cca3d4cfe6b8c7e53002254740fcff17dc592fc0cebb7f8e"
+  },
+  {
+   "type": "course_promo",
+   "data": {
+    "title": "Production AI Agents for Generative Media 2026 Cohort",
+    "image_url": "https://mcusercontent.com/0d7822ab98152f5afc118c176/images/49e229b0-6823-ca6a-0e22-072ff21b88ef.png",
+    "image_link": "https://courses.datatalks.club/register/production-ai-agents-generative-media/",
+    "body": "What happens when your agent launches expensive, slow GPU jobs that can fail? Production AI Agents for Generative Media starts next week, on November 16.\n\nIn this free course with Nebius, you build a Personalized Media Factory:\n\n- Run image, video, and audio models as serverless GPU Jobs and Endpoints\n- Give an agent GPU models as tools, with evaluation guiding regeneration\n- Scale to batches with a cost line per asset\n\nThe materials are open to everyone. Selected participants also get homework, peer review, and the capstone. 728 people have already registered.",
+    "cta_text": "Register now",
+    "cta_url": "https://courses.datatalks.club/register/production-ai-agents-generative-media/"
+   },
+   "rowsSha256": "02fa0abaf8af6cd10b4d4fb16a69bd5316e50bf6c106a32d3547889ed02bce7e"
+  },
+  {
+   "type": "course_update",
+   "data": {
+    "title": "Project 2",
+    "image_url": "https://mcusercontent.com/0d7822ab98152f5afc118c176/images/c39d593c-3435-b19e-3a98-d2d110924dc8.png",
+    "image_link": "https://github.com/DataTalksClub/ai-dev-tools-zoomcamp",
+    "body": "This is the last week for Project 2, the second attempt at the final project.\n\nSubmissions close on November 17, 2026 at 00:00 CET. Check [what to build and how it's scored](https://github.com/DataTalksClub/ai-dev-tools-zoomcamp/tree/main/project) before you submit.\n\nAfter the deadline, you review three projects from other participants. Reviews are due November 24, 2026 at 00:00 CET.",
+    "cta_text": "Submit your project",
+    "cta_url": "https://courses.datatalks.club/ai-dev-tools-2026/project/project2"
+   },
+   "rowsSha256": "2e6d6f0a2e02488bb1e32880b3c17f8aad8173430d5c006cb51071c694ba67cd"
+  },
+  {
+   "type": "course_update",
+   "data": {
+    "title": "Midterm Project",
+    "image_url": "https://mcusercontent.com/0d7822ab98152f5afc118c176/images/f6aee0bd-8307-6d8e-2e90-355ccb46929d.png",
+    "image_link": "https://github.com/DataTalksClub/machine-learning-zoomcamp",
+    "body": "This is the second and last week of the midterm project. Submissions are due November 17, 2026, at 00:00 CET. Check the [project guidelines](https://github.com/DataTalksClub/machine-learning-zoomcamp/tree/main/projects) before you submit.\n\nYou don't need to find reviewers in Slack: after the form closes, the course platform assigns you three projects to review. Reviews are mandatory and due November 24, 2026 at 00:00 CET.",
+    "cta_text": "Submit your midterm project",
+    "cta_url": "https://courses.datatalks.club/ml-zoomcamp-2026/project/midterm"
+   },
+   "rowsSha256": "0893cd539744bc9bd0e2ccaae1981beac7b0636499e11687d21a94af1b754864"
+  },
+  {
+   "type": "course_update",
+   "data": {
+    "title": "Q&A, Launch Stream, and Module 1",
+    "image_url": "https://mcusercontent.com/0d7822ab98152f5afc118c176/images/f10f4862-ad1e-cda0-050a-21a55b64c1cf.png",
+    "body": "Still deciding if the course is for you? Join the [Pre-Course Live Q&A](https://luma.com/i4x6x2zy) on November 10. Alexey Grigorev, Mikhail Rozhkov, and Marouane Khoukh will explain what you'll build, who the course is for, the prerequisites, and how to apply. Bring your questions.\n\nOn November 16, we start together with the [launch stream](https://luma.com/xey7h50c). Module 1 covers consistent media generation on serverless GPUs and runs for two weeks, so if you join a bit later, you still have time to catch up. Applications stay open until November 30.",
+    "cta_text": "Register for the Q&A",
+    "cta_url": "https://luma.com/i4x6x2zy"
+   },
+   "rowsSha256": "21ae0f90e5b1f4d0907505cb8bda95f353b8a9ba875f45bd8fd29d8b4c84e038"
+  },
+  {
+   "type": "events_list",
+   "data": {
+    "events": "Mon, November 9 · 2:30 PM CET · Webinar | Answers you can question: Building a verifiable AI analytics agent | https://luma.com/9y6qc72e | with Alex Litvinov\nTue, November 10 · 5:00 PM CET · Live Q&A | Production AI Agents for Generative Media: Pre-Course Live Q&A | https://luma.com/i4x6x2zy | with Alexey Grigorev, Mikhail Rozhkov, and Marouane Khoukh\nMon, November 16 · 5:00 PM CET · Launch stream | Production AI Agents for Generative Media: Course Launch | https://luma.com/xey7h50c | with Alexey Grigorev\nTue, December 15 · 3:00 PM CET · Podcast | Shipping Reliable LLMs and the Rise of AI Engineering | https://luma.com/nassme8x | with Louis-Francois Bouchard",
+    "footer": "[See all upcoming events](https://lu.ma/dtc-events) · [Add our events to your calendar](https://calendar.google.com/calendar/?cid=ZjhxaWRqbnEwamhzY3A4ODA5azFlZ2hzNjBAZ3JvdXAuY2FsZW5kYXIuZ29vZ2xlLmNvbQ)"
+   },
+   "rowsSha256": "f0afea32cec81075c24c13723063bad5857a5214606534b2948cbe8f62989d70"
+  },
+  {
+   "type": "recording",
+   "data": {
+    "title": "Workshop Recording: Build a Media Agent: CPU Agent, GPU Models as Tools",
+    "image_url": "https://mcusercontent.com/0d7822ab98152f5afc118c176/video_thumbnails_new/72c72f42f6e44de5e1aedc3f4e03a510.png",
+    "image_link": "https://www.youtube.com/watch?v=XzS6MrNfrcA",
+    "body": "On November 3, Alexey Grigorev and Mikhail Rozhkov from Nebius ran a hands-on workshop on media agents. We built a small agent that runs on a CPU and calls GPU-hosted image models as tools:\n\n- Image generation endpoints as agent tools\n- Building and running the agent with Pydantic AI\n- Swapping the image model for Sana\n- Nebius Serverless AI: GPU endpoints, jobs, spot instances, and costs\n\nThis workshop previews Production AI Agents for Generative Media. If you missed the live session, the recording is ready."
+   },
+   "rowsSha256": "2499a02bd3eafe5ac41fa8cf0541f267e8d41eb623b9c1f513c8ffc497233ebe"
+  },
+  {
+   "type": "alexey_article",
+   "data": {
+    "title": "From Alexey on Data: Dark Software Factories",
+    "image_url": "https://mcusercontent.com/0d7822ab98152f5afc118c176/images/9f6a746c-9197-c639-4aac-e3b0637ab919.png",
+    "image_link": "https://aishippingblog.com/p/dark-software-factories",
+    "body": "Do you still read every line of code your agents write?\n\nIn his new newsletter, Alexey explains why he stopped reading agent-generated code and looks at how teams run software factories:\n\n- Where the term \"dark software factory\" comes from\n- How teams run factories, from Sandstorm to Linear-to-PR\n- When agent factories still escalate to humans\n- The technical and comprehension debt factories create",
+    "cta_text": "Read here",
+    "cta_url": "https://aishippingblog.com/p/dark-software-factories"
+   },
+   "rowsSha256": "e64070eb940964b65d01ce32cd2c6f014ff1810c6f6d76455a564ffd2a3d118d"
+  },
+  {
+   "type": "sponsor",
+   "data": {
+    "title": "Ship faster with Acme",
+    "body": "Intro **bold** and [a link](https://acme.example/x?a=1&b=2).\nSecond line.",
+    "bullets": "one\ntwo & three",
+    "closing": "Bye *now*.",
+    "cta_text": "Try it",
+    "cta_url": "https://acme.example/go",
+    "image_url": "https://acme.example/g.png",
+    "image_link": "https://acme.example/go"
+   },
+   "rowsSha256": "6e3c1f0821d6782ae343471abc0e4d7749b0ef6ed07f8a10c5d723e5bec275f6"
+  },
+  {
+   "type": "link_list",
+   "data": {
+    "kicker": "READ",
+    "title": "Links",
+    "links": "First | https://x.example/1 | a note\nSecond | https://x.example/2"
+   },
+   "rowsSha256": "2805b52a96195246789160640a5cc71435b8310a390758b9fbb056944e10ceeb"
+  },
+  {
+   "type": "recording",
+   "data": {
+    "kicker": "-",
+    "title": "Second recording",
+    "meta": "Nov 3",
+    "body": "1. first\n2. second",
+    "cta_text": "Watch",
+    "cta_url": "https://youtu.be/x"
+   },
+   "rowsSha256": "1680f470608f7480cde859464acfca8845a7746c593fdd9757d44a4e84176e01"
+  },
+  {
+   "type": "html",
+   "data": {
+    "html": "<p style=\"color:red\">raw</p>"
+   },
+   "rowsSha256": "9e6983d7e46d72fca873e2a8732f455403103536b986f1ed1f4b121f53bda7a3"
+  },
+  {
+   "type": "feature",
+   "data": {
+    "title": "Linked title",
+    "image_link": "https://x.example/f",
+    "body": "<b>escaped</b> & 'quoted' \"double\""
+   },
+   "rowsSha256": "32028aa5dbf26eab5bdb766420ef89998e0df915a09afde67694d4bcd5c8bde7"
+  }
+ ],
+ "htmlSha256": "b43d842a33f1e51a33203866c7d64a43e01235a508ae0ff4c59e57924600d326"
+}
