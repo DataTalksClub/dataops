@@ -205,6 +205,18 @@ def test_dataops_execution_tables_match_backend_access_patterns():
     assert "AttributeName: taskId" in files
 
 
+def test_artifacts_table_has_only_the_sparse_pending_index_for_guest_backstops():
+    template = TEMPLATE.read_text(encoding="utf-8")
+    table = _resource_block(template, "DataOpsArtifactsTable")
+    backend = _resource_block(template, "BackendFunction")
+
+    assert table.count("IndexName:") == 1
+    assert "IndexName: GSI-Pending" in table
+    assert "AttributeName: pendingKind" in table
+    assert "ProjectionType: ALL" in table
+    assert "!Sub ${DataOpsArtifactsTable.Arn}/index/GSI-Pending" in backend
+
+
 def test_backend_has_no_retired_runtime_template_transaction_permission():
     template = _load_template()
     policies = template["Resources"]["BackendFunction"]["Properties"]["Policies"]
@@ -297,13 +309,13 @@ def test_backend_schedules_are_explicit_identity_stable_resources_with_exact_beh
         },
     }
     for suffix, action, description in [
-        ("GuestEventIntakeResume", "guest-event-intake-resume", "Resume safe pending guest invitations every two minutes."),
-        ("GuestEventAcceptancePoll", "guest-event-acceptance-poll", "Apply guest time choices and poll new proposed guest invitations every two minutes."),
+        ("GuestEventIntakeResume", "guest-event-intake-resume", "Resume safe pending guest invitations every ten minutes as a backstop to the Card stream."),
+        ("GuestEventAcceptancePoll", "guest-event-acceptance-poll", "Apply pending guest time choices and poll new proposed guest invitations every ten minutes."),
     ]:
         name = f"BackendFunction{suffix}"
         schedules[name] = {
             "target": "BackendTargetFunctionName", "description": description,
-            "expression": "rate(2 minutes)", "state": "ENABLED", "target_id": f"{name}LambdaTarget",
+            "expression": "rate(10 minutes)", "state": "ENABLED", "target_id": f"{name}LambdaTarget",
             "input": '{"source":"aws.events","detail-type":"Scheduled Event","detail":{"dataopsAction":"' + action + '"}}',
         }
     for rule_id, expected in schedules.items():

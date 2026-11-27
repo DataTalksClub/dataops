@@ -8,7 +8,7 @@ import { berlinToday } from '../calendar/ownerCalendarOverlay';
 import type { Template, Task, Card } from '../types';
 import { APPROVED_GUEST_EVENT_TYPES } from './guestIntakePolicy';
 import { resolveGuestContact, GuestContactInputError } from './guestContact';
-import { getGuestIntakeJob, guestIntakeKey, type GuestIntakeJob } from './guestIntakeStore';
+import { getGuestIntakeJob, guestIntakeItem, guestIntakeKey, type GuestIntakeJob } from './guestIntakeStore';
 import { putNew, type PlannedWrite } from '../db/plannedWrite';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -70,7 +70,7 @@ export async function prepareGuestIntake(db: DynamoDBDocumentClient, actorId: st
     title: job.topic || (job.guestName ? `${job.guestName}: ${template.name}` : template.name),
     companions(card: Card): PlannedWrite[] {
       job.cardId = card.id;
-      return [putNew(TABLE_ARTIFACTS, guestIntakeKey(id), Object.fromEntries(Object.entries(job).filter(([,v]) => v !== undefined)))];
+      return [putNew(TABLE_ARTIFACTS, guestIntakeKey(id), Object.fromEntries(Object.entries(guestIntakeItem(job)).filter(([,v]) => v !== undefined)))];
     },
     tasks(card: Card): Task[] {
       return [{ id: job.taskId, cardId: card.id, version: 1, taskHistory: [], createdAt: now, updatedAt: now,

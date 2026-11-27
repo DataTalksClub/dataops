@@ -10,7 +10,7 @@ import { provenPreSendFailure } from '../events/guestFirstContactDelivery';
 import { getTaskConsistent } from '../db/tasks';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
-import { getGuestIntakeJob, guestIntakeKey } from '../events/guestIntakeStore';
+import { getGuestIntakeJob, guestIntakeItem } from '../events/guestIntakeStore';
 import { cardEventInterval } from '../calendar/cardEventTime';
 import { adoptCardInvite, adoptEventDate, CardInviteConflictError, CardInviteGoogleError, CardInviteInputError, cardGuests, cardHasHoldInvite, parseCardGuests, syncCardInvite, unlinkCardInvite, verifyCardInvites } from '../calendar/cardInvite';
 import { lumaUrlForEventCard } from '../calendar/lumaEvents';
@@ -466,7 +466,7 @@ async function handleCardRoutes(
           retarget = { requestedDate: body.date, requestedTime: body.time };
         }
       }
-      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, agreedFrom, agreedTo, requestedDate, ...(card.eventTime ? { requestedTime: berlinParts(card.eventTime.startIso).time, timeZone: 'Europe/Berlin' } : {}), ...retarget, status: 'queued', skipEmail, updatedAt: new Date().toISOString() },
+      await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: guestIntakeItem({ ...job, agreedFrom: agreedFrom as string | undefined, agreedTo: agreedTo as string | undefined, requestedDate, ...(card.eventTime ? { requestedTime: berlinParts(card.eventTime.startIso).time, timeZone: 'Europe/Berlin' } : {}), ...retarget, status: 'queued', skipEmail, updatedAt: new Date().toISOString() }),
 
         ConditionExpression: '#s = :prior AND updatedAt = :updated', ExpressionAttributeNames: { '#s': 'status' }, ExpressionAttributeValues: { ':prior': job.status, ':updated': job.updatedAt } }));
       const updated = await updateCardAdditive(client, card, c => ({ ...(requestedDate ? { anchorDate: requestedDate } : {}), guestIntake: { ...c.guestIntake!, status: 'queued', skipEmail } }));
@@ -1208,8 +1208,8 @@ async function handleCardTime(method: string, id: string, rawBody: string | null
       const job = card.guestIntake ? await getGuestIntakeJob(client, card.guestIntake.jobId) : null;
       // Keep the intake job on the same slot so retry never replays the superseded date.
       if (job && job.status !== 'sent') {
-        await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, requestedDate: moved.event.date, requestedTime: moved.event.time,
-          timeZone: moved.event.timeZone, startIso: moved.event.startIso, updatedAt: new Date().toISOString() } }));
+        await client.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: guestIntakeItem({ ...job, requestedDate: moved.event.date, requestedTime: moved.event.time,
+          timeZone: moved.event.timeZone, startIso: moved.event.startIso, updatedAt: new Date().toISOString() }) }));
       }
       const fresh = await getCardConsistent(client, card.id);
       return json(moved.sync.state === 'synced' ? 200 : 502, { ...moved, card: await projectCard(new TeamDirectory(client), fresh || moved.card, undefined, await getTemplateIdByType(client)),

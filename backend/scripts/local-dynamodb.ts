@@ -232,6 +232,10 @@ async function createTables(client: DynamoDBDocumentClient): Promise<void> {
       AttributeDefinitions: [
         { AttributeName: 'PK', AttributeType: 'S' as const },
         { AttributeName: 'SK', AttributeType: 'S' as const },
+        { AttributeName: 'pendingKind', AttributeType: 'S' as const },
+      ],
+      GlobalSecondaryIndexes: [
+        { IndexName: 'GSI-Pending', KeySchema: [{ AttributeName: 'pendingKind', KeyType: 'HASH' as const }], Projection: { ProjectionType: 'ALL' as const } },
       ],
       BillingMode: 'PAY_PER_REQUEST' as const,
     },
