@@ -90,6 +90,10 @@ export async function checkCardLink(
 }
 
 export type PushedCardFields = {
+  title?: string;
+  description?: string;
+  targetUrl?: string;
+  tags?: string[];
   anchorDate?: string;
   issueNumber?: string | null;
   people?: string[];
@@ -112,10 +116,17 @@ export async function pushFieldsToCard(
   if (!card) return null;
   const templateIdByType = await getTemplateIdByType(client);
   const pattern = card.templateId ? (await getTemplate(client, card.templateId))?.cardTitle : undefined;
-  const title = pattern ? renderCardTitle(pattern, titleValues) : '';
+  const title = fields.title ?? (pattern ? renderCardTitle(pattern, titleValues) : '');
   const buildPatch = (current: Card): CardPatch => {
     const view = projected(current, templateIdByType);
     const patch: CardPatch = {};
+    if (fields.description !== undefined && current.description !== fields.description) patch.description = fields.description;
+    if (fields.tags && JSON.stringify(current.tags || []) !== JSON.stringify(fields.tags)) patch.tags = fields.tags;
+    if (fields.targetUrl !== undefined) {
+      const links = (current.cardLinks || []).filter(link => link.name !== 'Target URL');
+      if (fields.targetUrl) links.push({ name: 'Target URL', url: fields.targetUrl });
+      if (JSON.stringify(current.cardLinks || []) !== JSON.stringify(links)) patch.cardLinks = links;
+    }
     if (fields.anchorDate && current.anchorDate !== fields.anchorDate) patch.anchorDate = fields.anchorDate;
     if (fields.issueNumber && current.issueNumber !== fields.issueNumber) patch.issueNumber = fields.issueNumber;
     if (fields.people && JSON.stringify(view.people || []) !== JSON.stringify(fields.people)) {

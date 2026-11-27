@@ -9,7 +9,7 @@ import { cashDate, entryDirection, formatAmount, ledgerDate, monthLabel, monthOf
 import { bookkeepingVendorPresentation } from "./bookkeeping-vendors.js";
 
 // Query parameters the bookkeeping route keeps in the URL.
-export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "tx", "view"];
+export const LEDGER_PARAMS = ["month", "q", "account", "dir", "category", "tx", "view", "invoice"];
 export const SECONDARY_VIEWS = ["files", "package", "invoices", "tuition"];
 
 // The classification columns: "Type" is stored as `subtype`, "Category" as
@@ -171,6 +171,144 @@ export function inLens(entry, lens) {
   if (lens === "all") return true;
   const month = monthOf(entry);
   return /^\d{4}$/.test(lens) ? month.startsWith(lens) : month === lens;
+}
+
+// The bookkeeping route as plain state: lens, filters, the open line item
+// (a transaction id, or an invoice draft id while the invoice review is
+// open) and the secondary view. The list context (month + filters) always
+// travels with the item so Back returns to the same transaction list.
+export function readBookkeepingRoute(search) {
+  const params = new URLSearchParams(search || "");
+  const get = (name) => String(params.get(name) || "").trim();
+  const month = get("month");
+  const view = get("view");
+  return {
+    lens: /^\d{4}(-\d{2})?$/.test(month) || month === "all" ? month : "",
+    filters: filtersFromParams(params),
+    tx: get("tx"),
+    view: SECONDARY_VIEWS.includes(view) ? view : "",
+    invoice: get("invoice"),
+  };
+}
+
+// Plain state -> query string. The default month stays out of the URL; the
+// invoice id only travels while the invoice review is open.
+export function writeBookkeepingRoute({ lens, defaultLens, filters, tx, view, invoice }) {
+  const params = new URLSearchParams();
+  const values = {
+    month: lens === defaultLens ? "" : lens,
+    ...(filters || {}),
+    tx: tx || "",
+    view: view || "",
+    invoice: view === "invoices" ? invoice || "" : "",
+  };
+  for (const name of LEDGER_PARAMS) if (values[name]) params.set(name, values[name]);
+  const query = params.toString();
+  return query ? `?${query}` : "";
+}
+
+// Highlight the open line item in the rendered table.
+export function markSelectedLedgerRow(ledger, selectedId) {
+  ledger.querySelectorAll("[data-tx]").forEach((row) => {
+    if (row.dataset.tx === selectedId) row.setAttribute("aria-selected", "true");
+    else row.removeAttribute("aria-selected");
+  });
+}
+
+// History routing for the bookkeeping surface: the route mirrors the list
+// context (month + filters) and the open item. User navigation (opening a
+// line item, a draft, or a secondary view) pushes a history entry so browser
+// Back returns to the same transaction list; filter keystrokes and
+// re-renders replace in place. The surface owns its mutable state; the
+// router reaches it through accessors so the surface module stays small.
+// openDraft("") leaves the forwarded-invoice list on its own, closing a
+// draft left open by an earlier visit.
+// The address the shell routes to this surface; a history entry anywhere
+// else (another workspace) is the shell's to restore.
+const BOOKKEEPING_PATH = "/bookkeeping";
+// History state of an entry the surface pushed to open an item or a view:
+// the entry below it is where its own back buttons return, as Back does.
+const OPENED_FROM = "bookkeepingOpenedFrom";
+// The router of the bookkeeping surface on screen. The shell renders a new
+// surface for every visit, so a new router retires the previous one instead
+// of leaving it to react to every later Back and Forward.
+let liveRouter = null;
+
+export function createBookkeepingRouter({
+  locationRef, historyRef, getRoute, setRoute, render, findEntry,
+  openEntry, closeEntry, openDraft, isLive,
+}) {
+  // A surface reads and writes history only while it is the one on screen
+  // at the bookkeeping address. The shell renders a new surface for each
+  // route it rebuilds, and a request of the old one can still finish after
+  // that; such a late callback must not rewrite the address, or the entry
+  // of another workspace turns back into /bookkeeping.
+  const ownsHistory = () => Boolean(locationRef)
+    && String(locationRef.pathname || "").replace(/\/+$/, "") === BOOKKEEPING_PATH
+    && (isLive ? Boolean(isLive()) : true);
+  function sync({ push = false } = {}) {
+    if (getRoute().view === "tuition" || !historyRef?.replaceState || !ownsHistory()) return;
+    const { lens, defaultLens, filters, tx, view, invoice } = getRoute();
+    const query = writeBookkeepingRoute({ lens, defaultLens, filters, tx, view, invoice });
+    const next = `${BOOKKEEPING_PATH}${query}`;
+    if (`${locationRef.pathname}${locationRef.search}` === next) return;
+    if (push && historyRef.pushState)
+      historyRef.pushState({ ...historyRef.state, [OPENED_FROM]: true }, "", next);
+    else historyRef.replaceState(historyRef.state, "", next);
+  }
+  // The back button or Close of an item opened from the entry below returns
+  // there, as browser Back does, so Back afterwards does not open it again.
+  // A direct address has no such entry: false, and the caller navigates.
+  function returnToPrevious() {
+    if (!ownsHistory() || !historyRef?.back || !historyRef.state?.[OPENED_FROM]) return false;
+    historyRef.back();
+    return true;
+  }
+  // Browser Back/Forward restores the route (list context + open item)
+  // without reloading the surface. Back to another workspace is the shell's.
+  function restore() {
+    if (!ownsHistory()) return;
+    const route = readBookkeepingRoute(locationRef.search);
+    // Tuition keeps its own history entries.
+    if (route.view === "tuition") return;
+    setRoute(route);
+    render();
+    const entry = route.tx ? findEntry(route.tx) : null;
+    if (entry) openEntry(entry);
+    else closeEntry();
+    sync();
+    if (route.view === "invoices") void openDraft(route.invoice);
+  }
+  const lifetime = new AbortController();
+  if (typeof globalThis.addEventListener === "function")
+    globalThis.addEventListener("popstate", restore, { signal: lifetime.signal });
+  liveRouter?.retire();
+  liveRouter = { sync, returnToPrevious, retire: () => lifetime.abort() };
+  return liveRouter;
+}
+
+// What a click inside the ledger should do, without touching history or
+// rendering: open a document, clear the filters, open a transaction line
+// item, or open one pending invoice draft for review. Form controls and
+// sponsor deal links keep their own behavior.
+export function ledgerClickAction(target) {
+  if (!target?.closest) return null;
+  const documentId = target.closest("[data-view-document]")?.dataset.viewDocument;
+  if (documentId) return { action: "document", id: documentId };
+  if (target.closest("[data-clear-filters]")) return { action: "clear-filters" };
+  // Both the counterparty link and the invoice-count icon open the line
+  // item: anchors (allocation children) as well as buttons.
+  const opener = target.closest("[data-open-tx]");
+  if (opener?.dataset.openTx) return { action: "transaction", id: opener.dataset.openTx };
+  if (target.closest("select, button, input, a[data-deal-link]")) return null;
+  const draft = target.closest("[data-open-invoice-review]") || target.closest("[data-pending-invoice]");
+  if (draft) {
+    const id = draft.dataset.openInvoiceReview || draft.dataset.pendingInvoice;
+    if (id) return { action: "invoice", id };
+  }
+  const row = target.closest("[data-tx]");
+  if (row?.dataset.tx) return { action: "transaction", id: row.dataset.tx };
+  return null;
 }
 
 const BANK_ONLY_EXCEPTION_LABELS = {

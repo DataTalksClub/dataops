@@ -303,6 +303,18 @@ export function createSponsorPipelineLifecycle({
       rememberListParams("pipeline", params);
       navigateCanonicalWorkspace(sponsorsPath("pipeline"), params, { render: false, history: "replace" });
     },
+    // The one view selector names the list on screen: with no saved view
+    // pinned, controls that exactly equal a built-in view read as that view.
+    matchingBuiltinViewId() {
+      if (pipeline.baseViewId || pipeline.org || !pipeline.views) return null;
+      const controls = pipeline.controlValues();
+      const keys = Object.keys(controls);
+      return pipeline.views.find((view) => {
+        if (!isBuiltinView(view)) return false;
+        const mapped = pipelineControlsFromFilters(view.filters, view.sort);
+        return keys.every((key) => (mapped[key] ?? "") === controls[key]);
+      })?.id ?? null;
+    },
     renderViews() {
       const slot = surface.querySelector("[data-pipeline-views]");
       if (!slot) return;
@@ -310,7 +322,7 @@ export function createSponsorPipelineLifecycle({
         entity: "pipeline",
         views: pipeline.views,
         viewsError: pipeline.viewsError,
-        selectedViewId: pipeline.savedViewId,
+        selectedViewId: pipeline.savedViewId ?? pipeline.matchingBuiltinViewId(),
         updateViewId: pipeline.baseViewId,
         modified: pipeline.modified,
         escapeHtml,
@@ -395,8 +407,8 @@ export function createSponsorPipelineLifecycle({
       if (pipeline.savedViewId || pipeline.baseViewId) {
         pipeline.savedViewId = null;
         pipeline.modified = Boolean(pipeline.baseViewId);
-        pipeline.renderViews();
       }
+      pipeline.renderViews();
       reload();
     },
     load(reset = true, extra = {}) {

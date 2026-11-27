@@ -10,7 +10,7 @@ import { createSponsorMoney } from "./sponsor-money.js";
 import { renderSponsorBookingAlerts } from "./sponsor-alerts.js";
 import { createSponsorCompanyDetail } from "./sponsor-company-detail.js";
 import { sponsorSurfaceMarkup } from "./sponsor-layout.js";
-import { SPONSOR_PIPELINE_STAGES, createSponsorPipelineView } from "./sponsor-pipeline.js";
+import { createSponsorPipelineView } from "./sponsor-pipeline.js";
 import { createCollectionLoader } from "../../core/collection-loader.js";
 import { sponsorRecordPath, sponsorsPath } from "../../core/sponsor-routes.js";
 import { html } from "./shared.js";
@@ -123,9 +123,6 @@ export function createSponsorCrmSurface(context) {
     });
     documentList.append(surface);
     surface.querySelector("[data-crm-bookings]").classList.add("crm-funnel");
-    surface.querySelector("[data-crm-status]").innerHTML = html`<option value="">All stages</option>${
-      SPONSOR_PIPELINE_STAGES.map(({ id, label }) => html`<option value="${id}">${label}</option>`).join("")
-    }`;
     setRouteTitle("CRM");
     const api = (path, options = {}) =>
         request(workApiUrl(`/api/sponsor-crm${path}`), {
@@ -294,11 +291,15 @@ export function createSponsorCrmSurface(context) {
         else link.removeAttribute("aria-current");
       });
       const more = surface.querySelector("[data-crm-nav-more]");
-      const moreCurrent = ["leads", "newsletters", "money"].includes(view);
       if (more) {
-        // The secondary menu never hangs open over another tab's content.
-        if (moreCurrent) more.setAttribute("open", "");
-        else more.removeAttribute("open");
+        // More is an overlay dropdown: it closes on every tab switch and its
+        // label names the active secondary page, so a tab is always current.
+        const current = more.querySelector(`[data-crm-nav-tab="${view}"]`);
+        const label = more.querySelector("[data-crm-nav-more-label]");
+        more.removeAttribute("open");
+        label.textContent = current ? current.textContent : "More";
+        if (current) label.setAttribute("aria-current", "page");
+        else label.removeAttribute("aria-current");
       }
       const pipeline = surface.querySelector("[data-crm-bookings]");
       const companies = surface.querySelector('[data-dir-root="companies"]');
@@ -318,7 +319,6 @@ export function createSponsorCrmSurface(context) {
       const pipelineSummary = surface.querySelector("[data-crm-pipeline-summary]");
       if (pipelineSummary) pipelineSummary.hidden = view !== "pipeline";
       surface.querySelector("[data-crm-pipeline]").hidden = view !== "pipeline";
-      surface.querySelector(".crm-funnel-scope").hidden = view !== "pipeline";
       surface.querySelector(".crm-funnel-controls").hidden = view !== "pipeline";
       surface.querySelector(".crm-filter-disclosure").hidden = view !== "pipeline";
       const heading = surface.querySelector("[data-crm-list-heading]");
@@ -585,6 +585,10 @@ export function createSponsorCrmSurface(context) {
     surface.querySelectorAll("[data-crm-search],[data-crm-status]").forEach((input) =>
       input.addEventListener("input", () => pipelineControlsChanged(schedulePipeline)),
     );
+    surface.addEventListener("click", (event) => {
+      const more = surface.querySelector("[data-crm-nav-more]");
+      if (more?.open && !event.target.closest("[data-crm-nav-more]")) more.removeAttribute("open");
+    });
     surface.querySelector("[data-crm-nav]").addEventListener("click", (event) => {
       const link = event.target.closest("[data-crm-nav-tab]");
       // Tabs are links: a modified click opens the tab's URL in a new tab.

@@ -179,7 +179,7 @@ export function validateViewInput(body: Record<string, unknown>): string {
 type Builtin = { id: string; entity: ViewEntity; name: string; filters: Filters; sort?: Record<string, string> };
 
 const BUILTINS: Builtin[] = [
-  { id: 'builtin:companies:active', entity: 'companies', name: 'Active', filters: { active: 'true' }, sort: { field: 'name', direction: 'asc' } },
+  { id: 'builtin:companies:active', entity: 'companies', name: 'Active', filters: { active: 'true' }, sort: { field: 'lastTouch', direction: 'desc' } },
   { id: 'builtin:companies:all', entity: 'companies', name: 'All', filters: { active: 'all' }, sort: { field: 'name', direction: 'asc' } },
   { id: 'builtin:companies:recent', entity: 'companies', name: 'Recently contacted', filters: { active: 'true', lastTouchAfter: { daysAgo: 30 } }, sort: { field: 'lastTouch', direction: 'desc' } },
   { id: 'builtin:companies:stale', entity: 'companies', name: 'No recent contact', filters: { active: 'true', lastTouchBefore: { daysAgo: 30 } }, sort: { field: 'lastTouch', direction: 'desc' } },

@@ -16,7 +16,7 @@ test("funnel renders compact rows grouped by commitments and opportunities, with
   assert.match(markup, /Synthetic &lt;Sponsor&gt;/);
   assert.match(markup, /Test Person · test@example.test/);
   assert.match(markup, /Confirm the date/);
-  assert.match(markup, /Review newer inbound/);
+  assert.match(markup, /Newer inbound to review/);
   assert.match(markup, /data-open-deal="agreed"/);
   assert.doesNotMatch(markup, /crm-pipeline-card/);
   assert.deepEqual(items, before);
@@ -29,6 +29,17 @@ test("funnel totals are server-wide rather than page counts and include closed/l
   assert.match(markup, /data-pipeline-status="agreed" aria-pressed="true"/);
 });
 
+test("chips show the deals the current view lists, and say when it hides some", async () => {
+  const { pipelineChipCount, pipelineMatchSummary } = await import("../src/surfaces/finance/sponsor-pipeline.js");
+  const counts = { invoiced: 18, agreed: 2 }, viewCounts = { invoiced: 5, agreed: 2 };
+  assert.equal(pipelineChipCount(counts, viewCounts, "invoiced"), "5 of 18");
+  assert.equal(pipelineChipCount(counts, viewCounts, "agreed"), "2");
+  assert.equal(pipelineChipCount(counts, undefined, "invoiced"), "18");
+  assert.match(renderSponsorPipelineFilters({ counts, viewCounts, selected: "", escapeHtml }), /Invoiced <strong>5 of 18/);
+  assert.equal(pipelineMatchSummary({ total: 6, totalDeals: 78 }), "6 matching deals · 78 deals in total");
+  assert.equal(pipelineMatchSummary({ total: 1, totalDeals: 1 }), "1 matching deal");
+});
+
 test("Sponsors creates ride on their collections, never the page header", async () => {
   const { sponsorSurfaceMarkup } = await import("../src/surfaces/finance/sponsor-layout.js");
   const markup = sponsorSurfaceMarkup((value) => value);
@@ -39,8 +50,16 @@ test("Sponsors creates ride on their collections, never the page header", async 
   assert.match(markup, /crm-list-head">[\s\S]*?data-crm-list-heading>Pipeline<\/h2>\s*<button[^>]*data-dk-create[^>]*data-add-deal/);
   assert.match(markup, /dk-collection-header__trail">[\s\S]*?data-booking-count[\s\S]*?data-evaluate-communications\s+aria-label="Refresh suggestions"/);
   // Stage totals and scope note are grouped in one summary; search & primary controls sit in the toolbar.
-  assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline[\s\S]*?crm-funnel-scope/);
-  assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?data-pipeline-view[\s\S]*?crm-filter-disclosure[\s\S]*?data-crm-status/);
+  assert.match(markup, /data-crm-pipeline-summary[\s\S]*?data-crm-pipeline/);
+  assert.match(markup, /crm-pipeline-toolbar[\s\S]*?data-crm-search[\s\S]*?crm-filter-disclosure/);
+  // One view selector: the saved-view bar. View and Stage are hidden state
+  // carriers, not visible duplicates; stage is filtered by the chips only.
+  assert.match(markup, /<input data-pipeline-view type="hidden"/);
+  assert.match(markup, /<input data-crm-status type="hidden"/);
+  const toolbar = markup.slice(markup.indexOf("crm-pipeline-toolbar"), markup.indexOf("data-crm-list-scroll"));
+  assert.doesNotMatch(toolbar, /<select data-pipeline-view|<select data-crm-status|Show </);
+  const disclosure = toolbar.slice(toolbar.indexOf("crm-filter-disclosure"), toolbar.indexOf("data-pipeline-views"));
+  assert.doesNotMatch(disclosure, /Stage/);
   // Add company follows the Companies title.
   assert.match(markup, /Companies<\/h3>\s*<button[^>]*data-dk-create[^>]*data-add-org/);
 });
@@ -89,7 +108,7 @@ test('newer inbound stays the visible attention reason while a task is deferred'
       nextTask: { id: 'task', description: 'Wait for material', deferred: true, date: '2026-11-01' } }],
     escapeHtml, humanSponsorDate: (value) => value, ownerName: () => 'Owner',
   });
-  assert.match(markup, /Review newer inbound \(inferred\)/);
+  assert.match(markup, /Newer inbound to review/);
   assert.match(markup, /Inbound 2026-10-17/);
   assert.match(markup, /Deferred task: Wait for material/);
   const noInbound = renderSponsorPipelineList({ items: [{ id: 'deal', organizationName: 'Synthetic', stage: 'agreed',
@@ -124,4 +143,12 @@ test("narrow CRM tabs keep the folded alerts bar full width instead of shrinking
   assert.ok(rule, "responsive.css must style the direct .crm-alerts child of the CRM surface");
   assert.match(rule[1], /flex:\s*1 1 100%/);
   assert.match(rule[1], /min-width:\s*0/);
+});
+
+test('pipeline rows show a missing primary contact only where it is actionable', () => {
+  const ctx = { escapeHtml, humanSponsorDate: (v) => v, ownerName: () => 'Owner' };
+  const early = renderSponsorPipelineList({ items: [{ id: 'a', organizationName: 'A', stage: 'open' }], ...ctx });
+  assert.doesNotMatch(early, /No primary contact/);
+  const agreed = renderSponsorPipelineList({ items: [{ id: 'b', organizationName: 'B', stage: 'agreed' }], ...ctx });
+  assert.match(agreed, /No primary contact/);
 });

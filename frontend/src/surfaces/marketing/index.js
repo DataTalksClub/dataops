@@ -1,0 +1,758 @@
+import { escapeHtml } from "../../core/html.js";
+import { goalDetailMarkup, stepDetailMarkup } from "./detail.js";
+import { metricsSurfaceMarkup } from "./metrics.js";
+import { planDetailMarkup, planListMarkup } from "./plans.js";
+import { weeklyReviewMarkup } from "./review.js";
+import {
+  berlinToday,
+  html,
+  normalizeGoalPayload,
+  normalizePlanPayload,
+  normalizePlansPayload,
+  normalizeSnapshotsPayload,
+  normalizeStepPayload,
+  normalizeStepsPayload,
+  seriesKeyForGoal,
+} from "./shared.js";
+
+function isPlainLeftClick(event) {
+  return (
+    event.button === 0 &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !event.altKey
+  );
+}
+
+function formatApiError(error, fallback) {
+  if (error?.status === 404) {
+    return "Marketing API is not available yet (404).";
+  }
+  return error?.message || fallback;
+}
+
+function isoWeek(date) {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + 4 - (day.getUTCDay() || 7));
+  const year = day.getUTCFullYear();
+  const week = Math.ceil(((+day - Date.UTC(year, 0, 1)) / 86400000 + 1) / 7);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+}
+
+export function createMarketingSurface(context) {
+  const {
+    documentList,
+    documentRef,
+    getActiveWorkspaceRoute,
+    navigateCanonicalWorkspace,
+    request,
+    setRouteTitle,
+    todayIsoDate,
+    workApiUrl,
+  } = context;
+
+  let generation = 0;
+
+  async function renderMarketingSurface() {
+    const doc = documentRef || globalThis.document;
+    const route = getActiveWorkspaceRoute?.() || { path: "/marketing", params: new URLSearchParams() };
+    const path = route.path || "/marketing";
+    const params = route.pathParams || {};
+    const query = route.params || new URLSearchParams();
+    const today = typeof todayIsoDate === "function" ? todayIsoDate() : berlinToday();
+    const mine = ++generation;
+
+    documentList.replaceChildren();
+    const surface = doc.createElement("section");
+    surface.className = "mkt-surface";
+    const body = doc.createElement("div");
+    body.className = "mkt-body";
+    body.setAttribute("aria-live", "polite");
+    body.innerHTML = html`<p class="mkt-muted">Loading…</p>`;
+    const tooltip = doc.createElement("div");
+    tooltip.className = "mkt-tooltip";
+    tooltip.setAttribute("role", "status");
+    tooltip.hidden = true;
+    surface.append(body, tooltip);
+    documentList.append(surface);
+
+    let currentPlan = null;
+    let currentSteps = [];
+    let currentGoalSeriesMap = new Map();
+    let activeStepTab = "all";
+    let currentStep = null;
+    let currentUtmResult = "";
+    let currentBacklinks = [];
+    let currentMetricsStatus = "";
+
+    async function fetchSeriesForGoal(goal) {
+      if (!goal?.metricKey || !goal?.scope) return [];
+      try {
+        const payload = await request(
+          workApiUrl("/api/marketing/metrics", {
+            metricKey: goal.metricKey,
+            scope: goal.scope,
+            ...(goal.source ? { source: goal.source } : {}),
+          }),
+        );
+        return normalizeSnapshotsPayload(payload);
+      } catch {
+        return [];
+      }
+    }
+
+    async function loadPlanList() {
+      setRouteTitle("Marketing");
+      try {
+        const [plansResult, stepsResult] = await Promise.allSettled([
+          request(workApiUrl("/api/marketing/plans")),
+          request(workApiUrl("/api/marketing/steps", { week: isoWeek(today) })),
+        ]);
+        if (mine !== generation) return;
+        if (plansResult.status === "rejected") throw plansResult.reason;
+        const plans = normalizePlansPayload(plansResult.value);
+        const dueSteps = stepsResult.status === "fulfilled"
+          ? normalizeStepsPayload(stepsResult.value) : null;
+        const loadError = stepsResult.status === "rejected"
+          ? `Due this week is unavailable. ${formatApiError(stepsResult.reason, "Could not load marketing steps.")}`
+          : "";
+        body.innerHTML = planListMarkup(plans, today, loadError, dueSteps);
+      } catch (error) {
+        if (mine !== generation) return;
+        body.innerHTML = planListMarkup([], today, formatApiError(error, "Could not load marketing plans."));
+      }
+    }
+
+    async function loadPlanDetail(planId) {
+      setRouteTitle(`Marketing · ${planId}`);
+      try {
+        const payload = await request(
+          workApiUrl(`/api/marketing/plans/${encodeURIComponent(planId)}`),
+        );
+        if (mine !== generation) return;
+        const plan = normalizePlanPayload(payload);
+        if (!plan) {
+          body.innerHTML = html`<p class="dk-callout dk-callout--warning">Plan not found.</p>`;
+          return;
+        }
+        setRouteTitle(`Marketing · ${plan.title || plan.id}`);
+
+        let steps = Array.isArray(plan.steps) ? plan.steps : null;
+        if (!steps) {
+          try {
+            const stepsPayload = await request(
+              workApiUrl("/api/marketing/steps", { plan: plan.id }),
+            );
+            steps = normalizeStepsPayload(stepsPayload);
+          } catch {
+            steps = [];
+          }
+        }
+        if (mine !== generation) return;
+
+        const seriesMap = new Map();
+        const goalsNeedingSeries = (plan.goals || []).filter(
+          (g) => !Array.isArray(g.snapshots) && !Array.isArray(g.series),
+        );
+        if (goalsNeedingSeries.length) {
+          const results = await Promise.all(
+            goalsNeedingSeries.map(async (g) => [seriesKeyForGoal(g), await fetchSeriesForGoal(g)]),
+          );
+          for (const [key, series] of results) seriesMap.set(key, series);
+        }
+        if (mine !== generation) return;
+
+        currentPlan = plan;
+        currentSteps = steps;
+        currentGoalSeriesMap = seriesMap;
+        body.innerHTML = planDetailMarkup(plan, steps, seriesMap, activeStepTab);
+      } catch (error) {
+        if (mine !== generation) return;
+        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">
+          ${escapeHtml(formatApiError(error, "Could not load plan."))}
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+        </div>`;
+      }
+    }
+
+    async function loadGoalDetail(planId, goalRef) {
+      setRouteTitle(`Marketing · ${goalRef}`);
+      try {
+        const [goalResult, planResult, stepsResult] = await Promise.allSettled([
+          request(
+            workApiUrl(
+              `/api/marketing/plans/${encodeURIComponent(planId)}/goals/${encodeURIComponent(goalRef)}`,
+            ),
+          ),
+          request(workApiUrl(`/api/marketing/plans/${encodeURIComponent(planId)}`)),
+          request(workApiUrl("/api/marketing/steps", { plan: planId })),
+        ]);
+        if (mine !== generation) return;
+
+        const plan =
+          planResult.status === "fulfilled" ? normalizePlanPayload(planResult.value) : null;
+        let goal = null;
+        let snapshots = [];
+
+        if (goalResult.status === "fulfilled") {
+          const normalized = normalizeGoalPayload(goalResult.value);
+          goal = normalized?.goal || null;
+          snapshots = normalized?.snapshots || [];
+        } else if (plan) {
+          goal = (plan.goals || []).find((g) => g.ref === goalRef) || null;
+        }
+
+        if (!goal) {
+          const msg =
+            goalResult.status === "rejected"
+              ? formatApiError(goalResult.reason, "Goal not found.")
+              : "Goal not found.";
+          body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">${escapeHtml(msg)}</div>`;
+          return;
+        }
+
+        if (!snapshots.length) {
+          snapshots = await fetchSeriesForGoal(goal);
+          if (mine !== generation) return;
+        }
+
+        const allSteps =
+          stepsResult.status === "fulfilled" ? normalizeStepsPayload(stepsResult.value) : [];
+        const publishedSteps = allSteps.filter((s) => {
+          const isPublished = s.status === "published" || s.status === "done" || Boolean(s.publishedAt);
+          if (!isPublished) return false;
+          if (Array.isArray(s.goalRefs) && s.goalRefs.length) {
+            return s.goalRefs.includes(goalRef);
+          }
+          return true;
+        });
+
+        setRouteTitle(`Marketing · ${goal.title || goal.ref}`);
+        body.innerHTML = goalDetailMarkup(plan, goal, snapshots, publishedSteps);
+      } catch (error) {
+        if (mine !== generation) return;
+        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">
+          ${escapeHtml(formatApiError(error, "Could not load goal."))}
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+        </div>`;
+      }
+    }
+
+    async function loadStepDetail(stepId) {
+      setRouteTitle(`Marketing · ${stepId}`);
+      try {
+        const payload = await request(
+          workApiUrl(`/api/marketing/steps/${encodeURIComponent(stepId)}`),
+        );
+        if (mine !== generation) return;
+        const step = normalizeStepPayload(payload);
+        if (!step) {
+          body.innerHTML = html`<p class="dk-callout dk-callout--warning">Step not found.</p>`;
+          return;
+        }
+        currentStep = step;
+        let plan = payload?.plan || null;
+        if (!plan && step.planId) {
+          try {
+            plan = normalizePlanPayload(
+              await request(workApiUrl(`/api/marketing/plans/${encodeURIComponent(step.planId)}`)),
+            );
+          } catch {
+            plan = null;
+          }
+        }
+        if (mine !== generation) return;
+        setRouteTitle(`Marketing · ${step.title || step.id}`);
+        body.innerHTML = stepDetailMarkup(step, plan, currentUtmResult);
+      } catch (error) {
+        if (mine !== generation) return;
+        body.innerHTML = html`<div class="dk-callout dk-callout--warning" role="status">
+          ${escapeHtml(formatApiError(error, "Could not load step."))}
+          <button type="button" class="dk-button dk-button--secondary dk-button--sm" data-mkt-retry>Retry</button>
+        </div>`;
+      }
+    }
+
+    async function loadWeeklyReview() {
+      setRouteTitle("Marketing · Weekly Review");
+      const week = query?.get?.("week") || "";
+      try {
+        const review = await request(workApiUrl("/api/marketing/review", week ? { week } : {}));
+        if (mine !== generation) return;
+        body.innerHTML = weeklyReviewMarkup(review);
+      } catch (error) {
+        if (mine !== generation) return;
+        body.innerHTML = weeklyReviewMarkup(
+          null,
+          formatApiError(error, "Could not load weekly review."),
+        );
+      }
+    }
+
+    async function loadMetricsView(statusMessage = currentMetricsStatus) {
+      setRouteTitle("Marketing · Site Metrics & Links");
+      try {
+        const [sitesResult, backlinksResult] = await Promise.allSettled([
+          request(workApiUrl("/api/marketing/sites")),
+          request(workApiUrl("/api/marketing/backlinks")),
+        ]);
+        if (mine !== generation) return;
+        const sitesPayload =
+          sitesResult.status === "fulfilled"
+            ? sitesResult.value
+            : { items: [], ahrefsConfigured: false };
+        const backlinksPayload =
+          backlinksResult.status === "fulfilled"
+            ? backlinksResult.value
+            : { items: [], summary: {}, groups: {} };
+        currentBacklinks = Array.isArray(backlinksPayload.items) ? backlinksPayload.items : [];
+        const errors = [];
+        if (sitesResult.status === "rejected") {
+          errors.push(formatApiError(sitesResult.reason, "Could not load tracked websites."));
+        }
+        if (backlinksResult.status === "rejected") {
+          errors.push(formatApiError(backlinksResult.reason, "Could not load backlink audit."));
+        }
+        body.innerHTML = metricsSurfaceMarkup(
+          sitesPayload,
+          backlinksPayload,
+          statusMessage,
+          errors.join(" "),
+          today,
+        );
+      } catch (error) {
+        if (mine !== generation) return;
+        body.innerHTML = metricsSurfaceMarkup(
+          { items: [], ahrefsConfigured: false },
+          { items: [], summary: {}, groups: {} },
+          "",
+          formatApiError(error, "Could not load marketing metrics."),
+          today,
+        );
+      }
+    }
+
+    async function loadCurrentRoute() {
+      if (path === "/marketing/review") return loadWeeklyReview();
+      if (path === "/marketing/metrics") return loadMetricsView();
+      const planId = query?.get?.("planId") || params.planId;
+      const goalRef = query?.get?.("goalRef") || params.goalRef;
+      const stepId = query?.get?.("stepId") || params.stepId;
+      if (planId && goalRef) return loadGoalDetail(planId, goalRef);
+      if (planId) return loadPlanDetail(planId);
+      if (stepId) return loadStepDetail(stepId);
+      return loadPlanList();
+    }
+
+    surface.addEventListener("click", (event) => {
+      const link = event.target.closest?.("a[data-mkt-nav]");
+      if (link && isPlainLeftClick(event)) {
+        event.preventDefault();
+        navigateCanonicalWorkspace(link.getAttribute("href"));
+        return;
+      }
+
+      const stepTab = event.target.closest?.("[data-mkt-step-tab]");
+      if (stepTab && currentPlan) {
+        activeStepTab = stepTab.getAttribute("data-mkt-step-tab") || "all";
+        body.innerHTML = planDetailMarkup(
+          currentPlan,
+          currentSteps,
+          currentGoalSeriesMap,
+          activeStepTab,
+        );
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-new-plan]")) {
+        surface.querySelector("[data-mkt-new-plan-dialog]")?.showModal?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-add-step]")) {
+        surface.querySelector("[data-mkt-add-step-dialog]")?.showModal?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-add-site]")) {
+        surface.querySelector("[data-mkt-add-site-dialog]")?.showModal?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-record-authority]")) {
+        surface.querySelector("[data-mkt-record-authority-dialog]")?.showModal?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-open-add-backlink]")) {
+        surface.querySelector("[data-mkt-add-backlink-dialog]")?.showModal?.();
+        return;
+      }
+
+      const removeSiteBtn = event.target.closest?.("[data-mkt-remove-site]");
+      if (removeSiteBtn) {
+        const domain = removeSiteBtn.getAttribute("data-mkt-remove-site");
+        const ver = Number(removeSiteBtn.getAttribute("data-mkt-version") || "1");
+        request(workApiUrl(`/api/marketing/sites/${encodeURIComponent(domain)}`, { version: ver }), {
+          method: "DELETE",
+        })
+          .then(() => {
+            currentMetricsStatus = `Removed tracked site ${domain}.`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not remove site.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      const refreshDrBtn = event.target.closest?.("[data-mkt-refresh-dr]");
+      if (refreshDrBtn) {
+        const domain = refreshDrBtn.getAttribute("data-mkt-refresh-dr");
+        request(
+          workApiUrl(`/api/marketing/sites/${encodeURIComponent(domain)}/refresh-authority`),
+          { method: "POST", body: JSON.stringify({}) },
+        )
+          .then((res) => {
+            currentMetricsStatus =
+              res?.status === "ok"
+                ? `Updated Ahrefs DR for ${domain}: ${res.snapshot?.value}/100.`
+                : `${domain}: ${res?.reason || "Ahrefs refresh unavailable."}`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not refresh authority.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      const checkOneBtn = event.target.closest?.("[data-mkt-check-backlink]");
+      if (checkOneBtn) {
+        const pairId = checkOneBtn.getAttribute("data-mkt-check-backlink");
+        request(workApiUrl("/api/marketing/backlinks/check"), {
+          method: "POST",
+          body: JSON.stringify({ ids: [pairId] }),
+        })
+          .then(() => {
+            currentMetricsStatus = `Checked link pair ${pairId}.`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not check link pair.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      const removeBacklinkBtn = event.target.closest?.("[data-mkt-remove-backlink]");
+      if (removeBacklinkBtn) {
+        const pairId = removeBacklinkBtn.getAttribute("data-mkt-remove-backlink");
+        const ver = Number(removeBacklinkBtn.getAttribute("data-mkt-version") || "1");
+        request(
+          workApiUrl(`/api/marketing/backlinks/${encodeURIComponent(pairId)}`, { version: ver }),
+          { method: "DELETE" },
+        )
+          .then(() => {
+            currentMetricsStatus = `Removed link pair ${pairId}.`;
+            return loadMetricsView();
+          })
+          .catch((error) => {
+            currentMetricsStatus = formatApiError(error, "Could not remove link pair.");
+            return loadMetricsView();
+          });
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-run-backlink-audit]")) {
+        const ids = currentBacklinks.map((item) => item.id);
+        if (!ids.length) {
+          currentMetricsStatus = "No backlink pairs registered to check.";
+          loadMetricsView();
+          return;
+        }
+        (async () => {
+          try {
+            let checked = 0;
+            for (let i = 0; i < ids.length; i += 10) {
+              const slice = ids.slice(i, i + 10);
+              const res = await request(workApiUrl("/api/marketing/backlinks/check"), {
+                method: "POST",
+                body: JSON.stringify({ ids: slice }),
+              });
+              checked += res?.checked || slice.length;
+            }
+            currentMetricsStatus = `Backlink audit finished (${checked} pairs checked).`;
+          } catch (error) {
+            currentMetricsStatus = formatApiError(error, "Backlink audit failed.");
+          }
+          await loadMetricsView();
+        })();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-close-dialog]")) {
+        event.target.closest("dialog")?.close?.();
+        return;
+      }
+
+      if (event.target.closest?.("[data-mkt-retry]")) {
+        loadCurrentRoute();
+        return;
+      }
+
+    });
+
+    surface.addEventListener("submit", async (event) => {
+      const form = event.target;
+      event.preventDefault();
+      if (form.dataset?.pending) return;
+      if (form.dataset) form.dataset.pending = "true";
+      surface.querySelector("[data-mkt-write-error]")?.remove();
+      try {
+        if (form.matches?.("[data-mkt-new-plan-form]")) {
+          event.preventDefault();
+          const data = new FormData(form);
+          const tagsRaw = String(data.get("tags") || "");
+          const tags = tagsRaw
+            .split(",")
+            .map((t) => t.trim())
+            .filter(Boolean);
+          await request(workApiUrl("/api/marketing/plans"), {
+            method: "POST",
+            body: JSON.stringify({
+              id: String(data.get("id") || "").trim(),
+              title: String(data.get("title") || "").trim(),
+              objective: String(data.get("objective") || "").trim() || undefined,
+              startDate: String(data.get("startDate") || "").trim() || undefined,
+              endDate: String(data.get("endDate") || "").trim() || undefined,
+              tags,
+            }),
+          });
+          form.closest("dialog")?.close?.();
+          await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-add-step-form]") && currentPlan) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/plans/${encodeURIComponent(currentPlan.id)}/steps`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentPlan.version,
+                title: String(data.get("title") || "").trim(),
+                targetType: String(data.get("targetType") || "new"),
+                kind: String(data.get("kind") || "content"),
+                size: String(data.get("size") || "S"),
+                targetUrl: String(data.get("targetUrl") || "").trim() || undefined,
+                primaryKeyword: String(data.get("primaryKeyword") || "").trim() || undefined,
+                doneCriteria: String(data.get("doneCriteria") || "").trim(),
+                brief: String(data.get("brief") || "").trim() || undefined,
+              }),
+            },
+          );
+          form.closest("dialog")?.close?.();
+          await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-note-form]") && currentPlan) {
+          event.preventDefault();
+          const data = new FormData(form);
+          const text = String(data.get("text") || "").trim();
+          if (!text) return;
+          const ref = String(data.get("ref") || "").trim() || undefined;
+          await request(
+            workApiUrl(`/api/marketing/plans/${encodeURIComponent(currentPlan.id)}/notes`),
+            {
+              method: "POST",
+              body: JSON.stringify({ text, ref, version: currentPlan.version }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-schedule-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/schedule`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentStep.version,
+                ...Object.fromEntries(["template", "assignee", "linkCardId", "publishTaskId", "campaignRowId"]
+                  .map((key) => [key, String(data.get(key) || "").trim() || undefined])),
+                publishDate: String(data.get("publishDate") || ""),
+                mode: String(data.get("mode") || "card"),
+              }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-live-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/live`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentStep.version,
+                url: String(data.get("url") || "").trim() || undefined,
+                date: String(data.get("date") || "").trim() || undefined,
+              }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-drop-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/drop`),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                version: currentStep.version,
+                reason: String(data.get("reason") || "").trim(),
+              }),
+            },
+          );
+          await loadCurrentRoute();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-add-site-form]")) {
+          const data = new FormData(form);
+          await request(workApiUrl("/api/marketing/sites"), {
+            method: "POST",
+            body: JSON.stringify({
+              domain: String(data.get("domain") || "").trim(),
+              label: String(data.get("label") || "").trim() || undefined,
+              notes: String(data.get("notes") || "").trim() || undefined,
+            }),
+          });
+          form.closest("dialog")?.close?.();
+          currentMetricsStatus = `Added tracked site ${String(data.get("domain") || "").trim()}.`;
+          await loadMetricsView();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-record-authority-form]")) {
+          const data = new FormData(form);
+          const domain = String(data.get("domain") || "").trim().toLowerCase();
+          const metricKey = String(data.get("metricKey") || "domain_rating");
+          const provider =
+            metricKey === "domain_rating"
+              ? "ahrefs"
+              : metricKey === "moz_da"
+                ? "moz"
+                : metricKey === "seranking_da"
+                  ? "seranking"
+                  : undefined;
+          await request(workApiUrl("/api/marketing/metrics"), {
+            method: "POST",
+            body: JSON.stringify({
+              metricKey,
+              scope: `domain:${domain}`,
+              source: String(data.get("source") || "manual"),
+              period: String(data.get("period") || today),
+              value: Number(data.get("value")),
+              observedAt: new Date().toISOString(),
+              ...(provider ? { provider } : {}),
+              ...(String(data.get("metricVersion") || "").trim()
+                ? { metricVersion: String(data.get("metricVersion")).trim() }
+                : {}),
+              ...(String(data.get("evidenceUrl") || "").trim()
+                ? { evidenceUrl: String(data.get("evidenceUrl")).trim() }
+                : {}),
+              ...(String(data.get("note") || "").trim()
+                ? { note: String(data.get("note")).trim() }
+                : {}),
+            }),
+          });
+          form.closest("dialog")?.close?.();
+          currentMetricsStatus = `Recorded ${metricKey} for ${domain}.`;
+          await loadMetricsView();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-add-backlink-form]")) {
+          const data = new FormData(form);
+          await request(workApiUrl("/api/marketing/backlinks"), {
+            method: "POST",
+            body: JSON.stringify({
+              sourceUrl: String(data.get("sourceUrl") || "").trim(),
+              targetUrl: String(data.get("targetUrl") || "").trim(),
+              outreachState: String(data.get("outreachState") || "not_contacted"),
+              owner: String(data.get("owner") || "").trim() || undefined,
+              notes: String(data.get("notes") || "").trim() || undefined,
+            }),
+          });
+          form.closest("dialog")?.close?.();
+          currentMetricsStatus = "Registered backlink pair.";
+          await loadMetricsView();
+          return;
+        }
+
+        if (form.matches?.("[data-mkt-utm-form]") && currentStep) {
+          event.preventDefault();
+          const data = new FormData(form);
+          const source = String(data.get("source") || "linkedin");
+          const payload = await request(
+            workApiUrl(`/api/marketing/steps/${encodeURIComponent(currentStep.id)}/utm`, { source }),
+          );
+          currentUtmResult = payload.url;
+          await loadCurrentRoute();
+        }
+      } catch (error) {
+        const notice = doc.createElement("div");
+        notice.className = "dk-callout dk-callout--warning";
+        notice.setAttribute("role", "alert");
+        notice.setAttribute("data-mkt-write-error", "");
+        notice.textContent = formatApiError(error, "Could not save. Please retry.");
+        (form.closest?.("dialog") || body).append(notice);
+      } finally {
+        if (form.dataset) delete form.dataset.pending;
+      }
+    });
+
+    surface.addEventListener("pointerover", (event) => {
+      const mark = event.target.closest?.("[data-mkt-hover]");
+      if (!mark) return;
+      tooltip.textContent = mark.getAttribute("data-mkt-hover");
+      tooltip.hidden = false;
+    });
+
+    surface.addEventListener("pointermove", (event) => {
+      if (tooltip.hidden) return;
+      const box = surface.getBoundingClientRect();
+      tooltip.style.left = `${Math.min(event.clientX - box.left + 12, box.width - 240)}px`;
+      tooltip.style.top = `${event.clientY - box.top + 12}px`;
+    });
+
+    surface.addEventListener("pointerout", (event) => {
+      if (
+        event.target.closest?.("[data-mkt-hover]") &&
+        !event.relatedTarget?.closest?.("[data-mkt-hover]")
+      ) {
+        tooltip.hidden = true;
+      }
+    });
+
+    await loadCurrentRoute();
+  }
+
+  return { renderMarketingSurface };
+}

@@ -41,6 +41,12 @@ describe('bounded sponsor funnel', () => {
     assert.equal(status, 200); assert.equal(scans(), 1);
     assert.equal(body.items.length, 30); assert.equal(body.total, 74); assert.equal(body.nextCursor, '30');
     assert.equal(body.counts.lost, 1); assert.equal(body.counts.agreed, 4);
+    // Chip counts under the active view sum to the list total; totals ignore the view.
+    assert.equal(Object.values(body.viewCounts as Record<string, number>).reduce((a, b) => a + b, 0), body.total);
+    assert.equal(Object.values(body.counts as Record<string, number>).reduce((a, b) => a + b, 0), body.totalDeals);
+    assert.ok(body.totalDeals >= body.total);
+    const staged = (await get({ stage: 'agreed' })).body;
+    assert.equal(staged.total, body.viewCounts.agreed); assert.deepEqual(staged.viewCounts, body.viewCounts);
     assert.equal(body.items[0].primaryContact.name, 'Synthetic Person');
     assert.equal(body.items[0].notes, undefined); assert.equal(body.items[0].deliverables, undefined);
   });

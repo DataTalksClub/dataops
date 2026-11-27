@@ -4,6 +4,8 @@ import { resolveInteractiveActor, workAdminForbidden } from '../identity/actor';
 import { TeamDirectory } from '../identity/directory';
 import { projectTask, projectTasks } from '../identity/projections';
 import { attachPrerequisites, normalizeDependsOn } from '../db/taskDependencies';
+import { listSteps as listMarketingSteps } from '../db/marketing';
+import { filterSteps as filterMarketingSteps } from '../marketing/service';
 import { attachSubjects, parseTaskSubject } from '../db/taskSubjects';
 import {
   matchesOwnerFilter,
@@ -607,9 +609,14 @@ export async function handleTaskRoutes(
     const activeMemberIds = await directory.activeMemberIds();
 
     async function ownerListResponse(tasks: Task[]): Promise<LambdaResponse> {
+      const hasMarketingFilter = ['target_url', 'primary_keyword', 'done_criteria'].some((key) => params[key]);
+      const matchingSteps = hasMarketingFilter ? filterMarketingSteps(await listMarketingSteps(client), Object.fromEntries(['target_url', 'primary_keyword', 'done_criteria'].map(key => [key, params[key]]))) : null;
+      const marketingTaskIds = new Set(matchingSteps?.map((step) => step.taskId).filter(Boolean));
+      const marketingCardIds = new Set(matchingSteps?.map((step) => step.cardId).filter(Boolean));
       const cardIdSet = cardIds ? new Set(cardIds) : null;
       const visible = tasks.filter((task) => (
-        (!date || task.date === date)
+        (!matchingSteps || marketingTaskIds.has(task.id) || marketingCardIds.has(task.cardId))
+        && (!date || task.date === date)
         && (!startDate || task.date >= startDate)
         && (!endDate || task.date <= endDate)
         && (!cardId || task.cardId === cardId)

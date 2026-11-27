@@ -202,7 +202,7 @@ export function directoryUrl(entity, { viewId, filters, sort, limit } = {}) {
 }
 
 function humanTouch(value, humanDate) {
-  if (!value) return "No recorded contact";
+  if (!value) return "—";
   return humanDate ? humanDate(value) : String(value).slice(0, 10);
 }
 
@@ -223,7 +223,7 @@ export function renderCompanyRow(item, { escapeHtml, humanDate, recordPath }) {
       <p>${escapeHtml(relationshipLabel(item.relationship))}${item.active === false ? " · Archived" : ""}</p>
     </div>
     <div class="crm-dir-context">
-      <span>${primary ? escapeHtml(primary.name || "Unnamed contact") : "No primary contact"}</span>
+      ${primary ? html`<span>${escapeHtml(displayName(primary.name) || "Unnamed contact")}</span>` : ""}
       ${primary?.email ? html`<span class="crm-dir-domain">${escapeHtml(primary.email)}</span>` : ""}
     </div>
     <div class="crm-dir-meta">
@@ -241,18 +241,23 @@ export function renderPersonRow(item, { escapeHtml, humanDate, recordPath }) {
   const href = recordPath ? recordPath("person", item.id) : `/sponsors/people/${encodeURIComponent(item.id)}`;
   return html`<article class="crm-directory-row crm-dir-row" data-dir-person="${escapeHtml(item.id)}">
     <div class="crm-dir-identity">
-      <strong><a href="${escapeHtml(href)}" data-open-person="${escapeHtml(item.id)}">${escapeHtml(item.name || "Unnamed person")}</a></strong>
+      <strong><a href="${escapeHtml(href)}" data-open-person="${escapeHtml(item.id)}">${escapeHtml(displayName(item.name) || "Unnamed person")}</a></strong>
       ${item.primary ? html`<span class="crm-dir-badge">Primary</span>` : ""}
       <p>${item.companyName ? escapeHtml(item.companyName) : "Unlinked"}${item.active === false ? " · Archived" : ""}</p>
     </div>
     <div class="crm-dir-context">
-      <span>${escapeHtml(item.role || "No role recorded")}</span>
-      <span class="crm-dir-domain">${escapeHtml(email || "No email")}</span>
+      ${item.role ? html`<span>${escapeHtml(item.role)}</span>` : ""}
+      ${email ? html`<span class="crm-dir-domain">${escapeHtml(email)}</span>` : ""}
     </div>
     <div class="crm-dir-meta">
       <span>${escapeHtml(humanTouch(item.lastTouch, humanDate))}</span>
     </div>
   </article>`;
+}
+
+// Display only: some imported names carry literal surrounding quotes.
+export function displayName(name) {
+  return String(name ?? "").trim().replace(/^(["'\u2018\u201C])(.*)(["'\u2019\u201D])$/, "$2").trim();
 }
 
 function relationshipLabel(id) {
