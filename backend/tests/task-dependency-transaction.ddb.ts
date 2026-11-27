@@ -11,7 +11,7 @@ import {
   ListTablesCommand,
   type CreateTableCommandInput,
 } from '@aws-sdk/client-dynamodb';
-import { PutCommand, ScanCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, TransactWriteCommand, type DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { disableLocalTransactionEmulation, getClient, usesLocalTransactionEmulation } from '../src/db/client';
 import { TABLE_AUDIT_EVENTS, TABLE_CARDS, TABLE_TASKS } from '../src/db/tableNames';
@@ -262,13 +262,14 @@ test('task dependency guards hold on official DynamoDB Local', { timeout: 60_000
     const later = await seedTask(card, 'Later dependent');
     const send = db.send.bind(db) as (command: unknown) => Promise<unknown>;
     let fired = false;
+    // Land the new edge after every read of the delete, right before its
+    // transaction: whichever path read the dependents, they are now stale.
     (db as unknown as { send: typeof send }).send = async (command: unknown) => {
-      const result = await send(command);
-      if (!fired && command instanceof ScanCommand) {
+      if (!fired && command instanceof TransactWriteCommand) {
         fired = true;
         await updateTask(db, later.id, { expectedVersion: 1, patch: { dependsOn: [prerequisite.id] } });
       }
-      return result;
+      return send(command);
     };
     try {
       await assert.rejects(deleteTask(db, prerequisite.id, 1), CardLifecycleConflictError);
