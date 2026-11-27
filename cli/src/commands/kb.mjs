@@ -4,7 +4,7 @@ import { dirname as parentOf, join as pathJoin, resolve as pathResolve } from "n
 
 import { ApiError } from "../api.mjs";
 import { ConflictError, UsageError } from "../errors.mjs";
-import { apiMutation, batches, changedPaths, commitFiles, planMirror, planPublish, recordedVersions, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
+import { apiMutation, batches, changedPaths, commitFiles, mirrorHistory, planMirror, planPublish, recordedVersions, repositoryName, resolveCommit } from "../knowledgePublish.mjs";
 import { enc, fields, integer, optionalString, positional, table } from "../format.mjs";
 import { apiFor } from "../session.mjs";
 import { copyKnowledgeDocument, exportKnowledgeDocument } from "./kb-transfer.mjs";
@@ -410,7 +410,11 @@ export async function publish(args, io) {
   const plan = await planPublish({
     files, prod, known: (file) => recorded.get(file)?.states ?? new Set(),
     recordedBytes: (file) => recorded.get(file)?.bytes ?? new Map(),
-    page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
+    page: mirrorHistory({
+      known: (file) => recorded.get(file)?.states ?? new Set(),
+      page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
+      version: (file, revision) => downloadKnowledgeVersion(api, file, revision),
+    }),
     version: (file) => downloadKnowledgeVersion(api, file, manifest.revision),
   });
   let revision = manifest.revision;
@@ -474,7 +478,11 @@ export async function mirror(args, io) {
     files, prod: manifest.entries,
     known: (file) => recorded.get(file)?.states ?? new Set(),
     recordedBytes: (file) => recorded.get(file)?.bytes ?? new Map(),
-    page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
+    page: mirrorHistory({
+      known: (file) => recorded.get(file)?.states ?? new Set(),
+      page: (file, cursor) => api.get("/knowledge/history", { query: { path: file, cursor } }),
+      version: (file, revision) => downloadKnowledgeVersion(api, file, revision),
+    }),
     version: (file) => manifest.entries[file]
       ? downloadKnowledgeVersion(api, file, manifest.revision)
       : null,
