@@ -1,7 +1,7 @@
 import { advanceForMaterialChange } from '../sponsorCrm/readiness';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash, randomUUID } from 'crypto';
-import { DeleteCommand, GetCommand, PutCommand, ScanCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DeleteCommand, GetCommand, PutCommand, QueryCommand, ScanCommand, TransactWriteCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { cleanItem } from './cleanItem';
 import { TABLE_SPONSOR_CRM } from './tableNames';
@@ -444,7 +444,27 @@ export async function appendBookingHistory(client: DynamoDBDocumentClient, booki
   await transactCrmDependencies(client, [{ Put: { TableName: TABLE_SPONSOR_CRM, Item: { PK: key('history', bookingId), SK: id, ...event, id, bookingId, createdAt: new Date().toISOString() }, ConditionExpression: 'attribute_not_exists(PK) AND attribute_not_exists(SK)' } }], match ? [{ kind: match[1], id: match[2] }] : []);
 }
 export const appendCrmAudit = (client: DynamoDBDocumentClient, kind: string, id: string, actorId: string, action: string) => appendBookingHistory(client, `${kind}:${id}`, { actorId, entityKind: kind, entityId: id, action });
+/**
+ * Every row of one partition, e.g. one record's history (`HISTORY#<id>`).
+ * A Query on the base table key reads only that partition; it replaced a
+ * full-table Scan filtered to the PK, which also read just the first 1 MB
+ * page of the table and could miss history entirely once the table grew.
+ */
+export function queryCrmPartition(client: DynamoDBDocumentClient, pk: string) {
+  return collectBoundedPages<Record<string, unknown>>({
+    loadPage: (ExclusiveStartKey, abortSignal) => client.send(
+      new QueryCommand({
+        TableName: TABLE_SPONSOR_CRM,
+        KeyConditionExpression: 'PK = :pk',
+        ExpressionAttributeValues: { ':pk': pk },
+        ...(ExclusiveStartKey ? { ExclusiveStartKey } : {}),
+      }),
+      { abortSignal },
+    ),
+  });
+}
+
 export async function listBookingHistory(client: DynamoDBDocumentClient, bookingId: string) {
-  const result = await client.send(new ScanCommand({ TableName: TABLE_SPONSOR_CRM, FilterExpression: 'PK = :pk', ExpressionAttributeValues: { ':pk': key('history', bookingId) } }));
-  return (result.Items || []).map(item => clean(item as Record<string, unknown>) || item).map(({ PK, SK, ...item }: any) => item).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
+  const rows = await queryCrmPartition(client, key('history', bookingId));
+  return rows.map(({ PK, SK, ...item }) => item).sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
 }
