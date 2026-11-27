@@ -40,10 +40,13 @@ and payload sha256, --out writes the exact HTML, --text prints the text part;
 --editor marks incomplete blocks). Nothing is imported from or written to
 Relay while the draft is built.
 
-A sponsor slot with a sponsor document takes its sponsor block from the doc:
-every doc save stages it into the draft (DataOps only; "sponsor-sync" re-runs
-that by hand). A slot without a doc (an own DataTalks.Club promo) takes a
-hand-made sponsor block: "block add --type sponsor".
+A sponsor block comes only from its slot's sponsor document, an own
+DataTalks.Club promo included: every doc save stages it into the draft
+(DataOps only; "sponsor-sync" re-runs that by hand). Sponsor blocks cannot be
+added or edited by hand. "approve" refuses a draft whose sponsor slot has no
+linked doc, a subject over 65 characters (without the weekly suffix), preview
+text over 140, a sponsor title over 12 words, or an own promo without bullets,
+closing and utm tracking.
 
 Only the owner approves, test-sends and schedules (signed in personally, not
 with an API token). "approve" takes the --version and --hash that "render"
@@ -77,7 +80,7 @@ function printDraft(io, draft) {
       ["ID", (b) => b.id],
       ["TYPE", (b) => b.type],
       ["V", (b) => String(b.version)],
-      ["RULE", (b) => (b.readOnly && b.sponsorDocUrl ? "from sponsor doc" : b.pinned ? "pinned" : "")],
+      ["RULE", (b) => (b.sponsor ? (b.sponsorDocUrl ? "from sponsor doc" : "needs sponsor doc") : b.pinned ? "pinned" : "")],
       ["TODO", (b) => (b.problems?.length ? "needs content" : "")],
       ["CONTENT", (b) => b.preview],
     ],

@@ -293,9 +293,15 @@ owner only); only then does the frozen email go to Relay for a test send or a
 scheduled send. Never send or schedule an issue yourself.
 
 For sponsored slots, edit the slot's sponsor document: every save stages its
-sponsor block into the DataOps draft (nothing goes to Relay). A slot without an
-external sponsor takes a hand-made sponsor block
-(`dataops newsletter block add <issue> --type sponsor`).
+sponsor block into the DataOps draft (nothing goes to Relay). A sponsor block
+comes only from its slot's sponsor document; an own DataTalks.Club promo gets
+its own internal sponsor doc too (book the slot for DataTalks.Club and create
+the doc from the issue page: no invoice or sponsor email). Sponsor blocks are
+never added or edited by hand. Approval refuses a slot without a linked doc, a
+subject over 65 characters (the ` | DataTalks.Club Weekly` suffix not counted),
+preview text over 140, a sponsor title over 12 words, and an own promo without
+bullets, closing and utm tracking; a newsletter sponsor doc marked Ready must
+meet the same subject/preview/title limits.
 `dataops newsletter image upload <issue-id> <path>` returns a durable public
 image URL for a block or the sponsor document.
 

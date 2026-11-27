@@ -334,9 +334,9 @@ export function createNewsletterEditor({
       grid.dataset.blockPicker = "";
       grid.setAttribute("role", "group");
       grid.setAttribute("aria-label", "Block type");
-      const taken = new Set(draft.blocks.map((block) => block.type));
       for (const type of types) {
-        if (!type.addable || ((type.type === "sponsor" || type.type === "sponsor_secondary") && taken.has(type.type))) continue;
+        // Sponsor blocks are never offered: they come only from the slot's sponsor document.
+        if (!type.addable) continue;
         const choice = button(type.label, "secondary", "pick");
         choice.dataset.blockType = type.type;
         choice.addEventListener("click", () => guarded(async () => {
