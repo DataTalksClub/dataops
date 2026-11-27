@@ -2,13 +2,13 @@ import { getTaskConsistent, updateTask } from '../db/tasks';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import type { SponsorDoc } from '../db/sponsorDocs';
 import { getCardConsistent } from '../db/cards';
-import { getGuestIntakeJob } from './guestIntakeStore';
+import { getGuestIntakeJob, listPendingArtifacts, type PendingKind } from './guestIntakeStore';
 import { guestEventSlots } from './guestIntakeSlots';
 import { resolveCardEventPolicy, approveEvent, rescheduleEvent, retryEventOperation } from './service';
 import { getEventRecord } from './store';
 import { formatBerlinDate } from '../calendar/ownerCalendarOverlay';
 import { claimGuestSlotAllocator, releaseAllocator } from './guestIntakeAllocator';
-import { PutCommand, ScanCommand, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { PutCommand, UpdateCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { getSponsorDocWithAuthMaterial } from '../db/sponsorDocs';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
 
@@ -23,6 +23,7 @@ export async function guestPortalSlots(db: DynamoDBDocumentClient, doc: SponsorD
 }
 export interface GuestTimeChoiceIntent { choice: string; proposalStartIso: string; proposalVersion: number }
 const choiceKey = (id: string) => ({ PK: `GUESTCHOICE#${id}`, SK: `GUESTCHOICE#${id}` });
+const CHOICE_PENDING: PendingKind = 'guest-choice';
 class SupersededChoiceError extends Error {}
 class InvalidChoiceError extends Error {}
 
@@ -90,10 +91,13 @@ export async function processGuestChoice(db: DynamoDBDocumentClient, item: Recor
   const finish = async (status: string, error?: string) => {
     try {
       await db.send(new UpdateCommand({ TableName: TABLE_ARTIFACTS, Key: choiceKey(item.docId),
-        UpdateExpression: 'SET #s = :status, #error = :error REMOVE leaseToken, leaseUntil',
+        // Only a still-pending choice stays in the sparse pending index the backstop queries.
+        UpdateExpression: status === 'pending'
+          ? 'SET #s = :status, #error = :error, pendingKind = :kind REMOVE leaseToken, leaseUntil'
+          : 'SET #s = :status, #error = :error REMOVE leaseToken, leaseUntil, pendingKind',
         ConditionExpression: '#v = :v AND leaseToken = :token',
         ExpressionAttributeNames: { '#s': 'status', '#v': 'version', '#error': 'error' },
-        ExpressionAttributeValues: { ':status': status, ':error': error || '', ':v': item.version, ':token': token } }));
+        ExpressionAttributeValues: { ':status': status, ':error': error || '', ':v': item.version, ':token': token, ...(status === 'pending' ? { ':kind': CHOICE_PENDING } : {}) } }));
     } catch (error) { if ((error as Error).name !== 'ConditionalCheckFailedException') throw error; }
   };
   const assertCurrent = async () => {
@@ -131,22 +135,20 @@ export async function recordGuestPortalTimeChoice(db: DynamoDBDocumentClient, do
   if (!intent || intent.choice !== doc.content.slotChoice || !Number.isInteger(intent.proposalVersion) || typeof intent.proposalStartIso !== 'string' || !Number.isFinite(Date.parse(intent.proposalStartIso))) throw new InvalidChoiceError('Reload the form and explicitly save your time choice');
   const card = await getCardConsistent(db, doc.cardId);
   if (!card?.guestIntake) return;
-  const item = { ...choiceKey(doc.id), docId: doc.id, choice: intent.choice, intent, version: doc.version, status: intent.choice === 'none_fit' ? 'cancelled' : 'pending' };
+  const status = intent.choice === 'none_fit' ? 'cancelled' : 'pending';
+  const item = { ...choiceKey(doc.id), docId: doc.id, choice: intent.choice, intent, version: doc.version, status, ...(status === 'pending' ? { pendingKind: CHOICE_PENDING } : {}) };
   try {
     await db.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: item, ConditionExpression: 'attribute_not_exists(PK) OR #v < :v', ExpressionAttributeNames: { '#v': 'version' }, ExpressionAttributeValues: { ':v': doc.version } }));
   } catch (error) { if ((error as Error).name !== 'ConditionalCheckFailedException') throw error; }
   if (item.status === 'pending') await processGuestChoice(db, item);
 }
 export async function resumeGuestPortalTimeChoices(db: DynamoDBDocumentClient) {
-  let cursor: Record<string, unknown> | undefined;
   let checked = 0;
-  do {
-    const page = await db.send(new ScanCommand({ TableName: TABLE_ARTIFACTS, ConsistentRead: true, FilterExpression: 'begins_with(PK, :prefix) AND #s = :pending', ExpressionAttributeNames: { '#s': 'status' }, ExpressionAttributeValues: { ':prefix': 'GUESTCHOICE#', ':pending': 'pending' }, ...(cursor ? { ExclusiveStartKey: cursor } : {}) }));
-    for (const item of page.Items || []) {
-      checked++;
-      try { await processGuestChoice(db, item); } catch { /* transient intent remains durable; permanent failure is visible on the owning Task */ }
-    }
-    cursor = page.LastEvaluatedKey;
-  } while (cursor);
+  // Eventually consistent: processGuestChoice claims each row conditionally on version, status and lease.
+  for (const item of await listPendingArtifacts(db, CHOICE_PENDING)) {
+    if (item.status !== 'pending') continue;
+    checked++;
+    try { await processGuestChoice(db, item); } catch { /* transient intent remains durable; permanent failure is visible on the owning Task */ }
+  }
   return { checked };
 }

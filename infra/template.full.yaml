@@ -758,11 +758,23 @@ Resources:
           AttributeType: S
         - AttributeName: SK
           AttributeType: S
+        - AttributeName: pendingKind
+          AttributeType: S
       KeySchema:
         - AttributeName: PK
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
+      # Sparse: only guest intake jobs and guest time choices that a scheduled
+      # backstop may still act on carry pendingKind, so the backstops Query a
+      # few small rows instead of scanning inline documents.
+      GlobalSecondaryIndexes:
+        - IndexName: GSI-Pending
+          KeySchema:
+            - AttributeName: pendingKind
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
       Tags:
         - Key: Project
           Value: DataOps
@@ -1197,6 +1209,7 @@ Resources:
               - !GetAtt DataOpsFilesTable.Arn
               - !Sub ${DataOpsFilesTable.Arn}/index/*
               - !GetAtt DataOpsArtifactsTable.Arn
+              - !Sub ${DataOpsArtifactsTable.Arn}/index/GSI-Pending
               - !GetAtt DataOpsAuditEventsTable.Arn
               - !GetAtt DataOpsSecretsTable.Arn
               - !GetAtt DataOpsIntakeTable.Arn
@@ -1418,7 +1431,7 @@ Resources:
           SPONSOR_COMMUNICATION_HMAC_SECRET_ARN: !Ref SponsorCommunicationHmacSecretArn
       Events:
         # The atomic Card creation also persists its intake job. The independent
-        # two-minute resume rule recovers jobs even after a stream record expires.
+        # ten-minute resume rule recovers jobs even after a stream record expires.
         GuestEventCardCreated:
           Type: DynamoDB
           Properties:
@@ -1483,8 +1496,8 @@ Resources:
   BackendFunctionGuestEventIntakeResume:
     Type: AWS::Events::Rule
     Properties:
-      Description: Resume safe pending guest invitations every two minutes.
-      ScheduleExpression: rate(2 minutes)
+      Description: Resume safe pending guest invitations every ten minutes as a backstop to the Card stream.
+      ScheduleExpression: rate(10 minutes)
       State: ENABLED
       Targets:
         - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}
@@ -1502,8 +1515,8 @@ Resources:
   BackendFunctionGuestEventAcceptancePoll:
     Type: AWS::Events::Rule
     Properties:
-      Description: Apply guest time choices and poll new proposed guest invitations every two minutes.
-      ScheduleExpression: rate(2 minutes)
+      Description: Apply pending guest time choices and poll new proposed guest invitations every ten minutes.
+      ScheduleExpression: rate(10 minutes)
       State: ENABLED
       Targets:
         - Arn: !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${BackendTargetFunctionName}

@@ -20,7 +20,7 @@ import { rescheduleEvent, resolveCardEventPolicy } from './service';
 import { getTemplate } from '../db/templates';
 import { isPodcastTemplateType } from '../calendar/guestInvite';
 import { holdGuestAttendees } from '../calendar/holds';
-import { getGuestIntakeJob, guestIntakeKey } from './guestIntakeStore';
+import { getGuestIntakeJob, guestIntakeItem } from './guestIntakeStore';
 
 export class CalendarOnlyInviteError extends Error {
   constructor(public readonly status: 404 | 409 | 502, message: string) { super(message); }
@@ -114,7 +114,7 @@ async function recordCalendarOnly(db: DynamoDBDocumentClient, jobId: string, ope
   if (!job || job.calendarOnly) return;
   const sentAt = new Date().toISOString();
   const updatedAt = sentAt;
-  await db.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: { ...guestIntakeKey(job.id), ...job, calendarOnly: { sentAt, operationKey, guests, actor }, updatedAt },
+  await db.send(new PutCommand({ TableName: TABLE_ARTIFACTS, Item: guestIntakeItem({ ...job, calendarOnly: { sentAt, operationKey, guests, actor }, updatedAt }),
     ConditionExpression: '#s = :skipped AND updatedAt = :prior', ExpressionAttributeNames: { '#s': 'status' }, ExpressionAttributeValues: { ':skipped': 'skipped', ':prior': job.updatedAt } }));
   const card = await getCardConsistent(db, job.cardId);
   if (card?.guestIntake) await updateCardAdditive(db, card, c => ({ guestIntake: { ...c.guestIntake!, calendarOnlySentAt: sentAt } }));
