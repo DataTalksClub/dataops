@@ -17,6 +17,7 @@ import { DeleteCommand, GetCommand, PutCommand, QueryCommand } from '@aws-sdk/li
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 import { TABLE_ARTIFACTS } from '../db/tableNames';
 import type { BlockData, IssueBlockSet } from './blocks';
+import { BlocksError } from './blocksErrors';
 
 export type BlockRevisionOrigin =
   | 'create'
@@ -29,6 +30,7 @@ export type BlockRevisionOrigin =
   | 'approve'
   | 'approval-withdrawn'
   | 'test-send'
+  | 'test-receipt'
   | 'schedule'
   | 'cancel'
   // Archived origins written by the retired Relay import/sync; shown in history only.
@@ -92,6 +94,18 @@ export async function getBlockSet(client: DynamoDBDocumentClient, issueId: strin
   const res = await client.send(new GetCommand({ TableName: TABLE_ARTIFACTS, Key: setKey(issueId), ConsistentRead: true }));
   const item = strip<Record<string, unknown>>(res.Item as Record<string, unknown> | undefined);
   return item ? normalizeSet(item) : null;
+}
+
+export async function requireBlockSet(client: DynamoDBDocumentClient, issueId: string): Promise<IssueBlockSet> {
+  const set = await getBlockSet(client, issueId);
+  if (!set) {
+    throw new BlocksError(
+      `Issue ${issueId} has no draft yet. Create it in DataOps (the issue page's "Start the draft", or dataops newsletter draft <issue> --create).`,
+      404,
+      'draft_missing',
+    );
+  }
+  return set;
 }
 
 /**

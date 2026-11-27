@@ -15,8 +15,8 @@ import { browserAuthOrigin } from '../auth/browserAuth';
 import { BlockValidationError, blockLabel, newWebViewToken, validateBlockData, type IssueBlockSet } from './blocks';
 import { BlocksError } from './blocksErrors';
 import { byPosition } from './blocksLayout';
-import { appendBlockRevisions, putBlockSet, putFrozenPayload, type FrozenPayload } from './blocksStore';
-import { assertUnlocked, requireBlockSet, type BlockActor } from './blocksEdit';
+import { appendBlockRevisions, putBlockSet, putFrozenPayload, requireBlockSet, type FrozenPayload } from './blocksStore';
+import type { BlockActor } from './blocksEdit';
 import { renderIssueEmail, type RenderedEmail } from './emailRender';
 
 export const WEB_VIEW_PATH = '/api/newsletter-view/';
@@ -93,10 +93,41 @@ export function renderDraft(set: IssueBlockSet, options: { editor?: boolean } = 
 
 export type ApprovalState = 'none' | 'current' | 'stale';
 
+/** Delivery states in which Relay holds (or is being given) the approved payload. */
+export const LOCKED_DELIVERY = new Set(['scheduling', 'scheduled']);
+
+/** Relay holds the approved email: approving again is meaningless until an edit unschedules it. */
+function assertNotScheduled(set: IssueBlockSet): void {
+  if (set.delivery && LOCKED_DELIVERY.has(set.delivery.state)) {
+    throw new BlocksError(
+      `The approved email of this issue is ${set.delivery.state === 'scheduled' ? 'scheduled' : 'being scheduled'} in Relay `
+        + `(campaign ${set.delivery.campaignKey}). Editing the draft cancels that schedule first.`,
+      409,
+      'draft_locked',
+      { delivery: set.delivery },
+    );
+  }
+}
+
 /** Current only while the stored approval still matches what the draft renders now. */
 export function approvalState(set: IssueBlockSet, render: Pick<DraftRender, 'payloadHash'> = renderDraft(set)): ApprovalState {
   if (!set.approval) return 'none';
   return set.approval.payloadHash === render.payloadHash ? 'current' : 'stale';
+}
+
+/**
+ * The owner's confirmation that the test email arrived and looks right. Current
+ * only for the exact approval it was given for (approved version and payload
+ * hash) while that approval is itself current; any edit clears it.
+ */
+export function testReceiptState(set: IssueBlockSet, render: Pick<DraftRender, 'payloadHash'> = renderDraft(set)): ApprovalState {
+  const receipt = set.testReceipt;
+  if (!receipt) return 'none';
+  return approvalState(set, render) === 'current'
+    && receipt.payloadHash === set.approval?.payloadHash
+    && receipt.approvedVersion === set.approval?.draftVersion
+    ? 'current'
+    : 'stale';
 }
 
 /**
@@ -110,7 +141,7 @@ export async function approveDraft(
   actor: BlockActor,
 ): Promise<{ set: IssueBlockSet; payload: FrozenPayload }> {
   let set = await requireBlockSet(client, issueId);
-  assertUnlocked(set);
+  assertNotScheduled(set);
   if (!set.webViewToken) {
     // A draft built by the retired Relay import has no web-view link yet; give it one, which changes the email.
     const now = new Date().toISOString();
@@ -160,6 +191,7 @@ export async function approveDraft(
       approvedByName: actor.name,
       ...(note ? { note } : {}),
     },
+    testReceipt: null,
     version: set.version + 1,
     updatedAt: now,
   };
