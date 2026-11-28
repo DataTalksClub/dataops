@@ -1,6 +1,8 @@
 import { after, afterEach, before, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
+import { TABLE_INTAKE } from '../src/db/tableNames';
 import { getClient } from '../src/db/client';
 import { startLocal, stopLocal, createTables } from '../scripts/local-dynamodb';
 import { getTask } from '../src/db/tasks';
@@ -8,6 +10,7 @@ import { createUser, updateUser } from '../src/db/users';
 import {
   adhocQueueItemId,
   adhocQueueTaskId,
+  getAdhocQueueItem,
   handleAdhocQueueRoutes,
   setAdhocQueueSecretReaderForTests,
   setAdhocQueueOperatorPagerForTests,
@@ -168,8 +171,11 @@ describe('Ad-hoc queue', () => {
       source: 'slack-mod-app',
       kind: 'slack.ban-request',
       title: `Slack ban request ${key}: deactivate U0SYNTH0001`,
-      payload: { decision: { request_id: key, member_id: 'U0SYNTH0001' }, decision_digest: 'd'.repeat(64) },
-      links: [{ label: 'Source decision', url: `https://mod.example.test/?request=${key}` }],
+      payload: { decision: { request_id: key, member_id: 'U0SYNTH0001', workspace_id: 'T01ATQK62F8' }, decision_digest: 'd'.repeat(64) },
+      links: [
+        { label: 'Source decision', url: `https://mod.dtcdev.click/?view=bans&request=${key}` },
+        { label: 'Slack profile', url: 'https://datatalks-club.slack.com/team/U0SYNTH0001' },
+      ],
       idempotencyKey: `ban-request:${key}`,
       task: {
         description: 'Slack ban: deactivate U0SYNTH0001',
@@ -204,15 +210,91 @@ describe('Ad-hoc queue', () => {
       assert.deepEqual(task.checklistItems?.map((row) => row.text), ['Run the guarded action', 'Verify inactive', 'Resolve the source request']);
       assert.ok(task.checklistItems?.every((row) => row.instructionDocId === task.instructionDocId && !row.checked));
       assert.equal(task.comment, 'Source: synthetic request');
-      assert.equal(task.materials?.[0].url, 'https://mod.example.test/?request=synthetic-1');
+      assert.equal(task.materials?.[0].url, 'https://mod.dtcdev.click/?view=bans&request=synthetic-1');
 
-      // A retry, even with a different spec, keeps the one stored item and Task.
-      const retry = await post(ban('synthetic-1', { task: { description: 'other', checklist: ['x'] } }), BAN_TOKEN);
+      // An identical retry is a no-op on the one stored item and Task.
+      const retry = await post(ban('synthetic-1'), BAN_TOKEN);
       assert.equal(retry.status, 200);
       assert.equal(retry.body.duplicate, true);
       assert.equal(retry.body.item.taskId, taskId);
+
+      // The same key with an edited decision, task or kind is a conflict and changes nothing.
+      const edited = ban('synthetic-1');
+      const stale: Record<string, unknown>[] = [
+        { ...edited, payload: { ...(edited.payload as Record<string, unknown>), decision_digest: 'e'.repeat(64) } },
+        { ...edited, task: { ...(edited.task as Record<string, unknown>), description: 'other' } },
+        { ...edited, title: 'Slack ban request synthetic-1: deactivate someone else' },
+        { ...edited, kind: 'slack.note', task: undefined },
+      ];
+      for (const body of stale) {
+        const res = await post(body, BAN_TOKEN);
+        assert.equal(res.status, 409, JSON.stringify(body));
+        assert.equal(res.body.error.code, 'conflict');
+      }
       assert.equal((await getTask(client, taskId))?.description, 'Slack ban: deactivate U0SYNTH0001');
       assert.equal((await getTask(client, taskId))?.version, 1);
+    });
+
+    it('pins the SOP, browser requirement, workspace, request identity and link hosts in the source contract', async () => {
+      secrets({ 'adhoc-queue.slack-mod-app': BAN_TOKEN });
+      const good = ban('pin-1');
+      const task = good.task as Record<string, unknown>;
+      const decision = (good.payload as { decision: Record<string, unknown> }).decision;
+      const withDecision = (extra: Record<string, unknown>) => ({ ...good, payload: { ...good.payload, decision: { ...decision, ...extra } } });
+      const cases: [Record<string, unknown>, RegExp][] = [
+        [{ ...good, task: { ...task, instructionDocId: undefined } }, /registered SOP/],
+        [{ ...good, task: { ...task, instructionDocId: 'sop.other.document' } }, /registered SOP/],
+        [{ ...good, task: { ...task, browserRequirement: undefined } }, /browserRequirement must be headless/],
+        [{ ...good, task: { ...task, browserRequirement: 'required' } }, /browserRequirement must be headless/],
+        [{ ...good, idempotencyKey: 'pin-1' }, /idempotencyKey must be ban-request:/],
+        [{ ...good, idempotencyKey: 'ban-request:../x y' }, /invalid request id/],
+        [{ ...good, payload: { decision_digest: 'd' } }, /payload.decision is required/],
+        [withDecision({ request_id: 'pin-2' }), /request_id must match/],
+        [withDecision({ workspace_id: 'T0OTHER000' }), /registered workspace/],
+        [withDecision({ member_id: 'U1,U2' }), /one member id/],
+        [{ ...good, links: [] }, /exactly one link must be the source decision/],
+        [{ ...good, links: [{ url: 'https://mod.dtcdev.click/?view=bans&request=pin-2' }] }, /point at this request/],
+        [{ ...good, links: [{ url: 'https://mod.dtcdev.click/?request=pin-1&request=pin-2' }] }, /point at this request/],
+        [{ ...good, links: [{ url: 'https://mod.dtcdev.click/admin?request=pin-1' }] }, /point at this request/],
+        [{ ...good, links: [{ url: 'http://mod.dtcdev.click/?request=pin-1' }] }, /links must stay on/],
+        [{ ...good, links: [...(good.links as unknown[]), { url: 'https://evil.example/?request=pin-1' }] }, /links must stay on/],
+        [{ ...good, links: [...(good.links as unknown[]), ...(good.links as unknown[])] }, /exactly one link/],
+      ];
+      for (const [body, message] of cases) {
+        const res = await post(body, BAN_TOKEN);
+        assert.equal(res.status, 400, JSON.stringify(body));
+        assert.match(res.body.error.message, message);
+      }
+      const itemId = adhocQueueItemId('slack-mod-app', 'ban-request:pin-1');
+      assert.equal(await getAdhocQueueItem(client, itemId), null);
+      assert.equal(await getTask(client, adhocQueueTaskId(itemId)), null);
+    });
+
+    it('never creates a late Task for an item an operator closed before its Task existed', async () => {
+      secrets({ 'adhoc-queue.slack-mod-app': BAN_TOKEN });
+      const originalError = console.error;
+      console.error = () => {};
+      setAdhocQueueOperatorPagerForTests(async () => ({ published: true, topicArn: 'arn:test' }));
+      await updateUser(client, orinId, { disabled: true });
+      try {
+        assert.equal((await post(ban('closed-1'), BAN_TOKEN)).status, 503);
+      } finally {
+        await updateUser(client, orinId, { disabled: false });
+        console.error = originalError;
+        setAdhocQueueOperatorPagerForTests(null);
+      }
+      const itemId = adhocQueueItemId('slack-mod-app', 'ban-request:closed-1');
+      await client.send(new UpdateCommand({
+        TableName: TABLE_INTAKE,
+        Key: { PK: `ADHOC#${itemId}`, SK: `ADHOC#${itemId}` },
+        UpdateExpression: 'SET #s = :done',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':done': 'done' },
+      }));
+      const retry = await post(ban('closed-1'), BAN_TOKEN);
+      assert.equal(retry.status, 409);
+      assert.equal(retry.body.error.code, 'item_closed');
+      assert.equal(await getTask(client, adhocQueueTaskId(itemId)), null);
     });
 
     it('requires a valid task block from a task source and refuses one from any other source', async () => {
@@ -220,8 +302,8 @@ describe('Ad-hoc queue', () => {
       const cases: [Record<string, unknown>, RegExp][] = [
         [ban('bad-1', { task: undefined }), /task must be an object/],
         [ban('bad-2', { task: { description: 'x', checklist: [] } }), /checklist/],
-        [ban('bad-3', { task: { description: 'x', checklist: ['a'], instructionDocId: '../etc' } }), /instructionDocId/],
-        [ban('bad-4', { task: { description: 'x', checklist: ['a'], browserRequirement: 'maybe' } }), /browserRequirement/],
+        [ban('bad-3', { task: { description: 'x', checklist: ['a'], instructionDocId: '../etc', browserRequirement: 'headless' } }), /instructionDocId/],
+        [ban('bad-4', { task: { description: 'x', checklist: ['a'], instructionDocId: 'sop.community.slack.process-slack-moderation-ban-requests', browserRequirement: 'maybe' } }), /browserRequirement/],
       ];
       for (const [body, message] of cases) {
         const res = await post(body, BAN_TOKEN);
@@ -240,9 +322,7 @@ describe('Ad-hoc queue', () => {
     it('answers 503 when the assignee cannot be resolved, and the retry creates the Task once it can', async () => {
       secrets({ 'adhoc-queue.slack-mod-app': BAN_TOKEN });
       const originalError = console.error;
-      const original = process.stdout.write.bind(process.stdout);
       console.error = () => {};
-      (process.stdout as unknown as { write: (s: string) => boolean }).write = () => true;
       setAdhocQueueOperatorPagerForTests(async () => ({ published: true, topicArn: 'arn:test' }));
       await updateUser(client, orinId, { disabled: true });
       let failed;
@@ -251,7 +331,6 @@ describe('Ad-hoc queue', () => {
       } finally {
         await updateUser(client, orinId, { disabled: false });
         console.error = originalError;
-        (process.stdout as unknown as { write: typeof original }).write = original;
         setAdhocQueueOperatorPagerForTests(null);
       }
       assert.equal(failed.status, 503);
