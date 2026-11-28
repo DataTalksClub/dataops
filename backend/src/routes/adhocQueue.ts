@@ -82,6 +82,20 @@ interface AdhocQueueTaskSource {
   /** The operator every Task from this source is assigned to. */
   assigneeEmail: string;
   tags: readonly string[];
+  /** The one SOP every Task from this source binds; a post must name exactly this document. */
+  instructionDocId: string;
+  /** How the operator carries the Task out; a post must declare exactly this. */
+  browserRequirement: BrowserRequirement;
+  /** idempotencyKey is `<keyPrefix><request id>`; the request id must match requestIdPattern. */
+  keyPrefix: string;
+  requestIdPattern: RegExp;
+  /** Exactly one link must be the source decision: this origin + path, with the request id in sourceLinkParam. */
+  sourceLink: { origin: string; path: string; param: string };
+  /** Every other link must be on one of these origins. */
+  extraLinkOrigins: readonly string[];
+  /** payload.decision must carry these fields; workspace_id must equal workspaceId and member_id match memberIdPattern. */
+  workspaceId: string;
+  memberIdPattern: RegExp;
 }
 
 /**
@@ -90,14 +104,27 @@ interface AdhocQueueTaskSource {
  */
 export const ADHOC_QUEUE_TASK_SOURCES: Readonly<Record<string, AdhocQueueTaskSource>> = {
   // Approved Slack ban requests from slack-mod-app, carried out by Orin.
-  'slack-mod-app': { kinds: ['slack.ban-request'], assigneeEmail: OPERATIONS_SENDER, tags: ['slack-ban'] },
+  // The operator path is the headless `scripts/ban-action.py` CLI on the moderation host;
+  // it reads the source decision itself and never acts on this Task's editable text.
+  'slack-mod-app': {
+    kinds: ['slack.ban-request'],
+    assigneeEmail: OPERATIONS_SENDER,
+    tags: ['slack-ban'],
+    instructionDocId: 'sop.community.slack.process-slack-moderation-ban-requests',
+    browserRequirement: 'headless',
+    keyPrefix: 'ban-request:',
+    requestIdPattern: /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/,
+    sourceLink: { origin: 'https://mod.dtcdev.click', path: '/', param: 'request' },
+    extraLinkOrigins: ['https://datatalks-club.slack.com'],
+    workspaceId: 'T01ATQK62F8',
+    memberIdPattern: /^[UW][A-Z0-9]{8,12}$/,
+  },
 };
 
 const MAX_TASK_DESCRIPTION = 300;
 const MAX_CHECKLIST = 10;
 const MAX_CHECKLIST_TEXT = 1000;
 const MAX_TASK_COMMENT = 4000;
-const DOC_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,199}$/;
 
 export function adhocQueueTaskId(itemId: string): string {
   return `qt-${itemId.slice(2)}`;
@@ -109,7 +136,52 @@ function taskSourceFor(source: string, kind: string): AdhocQueueTaskSource | nul
   return registered && registered.kinds.includes(kind) ? registered : null;
 }
 
-function validTask(value: unknown): AdhocQueueTaskSpec | string {
+/**
+ * The registered source's contract for one post: the key names exactly one
+ * request, the payload decision is that request in the pinned workspace, and
+ * the links point only at that request's decision (plus allowed extras).
+ */
+function validSourceContract(
+  registered: AdhocQueueTaskSource,
+  idempotencyKey: string,
+  payload: Record<string, unknown>,
+  links: AdhocQueueLink[],
+): string | null {
+  const key = idempotencyKey.trim();
+  if (!key.startsWith(registered.keyPrefix)) return `idempotencyKey must be ${registered.keyPrefix}<request id>`;
+  const requestId = key.slice(registered.keyPrefix.length);
+  if (!registered.requestIdPattern.test(requestId)) return 'idempotencyKey names an invalid request id';
+  const decision = payload.decision;
+  if (!isPlainObject(decision)) return 'payload.decision is required';
+  if (decision.request_id !== requestId) return 'payload.decision.request_id must match the idempotencyKey';
+  if (decision.workspace_id !== registered.workspaceId) return 'payload.decision.workspace_id is not the registered workspace';
+  if (typeof decision.member_id !== 'string' || !registered.memberIdPattern.test(decision.member_id)) {
+    return 'payload.decision.member_id must be one member id';
+  }
+  let sourceLinks = 0;
+  for (const { url } of links) {
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      return 'every link must be a valid url';
+    }
+    if (parsed.origin === registered.sourceLink.origin) {
+      if (parsed.pathname !== registered.sourceLink.path || parsed.username || parsed.password
+        || parsed.searchParams.getAll(registered.sourceLink.param).length !== 1
+        || parsed.searchParams.get(registered.sourceLink.param) !== requestId) {
+        return 'the source decision link must point at this request';
+      }
+      sourceLinks += 1;
+    } else if (!registered.extraLinkOrigins.includes(parsed.origin)) {
+      return `links must stay on ${[registered.sourceLink.origin, ...registered.extraLinkOrigins].join(' or ')}`;
+    }
+  }
+  if (sourceLinks !== 1) return 'exactly one link must be the source decision';
+  return null;
+}
+
+function validTask(value: unknown, registered: AdhocQueueTaskSource): AdhocQueueTaskSpec | string {
   if (!isPlainObject(value)) return 'task must be an object';
   const { description, checklist, instructionDocId, comment, browserRequirement } = value;
   if (typeof description !== 'string' || !description.trim()) return 'task.description is required';
@@ -120,21 +192,21 @@ function validTask(value: unknown): AdhocQueueTaskSpec | string {
   if (!checklist.every((row) => typeof row === 'string' && row.trim() && row.length <= MAX_CHECKLIST_TEXT)) {
     return `every task.checklist item must be text of ${MAX_CHECKLIST_TEXT} characters or less`;
   }
-  if (instructionDocId !== undefined && (typeof instructionDocId !== 'string' || !DOC_ID_PATTERN.test(instructionDocId))) {
-    return 'task.instructionDocId must be a knowledge document id';
+  if (instructionDocId !== registered.instructionDocId) {
+    return `task.instructionDocId must be the registered SOP ${registered.instructionDocId}`;
   }
   if (comment !== undefined && (typeof comment !== 'string' || comment.length > MAX_TASK_COMMENT)) {
     return `task.comment must be text of ${MAX_TASK_COMMENT} characters or less`;
   }
-  if (browserRequirement !== undefined && browserRequirement !== 'headless' && browserRequirement !== 'required') {
-    return 'task.browserRequirement must be headless or required';
+  if (browserRequirement !== registered.browserRequirement) {
+    return `task.browserRequirement must be ${registered.browserRequirement} for this source`;
   }
   return {
     description: description.trim(),
     checklist: (checklist as string[]).map((row) => row.trim()),
-    ...(instructionDocId ? { instructionDocId: instructionDocId as string } : {}),
+    instructionDocId: registered.instructionDocId,
     ...(comment && (comment as string).trim() ? { comment: (comment as string).trim() } : {}),
-    ...(browserRequirement ? { browserRequirement: browserRequirement as BrowserRequirement } : {}),
+    browserRequirement: registered.browserRequirement,
   };
 }
 
@@ -271,8 +343,11 @@ export function validateAdhocQueuePost(body: unknown): Validated | string {
   const links = validLinks(body.links);
   if (typeof links === 'string') return links;
   let task: AdhocQueueTaskSpec | undefined;
-  if (taskSourceFor(source, kind)) {
-    const spec = validTask(body.task);
+  const registered = taskSourceFor(source, kind);
+  if (registered) {
+    const contract = validSourceContract(registered, idempotencyKey, (payload as Record<string, unknown>) || {}, links);
+    if (contract) return contract;
+    const spec = validTask(body.task, registered);
     if (typeof spec === 'string') return spec;
     task = spec;
   } else if (body.task !== undefined) {
@@ -384,6 +459,17 @@ async function handlePost(event: LambdaEvent, client: DynamoDBDocumentClient): P
       } catch (readError) {
         return await storageFailed('read', readError);
       }
+      if (existing && taskSourceFor(existing.source, existing.kind) || registered) {
+        // A registered source's key names one decision: a post that differs from the
+        // stored one (other kind, edited decision or task) is a conflict, never a no-op.
+        if (!existing || !sameRegisteredPost(existing, valid)) {
+          return json(409, { error: { code: 'conflict', message: 'this idempotencyKey already holds a different item' }, item: existing });
+        }
+        // Closed before its Task existed: never create a late Task for it.
+        if (!existing.taskId && existing.status === 'done') {
+          return json(409, { error: { code: 'item_closed', message: 'this item was closed before its Task was created' }, item: existing });
+        }
+      }
       // A retry finishes a Task the first post could not create, from the stored spec.
       if (existing && registered) {
         try {
@@ -402,6 +488,23 @@ async function handlePost(event: LambdaEvent, client: DynamoDBDocumentClient): P
   } catch (taskError) {
     return await storageFailed('task', taskError);
   }
+}
+
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
+  if (isPlainObject(value)) {
+    return `{${Object.keys(value).sort().filter((key) => value[key] !== undefined)
+      .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function sameRegisteredPost(existing: AdhocQueueItem, valid: Validated): boolean {
+  const fields = (item: Validated | AdhocQueueItem) => canonical({
+    source: item.source, kind: item.kind, title: item.title, payload: item.payload,
+    links: item.links, idempotencyKey: item.idempotencyKey, task: item.task,
+  });
+  return fields(existing) === fields(valid);
 }
 
 export async function getAdhocQueueItem(client: DynamoDBDocumentClient, id: string): Promise<AdhocQueueItem | null> {
