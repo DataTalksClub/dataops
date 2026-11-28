@@ -3,14 +3,18 @@ import { GetCommand, PutCommand, ScanCommand, UpdateCommand } from '@aws-sdk/lib
 import type { DynamoDBDocumentClient } from '@aws-sdk/lib-dynamodb';
 
 import { TABLE_INTAKE } from '../db/tableNames';
+import { createTask } from '../db/tasks';
+import { getUsersByNormalizedEmail } from '../db/users';
 import { writeEmbeddedMetric } from '../embeddedMetrics';
 import { publishOperatorAlarm } from '../export/dynamoPitrCheck';
 import { headerValue } from '../httpHeaders';
+import { OPERATIONS_SENDER } from '../identity/operatingIdentities';
 import { noStoreJson as json } from '../http';
 import { resolveInteractiveActor } from '../identity/actor';
 import { recordRequestError } from '../requestErrorLog';
 import { readRuntimeSecret } from '../secrets/reader';
-import type { LambdaEvent, LambdaResponse } from '../types';
+import { berlinDate } from '../sponsorFinance/core';
+import type { BrowserRequirement, LambdaEvent, LambdaResponse, TaskChecklistItem } from '../types';
 
 /**
  * General-purpose ad-hoc queue. Any system (AISL first) posts an item with
@@ -22,6 +26,13 @@ import type { LambdaEvent, LambdaResponse } from '../types';
  * or deploy. Items are stored in the intake table under `ADHOC#<id>`, where
  * the id is derived from (source, idempotencyKey), so a retried post lands on
  * the same item.
+ *
+ * A source/kind registered in ADHOC_QUEUE_TASK_SOURCES must also send a
+ * `task` block; its item then becomes exactly one ad hoc Task (id
+ * `qt-<item hash>`, assigned to the registered operator) carrying that
+ * checklist and SOP inline. The Task is created with a conditional write
+ * from the stored item, so a retry or a concurrent post never makes a second
+ * Task, and a failed Task write is a 503 the caller retries with the same key.
  */
 
 export const ADHOC_QUEUE_POST_PATH = '/api/v1/queue/items';
@@ -51,7 +62,132 @@ export interface AdhocQueueItem {
   updatedAt: string;
   resolvedBy?: string;
   resolutionNote?: string;
+  /** Ad hoc Task spec, for a registered task source only; immutable after the first post. */
+  task?: AdhocQueueTaskSpec;
+  /** The Task materialized from this item (`qt-...`). */
+  taskId?: string;
   history: { at: string; status: AdhocQueueStatus; by: string; note?: string }[];
+}
+
+export interface AdhocQueueTaskSpec {
+  description: string;
+  checklist: string[];
+  instructionDocId?: string;
+  comment?: string;
+  browserRequirement?: BrowserRequirement;
+}
+
+interface AdhocQueueTaskSource {
+  kinds: readonly string[];
+  /** The operator every Task from this source is assigned to. */
+  assigneeEmail: string;
+  tags: readonly string[];
+}
+
+/**
+ * Sources whose items each become one ad hoc Task. Registering a source here
+ * is a reviewed code change; its token alone never lets it create Tasks.
+ */
+export const ADHOC_QUEUE_TASK_SOURCES: Readonly<Record<string, AdhocQueueTaskSource>> = {
+  // Approved Slack ban requests from slack-mod-app, carried out by Orin.
+  'slack-mod-app': { kinds: ['slack.ban-request'], assigneeEmail: OPERATIONS_SENDER, tags: ['slack-ban'] },
+};
+
+const MAX_TASK_DESCRIPTION = 300;
+const MAX_CHECKLIST = 10;
+const MAX_CHECKLIST_TEXT = 1000;
+const MAX_TASK_COMMENT = 4000;
+const DOC_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,199}$/;
+
+export function adhocQueueTaskId(itemId: string): string {
+  return `qt-${itemId.slice(2)}`;
+}
+
+function taskSourceFor(source: string, kind: string): AdhocQueueTaskSource | null {
+  const registered = Object.prototype.hasOwnProperty.call(ADHOC_QUEUE_TASK_SOURCES, source)
+    ? ADHOC_QUEUE_TASK_SOURCES[source] : null;
+  return registered && registered.kinds.includes(kind) ? registered : null;
+}
+
+function validTask(value: unknown): AdhocQueueTaskSpec | string {
+  if (!isPlainObject(value)) return 'task must be an object';
+  const { description, checklist, instructionDocId, comment, browserRequirement } = value;
+  if (typeof description !== 'string' || !description.trim()) return 'task.description is required';
+  if (description.length > MAX_TASK_DESCRIPTION) return `task.description must be ${MAX_TASK_DESCRIPTION} characters or less`;
+  if (!Array.isArray(checklist) || checklist.length < 1 || checklist.length > MAX_CHECKLIST) {
+    return `task.checklist must have 1 to ${MAX_CHECKLIST} items`;
+  }
+  if (!checklist.every((row) => typeof row === 'string' && row.trim() && row.length <= MAX_CHECKLIST_TEXT)) {
+    return `every task.checklist item must be text of ${MAX_CHECKLIST_TEXT} characters or less`;
+  }
+  if (instructionDocId !== undefined && (typeof instructionDocId !== 'string' || !DOC_ID_PATTERN.test(instructionDocId))) {
+    return 'task.instructionDocId must be a knowledge document id';
+  }
+  if (comment !== undefined && (typeof comment !== 'string' || comment.length > MAX_TASK_COMMENT)) {
+    return `task.comment must be text of ${MAX_TASK_COMMENT} characters or less`;
+  }
+  if (browserRequirement !== undefined && browserRequirement !== 'headless' && browserRequirement !== 'required') {
+    return 'task.browserRequirement must be headless or required';
+  }
+  return {
+    description: description.trim(),
+    checklist: (checklist as string[]).map((row) => row.trim()),
+    ...(instructionDocId ? { instructionDocId: instructionDocId as string } : {}),
+    ...(comment && (comment as string).trim() ? { comment: (comment as string).trim() } : {}),
+    ...(browserRequirement ? { browserRequirement: browserRequirement as BrowserRequirement } : {}),
+  };
+}
+
+async function resolveAssignee(client: DynamoDBDocumentClient, email: string): Promise<string> {
+  const users = (await getUsersByNormalizedEmail(client, email)).filter((user) => user.disabled !== true);
+  if (users.length !== 1) throw new Error(`queue task assignee ${email} must resolve to exactly one active user`);
+  return users[0].id;
+}
+
+/**
+ * Create the item's Task (once) and record its id on the item. Safe to repeat:
+ * the Task id is derived from the item id and written conditionally.
+ */
+async function materializeTask(client: DynamoDBDocumentClient, item: AdhocQueueItem, registered: AdhocQueueTaskSource): Promise<AdhocQueueItem> {
+  if (item.taskId || !item.task) return item;
+  const taskId = adhocQueueTaskId(item.id);
+  const spec = item.task;
+  const actorId = `queue:${item.source}`;
+  const checklistItems: TaskChecklistItem[] = spec.checklist.map((text, index) => ({
+    id: `${taskId}-${index + 1}`,
+    text,
+    checked: false,
+    ...(spec.instructionDocId ? { instructionDocId: spec.instructionDocId } : {}),
+  }));
+  try {
+    await createTask(client, {
+      id: taskId,
+      description: spec.description,
+      date: berlinDate(),
+      assigneeId: await resolveAssignee(client, registered.assigneeEmail),
+      createdBy: actorId,
+      source: actorId,
+      queueItemId: item.id,
+      checklistItems,
+      tags: [...registered.tags],
+      ...(spec.instructionDocId ? { instructionDocId: spec.instructionDocId } : {}),
+      ...(spec.comment ? { comment: spec.comment } : {}),
+      ...(spec.browserRequirement ? { browserRequirement: spec.browserRequirement } : {}),
+      ...(item.links.length ? { materials: item.links.map(({ label, url }) => ({ label, url })) } : {}),
+    }, { actorId, triggerKind: 'queue-item' });
+  } catch (error) {
+    // Another post already created it: the conditional write keeps one Task.
+    if ((error as { name?: string })?.name !== 'ConditionalCheckFailedException') throw error;
+  }
+  const result = await client.send(new UpdateCommand({
+    TableName: TABLE_INTAKE,
+    Key: { PK: `ADHOC#${item.id}`, SK: `ADHOC#${item.id}` },
+    ConditionExpression: 'attribute_exists(PK)',
+    UpdateExpression: 'SET taskId = :taskId',
+    ExpressionAttributeValues: { ':taskId': taskId },
+    ReturnValues: 'ALL_NEW',
+  }));
+  return clean(result.Attributes as Record<string, unknown>) as AdhocQueueItem;
 }
 
 let readSecret: (name: string) => Promise<string> = readRuntimeSecret;
@@ -120,7 +256,7 @@ function validLinks(value: unknown): AdhocQueueLink[] | string {
   return out;
 }
 
-type Validated = Pick<AdhocQueueItem, 'source' | 'kind' | 'title' | 'payload' | 'links' | 'idempotencyKey'>;
+type Validated = Pick<AdhocQueueItem, 'source' | 'kind' | 'title' | 'payload' | 'links' | 'idempotencyKey' | 'task'>;
 
 export function validateAdhocQueuePost(body: unknown): Validated | string {
   if (!isPlainObject(body)) return 'body must be a JSON object';
@@ -134,6 +270,14 @@ export function validateAdhocQueuePost(body: unknown): Validated | string {
   if (payload !== undefined && !isPlainObject(payload)) return 'payload must be a JSON object';
   const links = validLinks(body.links);
   if (typeof links === 'string') return links;
+  let task: AdhocQueueTaskSpec | undefined;
+  if (taskSourceFor(source, kind)) {
+    const spec = validTask(body.task);
+    if (typeof spec === 'string') return spec;
+    task = spec;
+  } else if (body.task !== undefined) {
+    return 'task is accepted only from a registered task source and kind';
+  }
   return {
     source,
     kind,
@@ -141,6 +285,7 @@ export function validateAdhocQueuePost(body: unknown): Validated | string {
     payload: (payload as Record<string, unknown>) || {},
     links,
     idempotencyKey: idempotencyKey.trim(),
+    ...(task ? { task } : {}),
   };
 }
 
@@ -215,6 +360,7 @@ async function handlePost(event: LambdaEvent, client: DynamoDBDocumentClient): P
   if (typeof valid === 'string') return bad(valid);
 
   const id = adhocQueueItemId(valid.source, valid.idempotencyKey);
+  const registered = taskSourceFor(valid.source, valid.kind);
   const now = new Date().toISOString();
   const item: AdhocQueueItem = {
     id,
@@ -230,17 +376,31 @@ async function handlePost(event: LambdaEvent, client: DynamoDBDocumentClient): P
       Item: { PK: `ADHOC#${id}`, SK: `ADHOC#${id}`, ...item },
       ConditionExpression: 'attribute_not_exists(PK)',
     }));
-    return json(201, { item, created: true });
   } catch (error) {
     if ((error as { name?: string })?.name === 'ConditionalCheckFailedException') {
+      let existing: AdhocQueueItem | null;
       try {
-        const existing = await getAdhocQueueItem(client, id);
-        return json(200, { item: existing, created: false, duplicate: true });
+        existing = await getAdhocQueueItem(client, id);
       } catch (readError) {
         return await storageFailed('read', readError);
       }
+      // A retry finishes a Task the first post could not create, from the stored spec.
+      if (existing && registered) {
+        try {
+          existing = await materializeTask(client, existing, registered);
+        } catch (taskError) {
+          return await storageFailed('task', taskError);
+        }
+      }
+      return json(200, { item: existing, created: false, duplicate: true });
     }
     return await storageFailed('put', error);
+  }
+  if (!registered) return json(201, { item, created: true });
+  try {
+    return json(201, { item: await materializeTask(client, item, registered), created: true });
+  } catch (taskError) {
+    return await storageFailed('task', taskError);
   }
 }
 

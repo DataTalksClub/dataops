@@ -329,6 +329,8 @@ export interface Task {
   cardId?: string;
   /** What a Task outside any Card is about (a sponsor deal or company); never set with `cardId`. */
   subject?: TaskSubject;
+  /** Ad-hoc queue item this Task was materialized from (`q-...`); set only by the queue. */
+  queueItemId?: string;
   templateId?: string;
   templateTaskRef?: string;
   templateOffsetDays?: number;

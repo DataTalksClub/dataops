@@ -21,6 +21,12 @@ Posting (from another system)
   POST /api/v1/queue/items
   Authorization: Bearer <adhoc-queue.<source> token>
   {"source","kind","title","payload","links":[{"label","url"}],"idempotencyKey"}
+
+Task sources
+  A source/kind registered in ADHOC_QUEUE_TASK_SOURCES (backend/src/routes/adhocQueue.ts)
+  must also send "task": {"description","checklist":[...],"instructionDocId","comment","browserRequirement"}.
+  Its item then becomes exactly one ad hoc Task (qt-<item hash>) assigned to the registered
+  operator; the item shows it as taskId. Registered: slack-mod-app / slack.ban-request -> Orin.
 `;
 
 export async function list(args, io) {
